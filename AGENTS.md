@@ -18,7 +18,7 @@ CSA_GW_INTEGRATION=1 CSA_GW_CLIENT_SECRETS=path/to/client_secret.json pytest tes
 
 ## Coding Style & Naming Conventions
 
-Follow standard Python style: 4-space indentation, clear type hints on public interfaces, and small modules aligned with the existing architecture. Use `snake_case` for functions, methods, variables, and test names; use `PascalCase` for classes such as `Workspace`, `Comment`, and document types. Keep public APIs importable from the package root when they are intended for users. No formatter or linter is configured in `pyproject.toml`, so keep edits consistent with nearby code.
+Follow standard Python style: 4-space indentation, clear type hints on public interfaces, and small modules aligned with the existing architecture. Use `snake_case` for functions, methods, variables, and test names; use `PascalCase` for classes such as `Workspace`, `Comment`, and document types. Keep public APIs importable from the package root when they are intended for users. `ruff check src tests` (lint; `E,F,W,I,B,UP`, line-length 120) and `mypy` both run as a CI gate and are configured in `pyproject.toml`; there is no auto-formatter, so keep edits consistent with nearby code. `E702` is deliberately ignored — one-line `a = …; b = …` is house style here.
 
 ## Testing Guidelines
 
