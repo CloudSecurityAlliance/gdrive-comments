@@ -2,34 +2,49 @@
 
 The feature roadmap (comments · content read/write · Sheets cell-mapping · Docs
 suggestions read) is **complete and live-verified** — see `CHANGELOG.md`. This file
-is the post-roadmap backlog: enhancements and polish, none of them blocking, all
-kept inside the library's scope (comments + content on Google Docs/Sheets/Slides).
+is the post-roadmap backlog: the phase-2 delivery layer (below), plus enhancements and
+polish to the library itself (comments + content on Google Docs/Sheets/Slides), none of
+the latter blocking.
 
 Ordered by leverage-to-effort. Nothing here is committed to — it's a menu. Each item,
 when picked up, follows the plan-then-execute rhythm (spec/plan under
-`docs/superpowers/`, then TDD via `FakeBackend`). The dense per-phase execution ledger
-lives in `.superpowers/sdd/progress.md`; this file is the human-facing view.
+`docs/superpowers/`, then TDD via `FakeBackend`). `CHANGELOG.md` is the shipped-work
+ledger; the phase plans in `docs/superpowers/plans/` are the per-phase detail.
 
-## Near-term objective: audit → cleanup → PyPI
+## Near-term objective: phase 2 — the built-in MCP server
 
-The agreed next milestone is to **audit the library, clean up what the audit finds, and
-publish it to PyPI.** The correctness findings in Tier 0 below and the release-readiness
-work in Tier 1 are the substance of that milestone; Tier 2 tooling supports it. Treat
-these three tiers as the "1.0-on-PyPI" work-package.
+The **audit → cleanup → PyPI** milestone that used to head this file is **done** (Tiers 0–2
+below, plus the release-process hardening — all ✅). The library is published and the
+pipeline is hardened, so the next milestone is the **delivery layer**:
 
-**Progress (2026-07-21):** Tier 0 fixes (PR #26), `py.typed` (PR #27), pytest CI (PR #28),
-and the package-metadata pass are all done — the package builds and `twine check` passes
-for sdist + wheel at **v0.1.0**. **The only step left to actually publish is the release
-itself** (tag + upload), which needs a decision + a PyPI token — see "Publish" below.
-Tier 2 tooling (ruff/mypy/coverage) is optional polish, not a publish blocker.
+**Ship `csa_google_workspace.mcp`** — a built-in MCP server so an AI client can review
+comments, read content, and edit Docs/Sheets/Slides through the library. The spec is
+**approved for planning**:
+[`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md).
 
-### Publish — ✅ DONE
+Locked decisions: local single-user **stdio** first (structured so Streamable HTTP can be
+added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by default**
+(hedged with tool annotations + a `CSA_GW_READ_ONLY=1` flag, not gated), and v1 primitives
+= tools + one Resource (document text) + one Prompt (comment triage).
+
+- [ ] **Write the implementation plan** (via writing-plans) — the spec's §10 phasing is the
+  outline: (a) `[mcp]` extra + package skeleton + `create_server` + config; (b) read tools +
+  structured schemas; (c) write tools + annotations; (d) Resource + Prompt; (e) entry point
+  + docs + a gated live smoke. This is the actual next action.
+- [ ] **Then execute it** TDD, per task, against `FakeBackend` + FastMCP's in-memory client.
+
+Note the scope shift: everything *below* this section is library-internal, but phase 2 is a
+**delivery layer over** the library — it adds no document logic, only maps MCP primitives
+onto the existing `Workspace` API.
+
+## Publish — ✅ DONE
 
 - [x] **Release automation** — `.github/workflows/release.yml` (Trusted Publishing / OIDC);
   steps in `RELEASING.md`.
-- [x] **Published to PyPI** — `0.1.0` and `0.1.1` (docs patch) both cut via `gh release
-  create` → CI-built, tagged, GitHub-Released, uploaded over OIDC. Page:
-  <https://pypi.org/project/csa-google-workspace/>.
+- [x] **Published to PyPI** — `0.1.0`, `0.1.1` (docs patch), and `0.1.2` (first release
+  through the hardened pipeline — attestations + env gate) all cut via `gh release create`
+  → CI-built, tagged, GitHub-Released, uploaded over OIDC. Page:
+  <https://pypi.org/project/csa-google-workspace/>. Current `__version__`: **0.1.2**.
 
 ## Release-process / supply-chain hardening — ✅ DONE
 
@@ -132,18 +147,22 @@ they're the right release-readiness priorities.
 
 ## Tier 4 — prove the pitch (scope-adjacent)
 
-- [ ] **`examples/` reference consumer** — a small MCP server or comment-triage bot built
-  on the library. Most direct proof of the "embed in MCP/plugins" positioning, and it
-  surfaces real ergonomics (auth injection, async). Stays out of the *core* per the design.
-- [ ] **Async story — decide.** MCP servers/bots are usually async; sync-only forces
-  `asyncio.to_thread`. Lean: *document the `to_thread` pattern* (cheap) rather than build
-  an async facade (large, and `google-api-python-client` is sync). Just needs a call.
+- [ ] **`examples/` reference consumer** — ~~a small MCP server or~~ a comment-triage bot
+  built on the library. **Mostly superseded by phase 2:** the earlier "stays out of the
+  *core* per the design" framing was reversed when the built-in MCP server was approved, and
+  that server is now the reference consumer + the proof of the "embed in MCP/plugins"
+  positioning. What's left of this item is only a *non-MCP* example (e.g. a plain triage
+  bot), if one is still wanted after phase 2 ships.
+- [ ] **Async story — decide.** Sync-only forces `asyncio.to_thread` on async callers. Lean:
+  *document the `to_thread` pattern* (cheap) rather than build an async facade (large, and
+  `google-api-python-client` is sync). **Phase 2 forces the call** — the MCP server is the
+  first in-tree async-adjacent consumer, so decide it while writing that plan.
 
 ## Integration / live testing
 
 Three tiers:
 
-- **unit** — `tests/`, offline (`FakeBackend`), 169 tests; gates every PR.
+- **unit** — `tests/`, offline (`FakeBackend`), 217 tests; gates every PR.
 - **integration** — `tests/integration/`, real Google API, opt-in via `CSA_GW_INTEGRATION=1`
   (needs a cached token or a first-run browser login). Covers the full surface incl. Tier 3.
 - **oauth** — `tests/oauth/`, the **interactive browser-login** suite (real `from_oauth`,

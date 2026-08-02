@@ -21,11 +21,12 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
 - **`docs/superpowers/specs/2026-07-23-mcp-server-design.md`** — the authoritative **MCP server** spec (phase 2). Supersedes `research/mcp-server-design.md`.
 - **`docs/superpowers/plans/`** — the six phased, bite-sized TDD implementation plans (foundations, comments, …). Each shipped phase was built from its plan; phase 2 still needs its plan written.
 - **`src/csa_google_workspace/`** — the library (see layout below).
-- **`TODO.md`** — the post-roadmap backlog: a *menu*, ordered by leverage-to-effort, with the explicit deferrals and their rationale. Check it before proposing "missing" features — most are already recorded decisions. (Its stated test count and its `.superpowers/sdd/progress.md` pointer are stale; that path does not exist.)
+- **`TODO.md`** — the post-roadmap backlog: a *menu*, ordered by leverage-to-effort, with the explicit deferrals and their rationale. Check it before proposing "missing" features — most are already recorded decisions.
 - **`SECURITY.md`** — the threat model. **Prompt injection through document/comment content is the named primary risk**, and it constrains any change that surfaces content to a model (all of phase 2). Also: token custody, scope breadth, per-user isolation.
 - **`research/`** — canonical API-behavior references: `google-drive-comments-reference.md` (Drive comments), `docs-suggestions-reference.md` (Docs suggestions), `server-landscape.md` (prior art). `mcp-server-design.md` / `mcp-protocol-notes.md` are **earlier** MCP notes, kept for reference only — the `docs/superpowers/specs/` one above is authoritative.
 - **`experiments/`** — runnable empirical probes, each with a dated `RESULTS.md`. **Probe beats docs:** when Google's documentation and a probe disagree, the probe wins, and the finding is folded back into `research/`.
-- **`AGENTS.md`** — a shorter, overlapping guide for other agent harnesses. If you change a convention here, change it there too.
+
+**This file is the single guide for agents working here.** A duplicate `AGENTS.md` was removed in favour of keeping one file correct — it had drifted into stating the opposite of reality on tooling. If another harness needs an `AGENTS.md`, make it a pointer to this file rather than a second copy.
 
 ## Code layout (`src/csa_google_workspace/`)
 
@@ -95,13 +96,15 @@ login + token-file handling, `CSA_GW_OAUTH=1`). The latter two skip unless opted
 
 ## Working in this repo
 
-- **Branch + PR for every change** (never commit to `main`); merge when CI is green.
+- **Branch + PR for every change** (never commit to `main`); merge when CI is green. Branch names use conventional prefixes (`feat/`, `fix/`, `docs/`, `chore/`).
+- **Commits** use conventional prefixes with short imperative subjects — the set actually in use is `docs:` · `feat:` · `fix:` · `test:` · `ci:` · `chore:` · `security:` · `enh:` · `release:` (e.g. `fix: preserve deleted comment metadata`). A PR body should say what behavior changed, which tests were run, link the related plan/spec, and call out any Google API or credential implications.
+- **Public API is the package root.** Anything users are meant to touch is re-exported from `csa_google_workspace/__init__.py` and listed in `__all__` — including the types embedders need for custom backends (`Backend`, `Document`, `CommentCollection`, `DetachedError`). Adding a user-facing type means adding it there. Note that `tests/test_public_api.py` only asserts a required **subset** of `__all__` — it will not catch a new type you forgot to export, so that step is on you.
 - **CI** (`.github/workflows/tests.yml`, runs on every PR): a `lint` job (ruff + mypy), a `test` matrix (pytest + coverage, Python 3.10–3.13, `fail_under=85`), and a `security` job (`pip-audit` + `bandit`). GitHub **CodeQL** default-setup also runs. Two gotchas seen: CodeQL flags `"host" in url`-style substring checks (`py/incomplete-url-substring-sanitization`) even in test assertions; and an OAuth **scope grant ≠ API enablement** — a scoped token still 403s `SERVICE_DISABLED` until each API (Docs/Sheets/Slides) is enabled in the Cloud project.
 - **New work follows the plan-then-execute rhythm:** write a spec/plan under `docs/superpowers/`, then implement TDD (unit tests via `FakeBackend`). Keep `README.md`'s manifest and `CHANGELOG.md` in sync. (Phase 1 — the library — is complete and on PyPI; phase 2 is the built-in MCP server, spec'd but unbuilt.)
 - **Style:** ruff (`E,F,W,I,B,UP`, line-length 120) and mypy both gate CI. `E702` is **deliberately ignored** — one-line `a = …; b = …` is a pervasive house style here, not a defect; match it rather than splitting lines. The google-api/auth stack ships no stubs, so those imports are `ignore_missing_imports`.
 - **Dependabot** opens `pip` + `github-actions` bumps and `dependabot-auto-merge.yml` auto-merges patch/minor once tests pass. Actions are **pinned to commit SHAs** — keep new ones pinned (`uses: owner/action@<sha>  # vX.Y.Z`).
 - `main` **is branch-protected and enforced for admins**: `lint`, `test (3.10–3.13)`, and `security` must pass; direct and force pushes are blocked. Required approving reviews are set to 0 so the solo/AI PR flow merges on green checks.
-- OAuth secrets (`credentials.json`, `token*.json`) and probe transcripts are gitignored — never commit them. The client secret must be an **installed/desktop-app** OAuth client.
+- **Never commit** OAuth secrets (`credentials.json`, `token*.json`), probe transcripts, or **extracted document data** — real comment/document content pulled from Drive during probes or live runs. `.gitignore` already covers the known shapes; the last category is a judgement call, so watch for it in probe output. The client secret must be an **installed/desktop-app** OAuth client.
 
 ### Cutting a release
 
