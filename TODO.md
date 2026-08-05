@@ -33,6 +33,19 @@ added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by
   + docs + a gated live smoke. This is the actual next action.
 - [ ] **Then execute it** TDD, per task, against `FakeBackend` + FastMCP's in-memory client.
 
+Deferred out of phase 2, recorded during the 2026-08-05 auth revision (spec §11):
+
+- [ ] **Hosted / server-side login for the MCP server.** A remote, multi-user server (Streamable
+  HTTP + the MCP OAuth 2.1 resource-server model, per-user token custody in a real secret store)
+  is a **separate design**, not a flag on the local one — it inverts the token-custody model
+  `SECURITY.md` is built around. v1 is local, self-hosted, single-user.
+- [ ] **Credential provenance — decide whether CSA ships a verified OAuth client.** Users supply
+  their own client secrets today, because full `.../auth/drive` is a *restricted* scope: a public
+  CSA-owned client would need Google app verification **plus** an annual CASA third-party security
+  assessment, and the API ToS forbid embedding credentials in an open-source project. This is a
+  cost/ownership call, not an engineering one — `main()` reads `CSA_GW_CLIENT_SECRETS` either way,
+  so it can land any time without redesign.
+
 Note the scope shift: everything *below* this section is library-internal, but phase 2 is a
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
