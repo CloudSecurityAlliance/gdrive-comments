@@ -33,6 +33,29 @@ added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by
   + docs + a gated live smoke. This is the actual next action.
 - [ ] **Then execute it** TDD, per task, against `FakeBackend` + FastMCP's in-memory client.
 
+- [ ] **File allowlisting — scope a `Workspace` to specific files and operations.**
+  ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) Listed here
+  rather than in the library-internal section below because **it is arguably a phase-2
+  dependency, not a parallel nicety.** The locked phase-2 decision is *read + write on by
+  default*, hedged with tool annotations and `CSA_GW_READ_ONLY=1`. That hedge is all-or-nothing:
+  the only choices an operator gets are "this agent may write to everything you can reach" or
+  "nothing". An allowlist is the missing middle, and it is what makes write-on-by-default
+  defensible rather than merely convenient.
+  **Cheap to build**: every one of the 25 `Backend` Protocol methods takes `file_id` first, so a
+  wrapping `AllowlistBackend` enforces uniformly with no changes to existing methods, composed
+  through the documented `Workspace(backend=…)` seam. `read_only` is the precedent — the
+  allowlist is its fine-grained sibling and the two should be one mechanism, not two.
+  **The MCP server also answers the hard half.** #82 notes that session scoping only means
+  something if it is monotonically narrowing *and* set by the host rather than callable by the
+  guest — otherwise an agent just widens its own scope. **An MCP server session is exactly that
+  boundary**: the server constructs the scoped `Workspace` per session, and the client has no
+  in-band way to broaden it. So "session-level allowlisting" has a concrete home in phase 2
+  rather than being an open question.
+  **Driver**: CSA-Plugins#27 wants agentic read/edit/comment on live Google Docs authored by
+  volunteers. The blocker there is not capability — this library already has it — it is that
+  handing volunteers unscoped write access to their own Drive is not defensible. Prevention has
+  to carry the weight, because Docs has no selective undo.
+
 Deferred out of phase 2, recorded during the 2026-08-05 auth revision (spec §11):
 
 - [ ] **Hosted / server-side login for the MCP server.** A remote, multi-user server (Streamable
