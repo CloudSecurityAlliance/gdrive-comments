@@ -59,6 +59,21 @@ added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by
   boundary**: the server constructs the scoped `Workspace` per session, and the client has no
   in-band way to broaden it. So "session-level allowlisting" has a concrete home in phase 2
   rather than being an open question.
+  **Requirement surface is captured in full on #82** so nothing is rediscovered mid-build. Summary
+  of what must be considered: **two independent dimensions** — capability gating *at all* (write /
+  create-comment / update / delete / resolve / accept-suggestion, each on-or-off globally) and
+  **per-URL scope** for each capability that is enabled — with the composition rule that **global
+  is a ceiling and per-file grants narrow, never widen**. Plus the parts that decide whether it is
+  actually usable: **obtaining the URLs** (folder enumeration as a *generator* producing a
+  reviewable committed list, never as a live rule — folder-as-rule reintroduces TOCTOU when someone
+  drops a file in), **config ergonomics** (plain-text and diffable so it reviews like code, a
+  reason field per entry so "why is this writable" is answerable in six months, URL forms accepted
+  as pasted, validation on load), **fail-closed behaviour** for every failure mode including the
+  no-policy-configured default, **operational lifecycle** (immediate revocation, optional expiry,
+  dead-entry detection, and new-file creation which probably sits outside the list since it cannot
+  damage anything existing), and **observability** — log allowed *and* denied with the matching
+  rule, since denials are the security signal, plus a dry-run mode answering "what would this run
+  touch" before it touches anything.
   **Driver**: CSA-Plugins#27 wants agentic read/edit/comment on live Google Docs authored by
   volunteers. The blocker there is not capability — this library already has it — it is that
   handing volunteers unscoped write access to their own Drive is not defensible. Prevention has
