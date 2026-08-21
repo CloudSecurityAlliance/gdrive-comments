@@ -41,6 +41,14 @@ added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by
   the only choices an operator gets are "this agent may write to everything you can reach" or
   "nothing". An allowlist is the missing middle, and it is what makes write-on-by-default
   defensible rather than merely convenient.
+  **Shape settled 2026-08-21**: an explicit **write-allowlist of Drive URLs** — read stays as broad
+  as the credentials allow, only mutation is gated. The goal is damage containment rather than
+  confidentiality: the agent already sees whatever the user sees, so what must be bounded is what
+  it can *break*. Keyed on URLs because that is what people paste (`parse_file_id` normalises to
+  IDs internally). And the list is **curated, not per-user** — e.g. the CSA WG document URLs —
+  which means a volunteer installs the tooling and it is physically incapable of damaging anything
+  outside the list, whether or not they understand why. That is a better story than per-user config,
+  because it does not depend on the least-equipped person making a good decision.
   **Cheap to build**: every one of the 25 `Backend` Protocol methods takes `file_id` first, so a
   wrapping `AllowlistBackend` enforces uniformly with no changes to existing methods, composed
   through the documented `Workspace(backend=…)` seam. `read_only` is the precedent — the
