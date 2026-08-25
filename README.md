@@ -52,7 +52,8 @@ sheet.comments_by_cell("B11")                       # comments mapped back to a 
 pipx install "csa-google-workspace[mcp]"      # pip works too — see the note below
 
 # Once, in a terminal: authorize as yourself (opens a browser).
-export CSA_GW_CLIENT_SECRETS=/path/to/client_secret.json   # Desktop-app OAuth client
+# Put your Desktop-app OAuth client at ~/.csa_google_workspace/client_secret.json
+# (or point CSA_GW_CLIENT_SECRETS somewhere else), then:
 csa-google-workspace-mcp login
 csa-google-workspace-mcp login --force        # ...or re-authorize deliberately
 
@@ -78,8 +79,9 @@ can already reach.
 output and read-only/destructive annotations.
 
 **Environment:** `CSA_GW_TOKEN` (token cache, default `~/.csa_google_workspace/token.json`),
-`CSA_GW_READ_ONLY=1` (refuse writes), `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a
-cached token carries its own client id and secret).
+`CSA_GW_READ_ONLY=1` (refuse writes), `CSA_GW_CLIENT_SECRETS` (needed by `login` only, and
+only to override the default `~/.csa_google_workspace/client_secret.json` — a cached token
+carries its own client id and secret, so the running server never needs it).
 
 `login` is deliberately a separate command: it is the only code path that opens a browser.
 The server never prompts, because under stdio its stdout **is** the JSON-RPC channel and the

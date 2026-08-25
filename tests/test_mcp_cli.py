@@ -265,3 +265,45 @@ def test_page_embeds_the_logo_and_avoids_the_superseded_orange():
     assert "<svg" in SUCCESS_HTML and "Cloud Security Alliance" in SUCCESS_HTML
     assert "#00549F" in SUCCESS_HTML                      # CSA Blue B500
     assert "#FF7A00" not in SUCCESS_HTML.upper().replace("#F98526", "")
+
+
+# --- login finds the client secrets without being told -----------------------
+#
+# The setup script writes the client to ~/.csa_google_workspace/client_secret.json — a
+# path this package chose. Requiring an env var to point back at our own convention just
+# makes the user rediscover it, which is exactly what happened in practice.
+
+def test_login_uses_the_default_client_secrets_path_when_env_is_unset(tmp_path, monkeypatch):
+    secrets = tmp_path / "client_secret.json"
+    secrets.write_text("{}")
+    monkeypatch.setattr("csa_google_workspace.mcp._login.DEFAULT_CLIENT_SECRETS_PATH", str(secrets))
+    monkeypatch.setattr("csa_google_workspace.mcp._login.load_cached_credentials",
+                        lambda tp, ro: (_ for _ in ()).throw(auth.AuthError("no cached credentials")))
+    called = {}
+    monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
+                        lambda cs, tp, read_only=False, force=False: called.update(cs=cs))
+
+    assert cli.main(["login"], {"CSA_GW_TOKEN": str(tmp_path / "t.json")}) == 0
+    assert called["cs"] == str(secrets)
+
+
+def test_env_var_still_wins_over_the_default(tmp_path, monkeypatch):
+    default = tmp_path / "default.json"; default.write_text("{}")
+    explicit = tmp_path / "explicit.json"; explicit.write_text("{}")
+    monkeypatch.setattr("csa_google_workspace.mcp._login.DEFAULT_CLIENT_SECRETS_PATH", str(default))
+    monkeypatch.setattr("csa_google_workspace.mcp._login.load_cached_credentials",
+                        lambda tp, ro: (_ for _ in ()).throw(auth.AuthError("none")))
+    called = {}
+    monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
+                        lambda cs, tp, read_only=False, force=False: called.update(cs=cs))
+
+    cli.main(["login"], {"CSA_GW_CLIENT_SECRETS": str(explicit), "CSA_GW_TOKEN": str(tmp_path / "t.json")})
+    assert called["cs"] == str(explicit)
+
+
+def test_missing_everywhere_says_where_it_looked(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("csa_google_workspace.mcp._login.DEFAULT_CLIENT_SECRETS_PATH",
+                        str(tmp_path / "absent.json"))
+    assert cli.main(["login"], {}) == 2
+    err = capsys.readouterr().err
+    assert "CSA_GW_CLIENT_SECRETS" in err and "absent.json" in err

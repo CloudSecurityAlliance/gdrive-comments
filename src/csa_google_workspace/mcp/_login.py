@@ -19,6 +19,12 @@ from ..exceptions import AuthError
 from ..workspace import Workspace
 from ._config import Settings
 
+# Where the CSA setup scripts place the OAuth client. `login` falls back to this when
+# CSA_GW_CLIENT_SECRETS is unset, because requiring an env var that points at a path this
+# package itself chose only makes the user rediscover our own convention — which is
+# exactly what happened the first time someone ran it.
+DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"   # nosec B105 - a path
+
 
 @contextlib.contextmanager
 def _branded_success_page():
@@ -88,9 +94,16 @@ def login(settings: Settings, env: Mapping[str, str], *, force: bool = False, ou
     out = out or sys.stdout
     client_secrets = env.get("CSA_GW_CLIENT_SECRETS")
     if not client_secrets:
-        print("CSA_GW_CLIENT_SECRETS is not set — point it at your OAuth client secrets JSON",
-              file=sys.stderr)
-        return 2
+        default = os.path.expanduser(DEFAULT_CLIENT_SECRETS_PATH)
+        if os.path.exists(default):
+            client_secrets = default
+        else:
+            print("No OAuth client secrets found. Looked at:\n"
+                  "  $CSA_GW_CLIENT_SECRETS  (not set)\n"
+                  f"  {DEFAULT_CLIENT_SECRETS_PATH}  (does not exist)\n"
+                  "Set CSA_GW_CLIENT_SECRETS to your Desktop-app OAuth client JSON, or put it "
+                  "at the path above.", file=sys.stderr)
+            return 2
 
     if not force:
         try:
