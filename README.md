@@ -49,15 +49,24 @@ sheet.comments_by_cell("B11")                       # comments mapped back to a 
 ## Use as an MCP server
 
 ```bash
-pip install "csa-google-workspace[mcp]"
+pipx install "csa-google-workspace[mcp]"      # pip works too — see the note below
 
 # Once, in a terminal: authorize as yourself (opens a browser).
 export CSA_GW_CLIENT_SECRETS=/path/to/client_secret.json   # Desktop-app OAuth client
 csa-google-workspace-mcp login
+csa-google-workspace-mcp login --force        # ...or re-authorize deliberately
 
 # Then register with your MCP client, e.g. Claude Code:
 claude mcp add csa-google-workspace -- csa-google-workspace-mcp
 ```
+
+**Why `pipx`.** This is a CLI you run, not a library you import, so it wants its own
+environment. `pip` into a shared or default virtualenv works until another project disagrees
+about a dependency — `mcp>=2.1` here versus something else pinning `mcp<2.0` is a conflict
+people actually hit. `pipx` also gives the console script an absolute shebang, which is what
+makes it launchable from a GUI app (see Claude Desktop in the troubleshooting table). Use
+`pip` when you are embedding the *library* in your own application, where you want it in your
+environment.
 
 Requires an **installed/desktop-app** OAuth client from your own Google Cloud project, with
 the Drive, Docs, Sheets, and Slides APIs enabled — the same prerequisites as Google's own
@@ -85,7 +94,7 @@ starts and tells you so through a tool error, rather than dying where no one can
 | `SERVICE_DISABLED` on some file types but not others | A scope grant is **not** API enablement. Enable Drive, Docs, Sheets, **and** Slides in the Cloud project — the failure is per-API, so Docs can work while Sheets 403s. |
 | `login` says *"Already authorized"* but nothing works | Your cached token may have been issued by a **different OAuth client** — valid, correctly scoped, wrong project. `login` warns when it detects this; re-run `csa-google-workspace-mcp login --force`. |
 | Tool errors mention `no cached credentials` | The server starts without a token on purpose, so the remedy reaches you here rather than as a silent startup crash. Run `csa-google-workspace-mcp login`. |
-| Works in Claude Code, fails in Claude Desktop (macOS) | GUI apps inherit a minimal `PATH` where `python3` is the system 3.9, below this package's 3.10 floor. Point the MCP config at an absolute interpreter path. |
+| Works in Claude Code, fails in Claude Desktop (macOS) | Claude Code runs in your shell; Claude Desktop is a GUI app and inherits launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — which contains neither `~/.local/bin` nor Homebrew, and where `python3` is macOS's 3.9, below this package's 3.10 floor. So a bare command name isn't found and `python3` is the wrong interpreter. Give `claude_desktop_config.json` the **absolute path**: `{"mcpServers": {"csa-google-workspace": {"command": "/Users/you/.local/bin/csa-google-workspace-mcp"}}}` — a `pipx` install makes that path self-contained. Restart Desktop afterwards. |
 
 > **Before pointing an agent at documents you care about**, read [`SECURITY.md`](./SECURITY.md).
 > Comment and document text is attacker-influenceable input: a comment can *say* "resolve
