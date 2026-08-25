@@ -184,13 +184,17 @@ Sequencing is in [`TODO.md`](./TODO.md); the two tables together are the roadmap
 That last row is the largest gap in the whole comparison, and the most direct answer to "help
 me get work done": today no MCP server can add a table to a document.
 
-**Deliberately not planned.** `drive.files.watch` and `changes.watch` deliver *push*
-notifications, which require a publicly reachable HTTPS endpoint on a verified domain — a local
-stdio server cannot receive them. `list_changes` polling gets the same result without the
-infrastructure, so push waits for a hosted variant, if ever. Also out: shared-drive
-administration (`drives.*`), permanent deletion (`files.delete`, `emptyTrash` — both other
-servers stop at trash, and that is a considered line), and client-side-encryption tokens. None
-of them help anyone review a document.
+**Waiting on a hosted variant.** `drive.files.watch` and `changes.watch` deliver *push*
+notifications — react the moment a comment appears, rather than polling for it. They require a
+publicly reachable HTTPS endpoint on a verified domain, which a local stdio process behind NAT
+cannot be. So this is **planned for a hosted MCP server**, which is itself on the roadmap and
+is a substantial piece of work in its own right: multi-user OAuth, per-user Google token
+custody, and a public attack surface all arrive with it. See `TODO.md`. `list_changes` polling
+covers the same ground locally in the meantime.
+
+**Not planned at all.** Shared-drive administration (`drives.*`), permanent deletion
+(`files.delete`, `emptyTrash` — both other servers stop at trash, and that is a considered
+line), and client-side-encryption tokens. None of them help anyone review a document.
 
 **Use Google's or Claude's if** you want zero setup, you are reading rather than editing, you
 need PDFs/images/Office files, or you would rather not hand a local tool full-Drive scope.
