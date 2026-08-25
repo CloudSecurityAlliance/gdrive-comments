@@ -82,14 +82,18 @@ class Scope:
     all_files: bool = False
     ids: frozenset[str] = frozenset()
     entries: tuple[Entry, ...] = field(default=(), repr=False)
+    # Why this scope is empty, when it is. Carried so a denial can say *which* variable to set
+    # and why it currently yields nothing — "not set" and "set but empty" behave identically
+    # and have completely different fixes.
+    reason: str | None = None
 
     @classmethod
     def everything(cls) -> Scope:
         return cls(all_files=True)
 
     @classmethod
-    def nothing(cls) -> Scope:
-        return cls(all_files=False)
+    def nothing(cls, reason: str | None = None) -> Scope:
+        return cls(all_files=False, reason=reason)
 
     @classmethod
     def from_listing(cls, listing: Listing) -> Scope:
@@ -310,9 +314,9 @@ class PolicyBackend:
     def _denied(self, name: str, file_id: str, access: str, scope: Scope) -> Exception:
         which = "CSA_GW_ALLOWLIST_READ" if access == READ else "CSA_GW_ALLOWLIST_MODIFY"
         if not scope.all_files and not scope.ids:
-            detail = (f"no {access} allowlist is configured, so nothing is permitted. An "
-                      f"operator sets {which} to a list of document URLs, or to `*` for "
-                      f"unrestricted {access} access.")
+            why = scope.reason or f"no {access} allowlist is configured."
+            detail = (f"nothing is permitted for {access}. {why} An operator sets {which} to a "
+                      f"list of document URLs, or to `*` for unrestricted {access} access.")
         else:
             detail = (f"it is not in the {access} allowlist ({scope.describe()}). An operator "
                       f"adds the document's URL to {which}.")

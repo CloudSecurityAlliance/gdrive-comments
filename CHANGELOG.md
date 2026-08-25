@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-08-25 — v0.9.1 (say *which* kind of misconfiguration it is)
+
+There are exactly three outcomes for an allowlist setting: `*`, a set of document URLs, or
+**unusable** — and unusable always means *nothing permitted*. "Unusable" covers a lot of ground,
+so the server now says which kind it hit.
+
+### Added
+
+- **`diagnose_url()`** — a ladder of specific cases instead of one "invalid value". Each rung is
+  a mistake somebody actually makes:
+
+  | Input | Diagnosis |
+  |---|---|
+  | `…/document/d/` | the URL stops after `/d/`, so the file id is missing |
+  | `…/document/d/AAA…/edit` | contains `…`, so it looks like a placeholder copied from documentation |
+  | `…/document/` | a Google URL with no `/d/<id>` segment |
+  | a bare file id | needs the full URL — a link can be opened and checked by a reviewer |
+  | a folder URL | folders are not supported yet; list the documents inside |
+  | `https://example.com/x` | the host is not a Google Docs or Drive address |
+
+- **`diagnose_setting()`** — distinguishes **not set** from **set but empty**. They behave
+  identically and have completely different fixes: one means nobody configured it, the other
+  usually means a config template or an unexpanded shell variable, and the message says so.
+- **`Scope.reason`** — an empty scope carries *why* it is empty, so a refusal can name the
+  variable and the cause. "Denied" on its own is not actionable. The text reaches the user twice:
+  on stderr at startup, and in the error from any tool that was refused, where the model can
+  relay it.
+
+The diagnosis is **deterministic**, not inferred, so it is testable and cannot be wrong about
+what it found. The model's job is to relay it, not to guess it.
+
+### Fixed
+
+- **A real file id containing `AAA` could have been diagnosed as a placeholder.** Drive ids are
+  random base64url, so a 44-character id will occasionally contain such a run. Id extraction now
+  runs *before* the placeholder check — diagnosing a working URL as a mistake would be worse than
+  any message it replaced.
+
+### Docs
+
+The comparison table's scoping row is split into three — read scope, modify scope, per-capability
+gating — and the other two servers' columns say what is actually true rather than just `✗`:
+
+- **Google's server** reaches the same outcome by a different and arguably better route. It
+  authorizes with **`drive.file`**, so Google itself limits it to files the user explicitly
+  picked — allowlisting enforced upstream, where it cannot be misconfigured — and its only writes
+  *create new files*, so there is nothing to scope. It has no knobs because it does not need any.
+- **The claude.ai connector** is the one that differs in substance: full `drive` access plus
+  `update_file`, `trash_file` and `share_file`, with no way to narrow any of it.
+- **This library** needs full `drive` scope by design, because it opens arbitrary files the user
+  names and `drive.file` cannot reach those. Having given up Google's upstream enforcement, it
+  owes an equivalent — and these controls are it.
+
 ## 2026-08-25 — v0.9.0 (read and modify allowlists, and unset now means nothing)
 
 **Breaking.** The single `CSA_GW_ALLOWLIST` becomes two — `CSA_GW_ALLOWLIST_READ` and

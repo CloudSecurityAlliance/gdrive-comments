@@ -56,6 +56,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 from . import exceptions as exc
 
@@ -112,6 +113,79 @@ class Entry:
         return f"Entry(file_id={self.file_id!r}, line={self.line}, has_reason={self.reason is not None})"
 
 
+PLACEHOLDER_MARKS = ("…", "...", "<", ">", "[", "]", "{", "}", "xxx", "AAA", "BBB")
+GOOGLE_HOSTS = ("docs.google.com", "drive.google.com", "sheets.google.com",
+                "slides.google.com")
+
+
+def diagnose_url(text: str) -> str | None:
+    """Why `text` is not a usable document URL — or `None` if it is fine.
+
+    Deliberately a ladder of specific cases rather than one "invalid URL". Every rung here
+    corresponds to a mistake somebody actually makes, and the difference between "invalid
+    value" and "the URL stops after /d/, so the file id is missing" is the difference between
+    a support conversation and a fix. Deterministic, so it is testable and cannot be wrong
+    about its own diagnosis; the model reading the tool error is what relays it in prose.
+    """
+    candidate = text.strip()
+    if not candidate:
+        return "the value is empty"
+
+    if _FOLDER.search(candidate):
+        return ("it is a folder, and folders are not supported in the allowlist yet. List the "
+                "individual document URLs inside it instead. (Folder support needs the "
+                "traversal, shortcut and TOCTOU questions settled first — see TODO.md, "
+                "'Folders in the allowlist')")
+
+    # Extraction is attempted *before* the placeholder check, and the order is load-bearing:
+    # a genuine 44-character Drive id is random base64url and will occasionally contain a
+    # sequence like "AAA". Diagnosing a working URL as a placeholder would be worse than any
+    # message it replaced.
+    if _ID_IN_PATH.search(candidate) or _ID_IN_QUERY.search(candidate):
+        return None                                    # usable
+
+    lowered = candidate.lower()
+    for mark in PLACEHOLDER_MARKS:
+        if mark.lower() in lowered:
+            return (f"it contains {mark!r}, so it looks like a placeholder copied from "
+                    f"documentation rather than a real link. Open the document and copy the "
+                    f"URL from your browser's address bar")
+
+    if "://" not in candidate and "/" not in candidate:
+        return ("that looks like a bare file id rather than a URL. The allowlist needs the "
+                "full URL — a link can be opened and checked by whoever reviews it, and a "
+                "bare id cannot be told apart from a typo")
+
+    host = (urlparse(candidate).netloc or "").lower()
+    if any(host.endswith(g) for g in GOOGLE_HOSTS):
+        if re.search(r"/d/?$", candidate):
+            return ("the URL stops after '/d/', so the file id is missing. It should look "
+                    "like .../document/d/<long-id>/edit")
+        return ("it is a Google URL but has no '/d/<id>' segment. Copy the whole address "
+                "from your browser while the document is open")
+    if host:
+        return (f"the host is {host!r}, which is not a Google Docs or Drive address. Expected "
+                f"one of: {', '.join(GOOGLE_HOSTS)}")
+    return ("it is not a Google document URL. Expected something like "
+            "https://docs.google.com/document/d/<id>/edit")
+
+
+def diagnose_setting(variable: str, value: str | None, default_path: str) -> str:
+    """Why a whole configuration field yields nothing — the fail-closed case.
+
+    Distinguishing "unset" from "set but empty" matters: they look identical in behaviour and
+    have completely different fixes. One means nobody configured it; the other usually means a
+    template was filled in with a blank, or a shell expanded an undefined variable to nothing.
+    """
+    if value is None:
+        return f"{variable} is not set, and there is no file at {default_path}."
+    if not value.strip():
+        return (f"{variable} is set but empty — which is not the same as unset. If it came "
+                f"from a config template or an unexpanded shell variable, that is the thing "
+                f"to fix rather than this.")
+    return f"{variable} yielded no usable entries."
+
+
 def parse_document_url(text: str) -> str:
     """A pasted Drive/Docs URL -> file id.
 
@@ -127,26 +201,18 @@ def parse_document_url(text: str) -> str:
     in a reviewed config file is *clickable*: someone approving the entry can open it and
     see what they are granting.
     """
-    candidate = text.strip()
-    if not candidate:
-        raise AllowlistError("empty URL")
-
-    folder = _FOLDER.search(candidate)
-    if folder:
+    problem = diagnose_url(text)
+    if problem is not None:
+        raise AllowlistError(f"{text.strip()!r}: {problem}")
+    found = _ID_IN_PATH.search(text) or _ID_IN_QUERY.search(text)
+    if found is None:
+        # Unreachable while `diagnose_url` and the two patterns agree — but not an `assert`:
+        # under `python -O` an assert vanishes and this becomes an AttributeError on None,
+        # which is a worse failure than the one it was guarding against.
         raise AllowlistError(
-            f"{candidate!r} is a folder, and folders are not supported in the allowlist yet. "
-            f"List the individual document URLs inside it instead. (Folder support needs the "
-            f"traversal, shortcut and TOCTOU questions settled first — see TODO.md, "
-            f"'Folders in the allowlist'.)")
-
-    for pattern in (_ID_IN_PATH, _ID_IN_QUERY):
-        found = pattern.search(candidate)
-        if found:
-            return found.group(1)
-
-    raise AllowlistError(
-        f"{candidate!r} is not a Google document URL. Expected something like "
-        f"https://docs.google.com/document/d/<id>/edit — a full URL, not a bare file id.")
+            f"{text.strip()!r}: no file id could be extracted, though it passed validation. "
+            f"This is a bug in the allowlist parser, not in your configuration.")
+    return found.group(1)
 
 
 def parse_allowlist(text: str, *, source: str = "<string>") -> Listing:

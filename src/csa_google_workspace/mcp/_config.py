@@ -23,7 +23,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .. import auth
-from ..allowlist import AllowlistError, Listing, is_inline, load_allowlist, parse_inline
+from ..allowlist import (
+    AllowlistError,
+    Listing,
+    diagnose_setting,
+    is_inline,
+    load_allowlist,
+    parse_inline,
+)
 from ..exceptions import AuthError
 from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy, Scope
 from ..workspace import Workspace
@@ -133,7 +140,8 @@ def _scope_from_env(env: Mapping[str, str], variable: str, default_path: str) ->
       <VAR>=/path/to/file              an explicit path
       (unset)                          the default path if it exists, else nothing
     """
-    value = (env.get(variable) or "").strip()
+    raw = env.get(variable)
+    value = (raw or "").strip()
     if value:
         listing = (parse_inline(value, source=variable) if is_inline(value)
                    else _scope_from_value(value, variable))
@@ -141,7 +149,8 @@ def _scope_from_env(env: Mapping[str, str], variable: str, default_path: str) ->
     expanded = os.path.expanduser(default_path)
     if os.path.exists(expanded):
         return Scope.from_listing(load_allowlist(expanded))
-    return Scope.nothing()
+    # Fail closed, and say which of the two indistinguishable cases this is.
+    return Scope.nothing(reason=diagnose_setting(variable, raw, expanded))
 
 
 def _scope_from_value(value: str, variable: str) -> Listing:
@@ -247,9 +256,10 @@ def startup_warnings(settings: Settings) -> list[str]:
             out.append(f"{label}: UNRESTRICTED — every file your Google account can reach. "
                        f"Set {variable} to a list of document URLs to narrow it.")
         elif not scope.ids:
-            out.append(f"{label}: nothing permitted, so every {label.lower()} will be "
-                       f"refused. Set {variable} to a list of document URLs, or to `*` for "
-                       f"unrestricted access.")
+            why = scope.reason or f"{variable} is not configured."
+            out.append(f"{label}: nothing permitted — every {label.lower()} will be refused. "
+                       f"{why} Set it to a list of document URLs, or to `*` for unrestricted "
+                       f"access.")
         else:
             out.append(f"{label}: {scope.describe()}.")
     return out
