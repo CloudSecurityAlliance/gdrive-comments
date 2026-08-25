@@ -267,6 +267,52 @@ is not a read.)
       (live multi-reviewer sessions make a self-invalidated cache actively wrong), but adding
       one later changes observable behaviour. Name the parameter now; leave it off.
 
+### Gate D2 — release history and provenance
+
+Housekeeping that only gets harder with time, and that a public 1.0 at a security organisation
+should not skip. Prompted by noticing the changelog claimed versions nobody could install.
+
+- [x] **Reconcile the changelog against reality** — done 2026-08-25. `v0.3.0` and
+      `v0.4.0`–`v0.10.1` were development versions: bumped in code as each change landed, never
+      tagged, never published, all shipped together as `v0.11.0`. `CHANGELOG.md` now says so at
+      the top instead of implying eleven installable releases.
+- [ ] **Reconcile tags against PyPI properly.** Published: 0.1.0, 0.1.1, 0.1.2, 0.2.0–0.2.5,
+      0.3.1, 0.11.0. Tags exist for all but 0.1.0 and 0.1.1, which predate the habit. Decide
+      whether to tag those retroactively (probably yes, pointing at the right commits) and
+      whether to *not* tag the development versions (probably yes — a tag should mean released).
+- [ ] **Can a third party verify that PyPI 0.2.3 is git v0.2.3?** Releases go out via Trusted
+      Publishing, so the provenance exists in principle. Confirm PEP 740 attestations are
+      actually attached to each artifact, and write down the command to check one. "Built by
+      GitHub Actions from this tag" is only useful if someone can see it without asking us.
+- [ ] **State the authorship honestly, and pick a mechanism.** Every one of the 113 non-bot
+      commits is authored `Kurt Seifried <kurt@seifried.org>`, and a large share of the content —
+      code, tests, specs, this file — was written by an AI assistant working under his
+      direction and review. That is not a problem, but it *is* a fact about the supply chain of
+      a security library, and it should be in the repository rather than inferable from prose
+      style.
+      Options: a `PROVENANCE.md`; `Co-authored-by:` / `Assisted-by:` trailers from here on; or a
+      paragraph in `README.md` and `SECURITY.md`. Whichever it is, say who reviewed as well as
+      who wrote — review is the part that carries the weight, and the answer today is "one
+      person", which is worth knowing.
+      Relevant beyond honesty: Google app verification and the CASA assessment on 1.0's path
+      both ask who builds and maintains the thing.
+- [ ] **Reconstruct the decision timeline while it is still cheap.** Unusually, most of the
+      *why* is already written down — commit messages here record reasoning, not just changes,
+      and `docs/superpowers/specs/` and `plans/` carry the design arguments. What is missing is
+      an index: which decision was made when, what it superseded, and where the probe or
+      transcript that settled it lives. `experiments/*/RESULTS.md` are dated; the specs mostly
+      are not.
+- [ ] **Full-history secret scan.** A targeted check found none of the shapes `CLAUDE.md`
+      forbids ever committed — no `client_secret*`, `credentials.json`, `token*.json`, `.pem`,
+      no probe transcripts. Run `gitleaks`/`trufflehog` over the whole history anyway and record
+      the result, because "I grepped the filenames" is not the same claim.
+- [ ] **Decide a yank policy.** Nothing published looks harmful — 0.1.x/0.2.x are simply older
+      surfaces, and 0.3.1 works. But *when* we would yank rather than supersede is a decision
+      to make before it is urgent.
+
+This overlaps **C1** (the API-stability and deprecation policy): both are about what the project
+owes someone who depends on it. C1 says what will not change; this says what did.
+
 ### Gate D — the unglamorous ones that will bite a colleague
 
 - [ ] **D1 Run the PowerShell scripts on real Windows.** `CSA-Plugins/internal-setup/*.ps1` and

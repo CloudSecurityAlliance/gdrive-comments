@@ -1,5 +1,17 @@
 # Changelog
 
+> **Not every version below was published.** `v0.3.0` and `v0.4.0` through `v0.10.1` were
+> development versions: the code and this changelog were bumped as each change landed, but no
+> git tag was cut and nothing reached PyPI. They all shipped together as **v0.11.0**, so
+> `pip install csa-google-workspace==0.9.0` will not find anything. The entries are kept
+> because they are an accurate record of *what changed and why*; they are just not a record of
+> what was released.
+>
+> **Published to PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0–0.2.5, 0.3.1, 0.11.0.
+> Git tags exist for exactly those (except 0.1.0/0.1.1, predating the tagging habit).
+> Reconciling all three properly is a tracked item — see `TODO.md`, *Release history and
+> provenance*.
+
 ## 2026-08-25 — v0.11.0 (the server explains itself)
 
 Configuration this specific deserves somewhere to read about it. Two MCP **resources** and one
