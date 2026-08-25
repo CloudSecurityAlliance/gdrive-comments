@@ -123,41 +123,61 @@ this one.
 | **OAuth scope** | `drive.file` / `drive.readonly` | — | **full `drive`** |
 | **Runs on** | Google's servers | Anthropic's | your machine |
 
-### Tools, by name
+### Tools, by name — and the Google API behind each
 
-**The names are deliberately the same.** Where all three do the same thing, they use the same
-tool name and the same argument shapes, so prompts and habits transfer between them. Verified
-against live schemas — Google's and Claude's shared tools are identical in name and parameters;
-Claude's descriptions carry extra model-facing guidance, which this server copies.
+**The names are deliberately the same.** Where all three do the same thing they use the same
+tool name and the same argument shapes, so prompts and habits transfer. Verified against live
+schemas: Google's and Claude's shared tools are identical in name *and* parameters; Claude's
+descriptions carry extra model-facing guidance, which this server copies.
 
-| Tool | Google | Claude | this server |
-|---|---|---|---|
-| `search_files` | ✅ | ✅ | *planned* |
-| `list_recent_files` | ✅ | ✅ | *planned* |
-| `get_file_metadata` | ✅ | ✅ | *planned* |
-| `get_file_permissions` | ✅ | ✅ | *planned* |
-| `read_file_content` | ✅ | ✅ | *planned* |
-| `download_file_content` | ✅ | ✅ | *planned* |
-| `create_file` | ✅ | ✅ | *planned* |
-| `copy_file` | ✅ | ✅ | *planned* |
-| `update_file` *(metadata: rename/move only)* | ✗ | ✅ | *planned* |
-| `share_file` | ✗ | ✅ | *planned, gated* |
-| `trash_file` | ✗ | ✅ | *planned* |
+The API column is the point of the table — it shows what each tool actually is, and therefore
+what the gaps really cost.
 
-Only in this server — no equivalent exists in either of the others:
+| Tool | Google API it calls | Google | Claude | **here** |
+|---|---|---|---|---|
+| `search_files` | `drive.files.list` (`q=` query syntax) | ✅ | ✅ | ✗ |
+| `list_recent_files` | `drive.files.list` (`orderBy`) | ✅ | ✅ | ✗ |
+| `get_file_metadata` | `drive.files.get` | ✅ | ✅ | partial |
+| `get_file_permissions` | `drive.permissions.list` | ✅ | ✅ | ✗ |
+| `read_file_content` | `drive.files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get`; `drive.comments.list` when `includeComments` | ✅ | ✅ | partial |
+| `download_file_content` | `drive.files.export` / `files.get(alt=media)` | ✅ | ✅ | ✗ *(library has it)* |
+| `create_file` | `drive.files.create` (+ media upload) | ✅ | ✅ | ✗ |
+| `copy_file` | `drive.files.copy` | ✅ | ✅ | ✗ |
+| `update_file` — **metadata only** | `drive.files.update` (`name`, `parents`) | ✗ | ✅ | ✗ |
+| `share_file` | `drive.permissions.create` | ✗ | ✅ | ✗ |
+| `trash_file` | `drive.files.update` (`trashed=true`) | ✗ | ✅ | ✗ |
+| `list_comments` · `get_comment` | `drive.comments.list` · `comments.get` | ✗ | *inline text only* | ✅ **structured** |
+| `create_comment` | `drive.comments.create` | ✗ | ✗ | ✅ |
+| `reply_comment` | `drive.replies.create` | ✗ | ✗ | ✅ |
+| `resolve_comment` · `reopen_comment` | `drive.replies.create` (action reply) | ✗ | ✗ | ✅ |
+| `comments_by_cell` | `drive.files.export` (XLSX) → parse `threadedComments` → A1 | ✗ | ✗ | ✅ |
+| suggestions preview | `docs.documents.get(suggestionsViewMode=…)` | ✗ | ✗ | ✅ |
+| **edit a Doc** | `docs.documents.batchUpdate` | ✗ | ✗ | ✅ |
+| **edit a Sheet** | `sheets…values.update` / `.append` / `.clear`, `spreadsheets.batchUpdate` | ✗ | ✗ | ✅ |
+| **edit a Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ✅ |
+| `authenticate` | OAuth loopback + MCP URL elicitation | n/a *(hosted)* | n/a *(built in)* | ✅ |
 
-| Tool | What it does |
-|---|---|
-| `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies — not text inlined into a document dump |
-| `create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment` | The **comment lifecycle**. Triage a review thread, not just read it |
-| `comments_by_cell` | A Sheets comment mapped back to **the cell it is about** (best-effort; requires an XLSX-export detour) |
-| `read_text(suggestions=…)` | Preview a Doc **as if suggestions were accepted or rejected** |
-| *(library today, MCP soon)* content editing | `replace_text`, `insert_text`, `append_text`, `delete_range`, Sheets `update`/`append_rows`/`clear`, Slides `insert_text` |
-| `authenticate` | Browser consent from inside the client. The hosted servers do not need this; a local one does |
+**Neither of the others can edit an existing file's content.** `create_file` uploads a *new*
+file; `update_file` only renames or moves. Look down the `batchUpdate` rows — that is the
+difference, and it is not a matter of tool count.
 
-**Neither of the others can edit an existing file's content at all** — `create_file` uploads a
-new file and `update_file` only renames or moves. That, rather than tool count, is the
-difference between them and this.
+### Where all three still stop
+
+These exist in the API and no server exposes them. Listed because the same table that shows a
+gap in our column should be honest about the gaps in everyone's.
+
+| Capability | Google API | Why it is interesting |
+|---|---|---|
+| **Approval workflow** | `drive.approvals.start` / `approve` / `decline` / `reassign` / `cancel` / `comment` | A document review workflow, already in the API, next to the comment workflow this library owns |
+| **Version history** | `drive.revisions.list` / `get` / `update` / `delete` | Read a prior version, diff two, pin one |
+| **Change feed** | `drive.changes.list` / `watch` | Incremental sweep instead of re-reading everything |
+| **Push notification** | `drive.files.watch` | React to a new comment instead of polling |
+| **Labels / classification** | `drive.files.modifyLabels` / `listLabels` | Data governance |
+| **Slide thumbnails** | `slides.presentations.pages.getThumbnail` | Let a model actually *see* a deck |
+| **Durable range annotation** | `sheets…developerMetadata.search` | Survives edits, unlike A1 ranges |
+| **Docs structure & styling** | `docs.documents.batchUpdate` — **37 of 40 request types unused** by anyone: tables, styles, headers, images, named ranges, tabs, smart chips | The largest single gap in the whole comparison |
+
+Roadmap and sequencing for all of the above: [`TODO.md`](./TODO.md).
 
 **Use Google's or Claude's if** you want zero setup, you are reading rather than editing, you
 need PDFs/images/Office files, or you would rather not hand a local tool full-Drive scope.
