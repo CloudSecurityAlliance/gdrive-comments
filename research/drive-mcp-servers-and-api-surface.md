@@ -122,7 +122,7 @@ Enumerated from the discovery documents. **Docs v1 has exactly three methods** �
 | `permissions` | `list`, `create`, `get`, `update`, `delete` | Full permission management; the connector exposes only a share-shaped slice of it. |
 | `drives` | `create`, `list`, `get`, `update`, `hide`, `unhide`, `delete` | Shared drive administration. |
 | `files.delete`, `files.emptyTrash` | | **Permanent** deletion. Note the connector deliberately stops at `trash_file`. |
-| `about.get` | | Quota, import/export formats, capabilities. |
+| `about.get` | | Quota, import/export formats, capabilities. **Now probed** — [`experiments/export-formats/RESULTS.md`](../experiments/export-formats/RESULTS.md) has the full conversion matrix. |
 | `files.generateIds`, `files.download`, `files.generateCseToken` | | Batch id pre-allocation; client-side encryption. |
 
 Already used here: `files.get`/`export`, `comments.*`, `replies.*`.
@@ -133,6 +133,16 @@ Already used here: `files.get`/`export`, `comments.*`, `replies.*`.
   `update_file` that is metadata-only. Do not carry that limit into our own naming.
 - `revisions` and `approvals` were absent from earlier research notes entirely. `research/`
   covered comments and suggestions in depth and treated the rest of Drive as out of frame.
+- **Export formats differ by document type, and roadmap #6's "images" was wrong.** Probed
+  2026-08-25: a Doc exports Markdown, HTML, EPUB, RTF, PDF, DOCX, ODT, `text/plain` and zip; a
+  **deck exports only PDF, PPTX, ODP and `text/plain`** — no Markdown, no HTML; a sheet exports
+  CSV/TSV/XLSX/ODS/PDF/zip. Only **drawings** export PNG/JPEG/SVG, and the library cannot open a
+  drawing. Full matrix: [`experiments/export-formats/RESULTS.md`](../experiments/export-formats/RESULTS.md).
+- **How the connector reads PDFs and images, probably.** Its `read_file_content` covers 13 mime
+  types including PDF and PNG/JPEG. Drive's *import* table converts `application/pdf` and
+  `image/*` **into a Doc** — i.e. OCR. If that is the mechanism, note what it costs: reading a
+  PDF that way **creates a file**, so it is not a read operation and does not belong behind a
+  `readOnlyHint`. Matching those 13 types honestly needs local extraction instead.
 
 ## 5. Consequences for the roadmap
 
