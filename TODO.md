@@ -116,7 +116,7 @@ From a 2026-07-23 release-process review (re-verified). Fixed in PR #69 (code) +
 settings, worst-first:
 
 - [x] **⚙️ `main` is protected.** Branch protection via API: required status checks (`lint`,
-  `test (3.10–3.13)`, `security`), PRs required, direct + force pushes blocked, **enforced for
+  `test (3.10–3.14)`, `security`), PRs required, direct + force pushes blocked, **enforced for
   admins**. `required_approving_review_count = 0` so the solo/AI PR flow still merges (checks
   gate, no human-approval bottleneck). *Residual (optional):* also require the CodeQL contexts,
   and/or raise the review count if a second reviewer is ever available.
