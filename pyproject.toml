@@ -86,6 +86,11 @@ select = ["E", "F", "W", "I", "B", "UP"]
 # this codebase (e.g. `self.content = ...; self.html_content = ...`). Not a defect.
 ignore = ["E702"]
 
+[tool.ruff.lint.per-file-ignores]
+# _success_page.py embeds the official CSA logo SVG verbatim. It is an asset, not code,
+# and rewrapping it would mean editing the logo — which brand rules forbid.
+"src/csa_google_workspace/mcp/_success_page.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.10"
 files = ["src"]

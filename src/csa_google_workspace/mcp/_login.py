@@ -8,6 +8,7 @@ carries JSON-RPC.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -17,6 +18,51 @@ from ..auth import load_cached_credentials
 from ..exceptions import AuthError
 from ..workspace import Workspace
 from ._config import Settings
+
+
+@contextlib.contextmanager
+def _branded_success_page():
+    """Serve the CSA-branded page instead of google_auth_oauthlib's plain-text one.
+
+    `_RedirectWSGIApp.__call__` hardcodes `Content-type: text/plain`, so the public
+    `success_message=` argument cannot carry markup — it would render as visible tags.
+    Swapping the class for the duration of the flow is the only seam.
+
+    Scope is deliberately narrow: the replacement changes the *response body only* and
+    still records `last_request_uri`, which is the security-relevant part (it carries the
+    authorization code, and oauthlib validates `state` from it). Token exchange is
+    untouched.
+
+    Every failure path falls back to the stock page. A cosmetic upgrade must never be able
+    to break authorization — if the private class is renamed or reshaped upstream, login
+    keeps working and just looks plainer.
+    """
+    try:
+        import wsgiref.util
+
+        import google_auth_oauthlib.flow as _flow
+        original = _flow._RedirectWSGIApp
+    except (ImportError, AttributeError):
+        yield
+        return
+
+    from ._success_page import SUCCESS_HTML
+
+    class _BrandedRedirectApp:
+        def __init__(self, success_message):
+            self.last_request_uri = None
+            self._success_message = success_message      # kept for signature compatibility
+
+        def __call__(self, environ, start_response):
+            start_response("200 OK", [("Content-type", "text/html; charset=utf-8")])
+            self.last_request_uri = wsgiref.util.request_uri(environ)
+            return [SUCCESS_HTML.encode("utf-8")]
+
+    _flow._RedirectWSGIApp = _BrandedRedirectApp
+    try:
+        yield
+    finally:
+        _flow._RedirectWSGIApp = original
 
 
 def _client_id_of(path: str) -> str | None:
@@ -70,7 +116,8 @@ def login(settings: Settings, env: Mapping[str, str], *, force: bool = False, ou
           f"  token cache: {settings.token_path}", file=out)
     # force=True bypasses the cache but deletes nothing: the old token is replaced only
     # once a new one exists, so a cancelled consent leaves the previous one working.
-    Workspace.from_oauth(client_secrets, settings.token_path,
-                         read_only=settings.read_only, force=force)
+    with _branded_success_page():
+        Workspace.from_oauth(client_secrets, settings.token_path,
+                             read_only=settings.read_only, force=force)
     print("Authorized. The MCP server can now start without prompting.", file=out)
     return 0

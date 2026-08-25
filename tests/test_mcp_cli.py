@@ -175,3 +175,93 @@ def test_login_with_no_token_authorizes_without_needing_force(tmp_path, monkeypa
 def test_force_flag_is_documented_in_usage(capsys):
     cli.main(["--help"], {})
     assert "--force" in capsys.readouterr().err
+
+
+# --- branded OAuth success page ----------------------------------------------
+#
+# google_auth_oauthlib hardcodes `Content-type: text/plain` in _RedirectWSGIApp, so the
+# public `success_message=` argument cannot carry markup. Swapping the class for the
+# duration of the flow is the only seam — and a cosmetic upgrade must never be able to
+# break authorization, so the fallback behaviour is tested as carefully as the feature.
+
+def _wsgi_environ(uri="http://127.0.0.1:8080/?code=abc&state=xyz"):
+    from urllib.parse import urlsplit
+    u = urlsplit(uri)
+    return {"wsgi.url_scheme": "http", "HTTP_HOST": u.netloc, "PATH_INFO": u.path,
+            "QUERY_STRING": u.query, "SERVER_NAME": "127.0.0.1", "SERVER_PORT": "8080"}
+
+
+def test_branded_page_is_served_as_html():
+    import google_auth_oauthlib.flow as flow
+
+    from csa_google_workspace.mcp._login import _branded_success_page
+
+    with _branded_success_page():
+        app = flow._RedirectWSGIApp("ignored")
+        captured = {}
+        body = app(_wsgi_environ(), lambda status, headers: captured.update(dict(headers)))
+
+    assert "text/html" in captured["Content-type"]
+    html = b"".join(body).decode()
+    assert "<!doctype html>" in html.lower()
+    assert "authorized" in html.lower()
+
+
+def test_branded_page_still_records_the_redirect_uri():
+    """The security-relevant half: last_request_uri carries the auth code and the state
+    oauthlib validates. Losing it would break the flow, not just the styling."""
+    import google_auth_oauthlib.flow as flow
+
+    from csa_google_workspace.mcp._login import _branded_success_page
+
+    with _branded_success_page():
+        app = flow._RedirectWSGIApp("ignored")
+        app(_wsgi_environ("http://127.0.0.1:8080/?code=THECODE&state=THESTATE"),
+            lambda status, headers: None)
+
+    assert "code=THECODE" in app.last_request_uri
+    assert "state=THESTATE" in app.last_request_uri
+
+
+def test_the_original_class_is_restored_afterwards():
+    import google_auth_oauthlib.flow as flow
+
+    from csa_google_workspace.mcp._login import _branded_success_page
+
+    before = flow._RedirectWSGIApp
+    with _branded_success_page():
+        assert flow._RedirectWSGIApp is not before
+    assert flow._RedirectWSGIApp is before
+
+
+def test_original_class_is_restored_even_when_the_flow_raises():
+    import google_auth_oauthlib.flow as flow
+
+    from csa_google_workspace.mcp._login import _branded_success_page
+
+    before = flow._RedirectWSGIApp
+    with pytest.raises(RuntimeError):
+        with _branded_success_page():
+            raise RuntimeError("consent blew up")
+    assert flow._RedirectWSGIApp is before
+
+
+def test_missing_upstream_class_degrades_instead_of_failing(monkeypatch):
+    """If upstream renames the private class, login must keep working — plainer, not broken."""
+    import google_auth_oauthlib.flow as flow
+
+    from csa_google_workspace.mcp._login import _branded_success_page
+
+    monkeypatch.delattr(flow, "_RedirectWSGIApp")
+    with _branded_success_page():
+        pass                                    # must not raise
+
+
+def test_page_embeds_the_logo_and_avoids_the_superseded_orange():
+    """Brand: the logo is inlined verbatim (recoloring is forbidden), and the page adds no
+    orange of its own — so the asset's older #F98526 never sits beside the current #FF7A00."""
+    from csa_google_workspace.mcp._success_page import SUCCESS_HTML
+
+    assert "<svg" in SUCCESS_HTML and "Cloud Security Alliance" in SUCCESS_HTML
+    assert "#00549F" in SUCCESS_HTML                      # CSA Blue B500
+    assert "#FF7A00" not in SUCCESS_HTML.upper().replace("#F98526", "")
