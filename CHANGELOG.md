@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-25 — v0.2.1 (`login --force`; wrong-client detection)
+
+Fixes a failure that is invisible by construction: a cached token can be valid, unexpired,
+and carry exactly the required scopes while having been issued by a **different OAuth
+client**. `login` reused it and reported success, and every subsequent API call ran against
+the wrong project's quota and consent screen. Nothing errored — found in real use within an
+hour of 0.2.0.
+
+- **`csa-google-workspace-mcp login --force`** (also `-f` / `--reauth`) — bypass the cached
+  token and re-consent. It skips the cache *read* rather than deleting anything: the old
+  token is replaced only once a new one is in hand, so a cancelled or failed consent leaves
+  the previous credentials working.
+- **Wrong-client warning** — `login` compares the cached token's `client_id` against the
+  configured client secrets and says so when they differ, naming both and the remedy.
+  Nothing else surfaces this: OAuth accepts a refresh token from whichever client issued it,
+  so provenance is not visible at runtime.
+- **Honest messaging** — `login` no longer announces "Opening a browser" before checking
+  whether it needs to; it reports `Already authorized` and how to re-authorize.
+- **Library (additive, backward-compatible):** `auth.load_credentials(..., force=False)` and
+  `Workspace.from_oauth(..., force=False)`. Existing calls are unaffected.
+
+The default remains reuse-if-usable, because the installer path calls `login` and should not
+open a browser on every run.
+
+Also in this release: `INTERFACE-RESOURCES.md`, an inventory of the interfaces this repo
+provides and consumes.
+
 ## 2026-08-24 — v0.2.0 (built-in MCP server)
 
 Phase 2: a **built-in Model Context Protocol server**, so an AI client (Claude Code, Claude
