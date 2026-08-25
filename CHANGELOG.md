@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-25 — v0.3.1 (the unauthorized message is now actionable)
+
+An unauthorized server starts by design, so its error text is the entire user experience.
+That text now carries everything needed to act on it:
+
+- **Offers the no-terminal path first** — call `authenticate` — then the CLI as fallback.
+- **Gives a command that can be pasted verbatim**, using the launcher's absolute path from
+  `argv[0]`. A bare `csa-google-workspace-mcp` is useless where the launcher is not on PATH,
+  which is the normal case on Windows: pipx installs somewhere PATH does not reach until a
+  new shell.
+- **Says where it looked**, naming the token path.
+- **Tells the model to ask the user and wait**, and not to go hunting for credential files.
+  Given only "no credentials", a capable model starts searching the filesystem — which is
+  exactly what happened on the first real run.
+
+The server's `instructions` now state the same protocol up front, so the model knows it
+before the first failure rather than inferring it from an error.
+
 ## 2026-08-25 — v0.3.0 (authorize from inside the client)
 
 - **New `authenticate` tool — browser consent without leaving your MCP client.** When a tool
