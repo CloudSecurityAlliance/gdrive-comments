@@ -9,7 +9,17 @@ redacted repr protects logs, not tool output.
 """
 from __future__ import annotations
 
-from typing import Any, TypedDict
+import sys
+from typing import Any
+
+if sys.version_info >= (3, 12):
+    from typing import TypedDict
+else:
+    # Pydantic cannot introspect `typing.TypedDict` on Python < 3.12 (the runtime does not
+    # expose __required_keys__ the way it needs), and fails *silently*: the tool still runs,
+    # but structuredContent comes back null. Caught only by the CI matrix — a 3.12 dev box
+    # passes. typing_extensions arrives with pydantic, which arrives with mcp.
+    from typing_extensions import TypedDict
 
 
 class ReplyOut(TypedDict):
