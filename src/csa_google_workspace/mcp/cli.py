@@ -15,10 +15,11 @@ from collections.abc import Mapping, Sequence
 from ._config import WorkspaceProvider, settings_from_env
 from .server import create_server
 
-USAGE = """usage: csa-google-workspace-mcp [login]
+USAGE = """usage: csa-google-workspace-mcp [login [--force]]
 
-  (no argument)  run the MCP server over stdio, for an MCP client to launch
-  login          authorize with Google in a browser and cache the token
+  (no argument)   run the MCP server over stdio, for an MCP client to launch
+  login           authorize with Google in a browser and cache the token
+  login --force   authorize again even if a cached token looks usable
 
 environment:
   CSA_GW_TOKEN           token cache path (default ~/.csa_google_workspace/token.json)
@@ -37,7 +38,12 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         return 0
     if argv and argv[0] == "login":
         from ._login import login  # imported here so the server path never loads it
-        return login(settings, env)
+        rest = argv[1:]
+        force = bool(rest) and rest[0] in ("--force", "-f", "--reauth")
+        if rest and not force:
+            print(f"unknown argument: {rest[0]}\n\n{USAGE}", file=sys.stderr)
+            return 2
+        return login(settings, env, force=force)
     if argv:
         print(f"unknown argument: {argv[0]}\n\n{USAGE}", file=sys.stderr)
         return 2
