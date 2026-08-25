@@ -116,6 +116,40 @@ rather than screenshots:
 
 **Write/delete (5)** — `create_file`, `update_file`, `copy_file`, `share_file`, `trash_file`
 
+### Google's own Drive MCP server is deliberately narrower — and that is the finding
+
+[Google ships one too](https://developers.google.com/workspace/drive/api/reference/mcp)
+(`drivemcp.googleapis.com`), and comparing the three is more instructive than either
+target on its own:
+
+| | Google's official | claude.ai connector | this server (proposed) |
+|---|---|---|---|
+| Transport | remote HTTP | remote | **local stdio** |
+| OAuth scope | **`drive.file` / `drive.readonly`** | — | **full `drive`** |
+| Tools | **8** | 11 | 11 + comments/content |
+| `update_file`, `share_file`, `trash_file` | **absent** | present | proposed |
+
+Two things stand out.
+
+**Google omits exactly the three most dangerous tools.** They control the API and could
+expose anything; they ship `copy_file` and `create_file` but no update, share or trash. That
+is not an oversight, and it is worth treating as informed opinion about which operations are
+safe to hand a model.
+
+**Google never uses full-Drive scope.** `drive.file` is the *per-file* scope: an app sees
+only files it created or the user explicitly picked. That is **allowlisting, enforced by
+Google**, and it is why their server can be relaxed about the rest — it physically cannot
+reach the document the user did not choose.
+
+This project needs full `drive` for a real reason: it opens arbitrary files the user names by
+URL, which `drive.file` cannot do
+([`SECURITY.md`](SECURITY.md) §Scope breadth). That is a defensible trade, but it means **we
+gave up the safety property Google gets for free, and file allowlisting
+([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) is how we
+buy it back in software.** Adding this tool surface on full-Drive scope with no allowlist
+would make this server strictly more dangerous than either comparator, which is not a
+position to ship from.
+
 ### This reverses a documented capability boundary — decide that first
 
 `README.md` currently states, as a deliberate design boundary: *"No document discovery. You
@@ -149,6 +183,12 @@ below `share_file` despite sounding worse.
 
 - [ ] **Decide the discovery question.** Widen the library to support `files.list`/search, or
   decline parity on those two tools and say why in the README. Everything else waits on this.
+- [ ] **Decide how much parity is actually wanted.** Google's 8 tools may be the better
+  target than the connector's 11: matching Google means matching a vendor's considered
+  judgement about what is safe to expose, and the three it omits are the three this project
+  would most need to gate anyway. Full parity with the connector is a choice to be more
+  permissive than either existing implementation, on a broader scope than either — worth
+  making deliberately rather than by default.
 - [ ] `search_files` — reuse the connector's **Drive query syntax** verbatim
   (`title contains`, `fullText contains`, `mimeType`, `modifiedTime`, `parentId`, `owner`,
   `sharedWithMe`, combined with `and`/`or`/`not`). Also copy its hard-won prompt guidance:
