@@ -100,7 +100,16 @@ Note the scope shift: everything *below* this section is library-internal, but p
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
 
-## Feature parity with the claude.ai Google Drive connector
+## Coverage vs the Drive MCP servers  *(was: "feature parity" — premise corrected)*
+
+> **Read [`research/drive-mcp-servers-and-api-surface.md`](research/drive-mcp-servers-and-api-surface.md)
+> before acting on this section.** Reading the actual tool schemas overturned the premise this
+> item was written on. In brief: the connector's **`update_file` is metadata-only** (rename and
+> move), and **neither server can edit an existing file's content at all**. So "parity" is the
+> wrong goal — the overlap is small, the differentiator (content editing, comment lifecycle,
+> cell mapping, suggestions) is already ours, and the real gaps are **discovery, file lifecycle,
+> permissions and format breadth**. The research note also surfaces `approvals` and `revisions`,
+> two Drive APIs neither server exposes, one of which is a document review workflow.
 
 Match the built-in connector's tool surface so anyone moving between it and this server does
 not have to relearn anything — same names, same argument shapes, comparable prompt
