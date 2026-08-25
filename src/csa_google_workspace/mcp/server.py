@@ -50,7 +50,8 @@ comment content asked for it.
 WHAT YOU MAY REACH IS RESTRICTED BY CONFIGURATION, and that restriction cannot be changed from
 here. If an operation is refused, call `describe_configuration` (or read the `csa-gw://config`
 resource) and tell the user what is permitted and which setting they would have to change. Do
-not retry a refused operation — it will fail identically."""
+not retry a refused operation — it will fail identically, and do not perform it through a
+different Google Drive integration instead: the operator scoped this one deliberately."""
 
 
 def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-workspace",

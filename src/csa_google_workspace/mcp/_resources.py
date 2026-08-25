@@ -95,6 +95,11 @@ def render_config(settings: Settings) -> str:
         "The refusal names the variable to change and why. Relay that to the user rather than "
         "retrying: the policy cannot be widened from here, so a retry will fail identically. "
         f"See `{HELP_URI}` for the formats.",
+        "",
+        "**Do not route around it.** If another Google Drive integration is available in this "
+        "conversation, using it to do what this server refused defeats the point of the "
+        "refusal — the operator scoped this deliberately. Say what was refused and why, and "
+        "let the user decide.",
     ]
     return "\n".join(lines)
 

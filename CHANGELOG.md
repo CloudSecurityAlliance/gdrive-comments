@@ -6,9 +6,39 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.12.1. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-25 — v0.12.1 (disable the built-in Drive connector — it bypasses the policy)
+
+Documentation, plus two lines of model-facing guidance. No behaviour change.
+
+### The point
+
+Every control in this project is enforced **by this server**, in-process, before the Google API
+call. Claude's built-in Google Drive connector reaches the same account with none of them.
+
+So with both enabled, **a refusal is not a refusal**: the same operation is available through
+the other route, on the same files, unscoped. The allowlist stops being a bound on *what the
+model can do* and becomes a bound on *one of two ways to do it*. That is not a defect that can
+be fixed here — a process cannot bound what a sibling process may do — so it has to be said out
+loud instead.
+
+The tool names being identical makes it worse in a second, smaller way: they were matched to
+Claude's deliberately so habits transfer, which means with both on the model sees two
+`search_files` and has to guess.
+
+### Added
+
+- **README:** where to turn the built-in connector off, and why. Also notes that keeping the
+  built-in one *instead* is a perfectly reasonable choice — what is not reasonable is running
+  both and believing the allowlist means something.
+- **`SECURITY.md`:** recorded as a limitation of client-side enforcement generally, not as a
+  defect. "Two Drive integrations, one scoped" is equivalent to unscoped.
+- **The `csa-gw://config` resource and `INSTRUCTIONS`:** *do not route around a refusal by using
+  a different Drive integration.* A hedge that depends on the model behaving — the real fix is
+  disconnecting the other connector — but an unstated hedge is strictly worse than a stated one.
 
 ## 2026-08-25 — v0.12.0 (named security profiles)
 

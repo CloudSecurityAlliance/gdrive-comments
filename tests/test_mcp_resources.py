@@ -185,3 +185,22 @@ def test_the_instructions_point_at_it():
     assert "describe_configuration" in flat
     assert CONFIG_URI in flat
     assert "Do not retry a refused operation" in flat
+
+
+# --- not routing around a refusal ------------------------------------------
+
+def test_the_config_resource_says_not_to_route_around_a_refusal():
+    """Every control here is enforced in-process. Another Drive integration in the same
+    conversation reaches the same account with no allowlist, so a refusal is only a refusal if
+    the model does not simply use the other one. That is a hedge that depends on the model
+    behaving — the real fix is disabling the other connector, which the README covers — but an
+    unstated hedge is strictly worse than a stated one."""
+    text = _flat(_read(_server(POSTURE), CONFIG_URI))
+    assert "Do not route around it" in text
+    assert "another Google Drive integration" in text
+
+
+def test_the_instructions_say_it_too():
+    from csa_google_workspace.mcp.server import INSTRUCTIONS
+    flat = _flat(INSTRUCTIONS)
+    assert "do not perform it through a different Google Drive integration" in flat
