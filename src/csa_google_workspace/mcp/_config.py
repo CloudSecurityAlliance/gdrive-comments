@@ -15,6 +15,7 @@ Two design points worth stating, because both are easy to "fix" into bugs:
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -22,18 +23,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .. import auth
-from ..allowlist import Entry, is_inline, load_allowlist, parse_inline
+from ..allowlist import AllowlistError, Listing, is_inline, load_allowlist, parse_inline
 from ..exceptions import AuthError
-from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy
+from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy, Scope
 from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
 DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"  # nosec B105 - a path
-DEFAULT_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist.txt"
-# The escape hatch. Explicit, so that running with unrestricted writes is something somebody
-# typed — which is what makes flipping the no-allowlist default at 1.0.0 possible without
-# leaving anyone stuck.
-ALLOWLIST_ANY = "any"
+log = logging.getLogger(__name__)
+
+DEFAULT_READ_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist-read.txt"
+DEFAULT_MODIFY_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist-modify.txt"
+LEGACY_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist.txt"
 def _launcher() -> str:
     """The command a user can actually paste, absolute where we can determine it.
 
@@ -90,53 +91,87 @@ class Settings:
     policy: Policy | None = None            # None -> Policy.default()
 
 
-def policy_from_env(env: Mapping[str, str]) -> Policy | None:
-    """Build the mutation policy from the environment, or `None` for the built-in default.
+def policy_from_env(env: Mapping[str, str]) -> Policy:
+    """Build the server's policy from the environment. Three independent bounds:
 
-    Two variables, one per dimension of #82:
+      CSA_GW_CAPABILITIES       *what* may be mutated
+      CSA_GW_ALLOWLIST_READ     *which files* may be read     — `*` for the usual posture
+      CSA_GW_ALLOWLIST_MODIFY   *which files* may be changed   — a short, reviewed list
 
-      CSA_GW_CAPABILITIES   *what* may be mutated  (see `_capabilities_from_env`)
-      CSA_GW_ALLOWLIST      *which files*          — path to a plain-text list of URLs
+    Each is a ceiling; none can widen another. **Both allowlists fail closed**: unset means
+    nothing is permitted, and unrestricted access must be typed as `*`.
 
-    They compose one way only: capabilities are a ceiling, the allowlist narrows. An
-    unset allowlist means no file restriction, which is what this library has always done;
-    making that fail-closed is a 1.0.0 decision recorded in TODO.md, not a silent change.
+    This always returns a `Policy` — never `None` — because "nothing configured" is now a
+    meaningful and restrictive answer rather than an absent one.
     """
+    _reject_legacy_allowlist(env)
     capabilities = _capabilities_from_env(env)
-    entries = _allowlist_from_env(env)
-    if capabilities is None and entries is None:
-        return None
     enabled = frozenset(capabilities.enabled if capabilities is not None else DEFAULT_ENABLED)
-    if entries is None:
-        return Policy(enabled=enabled)
-    return Policy.from_entries(enabled, entries)
+    return Policy(
+        enabled=enabled,
+        read=_scope_from_env(env, "CSA_GW_ALLOWLIST_READ", DEFAULT_READ_ALLOWLIST_PATH),
+        modify=_scope_from_env(env, "CSA_GW_ALLOWLIST_MODIFY", DEFAULT_MODIFY_ALLOWLIST_PATH),
+    )
 
 
-def _allowlist_from_env(env: Mapping[str, str]) -> tuple[Entry, ...] | None:
-    """The write allowlist, from `CSA_GW_ALLOWLIST` or the default path.
+def _scope_from_env(env: Mapping[str, str], variable: str, default_path: str) -> Scope:
+    """One allowlist scope, from its variable or its default path. **Fail closed.**
 
-    `None` means *no file restriction* — either nothing was configured, or the operator asked
-    for unrestricted writes explicitly with `CSA_GW_ALLOWLIST=any`.
+    Unset, with no default file, means `Scope.nothing()` — every operation of that kind is
+    refused, with a message naming the variable to set. That is the opposite of the library's
+    default, and deliberately so: `Workspace.from_credentials` is called by a developer who
+    has made a decision, while this is configuration handed to a model.
 
-    Three sources, in order of precedence:
+    Unrestricted access is available and must be *typed*: `*` (or a `*` line in the file).
+    It logs a warning every time it is parsed, because the point of the file is that
+    unrestricted access should be visible in review.
 
-      CSA_GW_ALLOWLIST=any                     unrestricted, deliberately
-      CSA_GW_ALLOWLIST=https://…               URLs inline, for a JSON `env` block
-      CSA_GW_ALLOWLIST=/path/to/file           an explicit path
-      (unset)                                  ~/.csa_google_workspace/allowlist.txt if present
+    Sources, in order of precedence:
 
-    The default path exists for the same reason `client_secret.json` has one: a curated list
-    distributed by a setup script should need no per-user configuration, because the people
-    running it did not write it. Anything configured but unusable **raises** — never a
-    fallback to unrestricted writes.
+      <VAR>=*                          every file, deliberately
+      <VAR>=https://…                  URLs inline, for a JSON `env` block
+      <VAR>=/path/to/file              an explicit path
+      (unset)                          the default path if it exists, else nothing
     """
-    value = (env.get("CSA_GW_ALLOWLIST") or "").strip()
-    if value.lower() == ALLOWLIST_ANY:
-        return None
+    value = (env.get(variable) or "").strip()
     if value:
-        return parse_inline(value) if is_inline(value) else load_allowlist(value)
-    default = os.path.expanduser(DEFAULT_ALLOWLIST_PATH)
-    return load_allowlist(default) if os.path.exists(default) else None
+        listing = (parse_inline(value, source=variable) if is_inline(value)
+                   else _scope_from_value(value, variable))
+        return Scope.from_listing(listing)
+    expanded = os.path.expanduser(default_path)
+    if os.path.exists(expanded):
+        return Scope.from_listing(load_allowlist(expanded))
+    return Scope.nothing()
+
+
+def _scope_from_value(value: str, variable: str) -> Listing:
+    """A non-URL value: either the literal `*` (and its synonyms), or a path."""
+    from ..allowlist import ALL_SYNONYMS
+    if value.lower() in ALL_SYNONYMS:
+        log.warning("%s=%s grants access to EVERY file the credentials can reach",
+                    variable, value)
+        return Listing(all_files=True)
+    return load_allowlist(value)
+
+
+def _reject_legacy_allowlist(env: Mapping[str, str]) -> None:
+    """`CSA_GW_ALLOWLIST` was v0.8.x. Its meaning changed, so it must not be reinterpreted.
+
+    Silently treating it as the modify list would leave `read` fail-closed and break reads for
+    reasons nobody could see. An error naming both replacements costs one restart.
+    """
+    if env.get("CSA_GW_ALLOWLIST"):
+        raise AllowlistError(
+            "CSA_GW_ALLOWLIST has been split into CSA_GW_ALLOWLIST_READ and "
+            "CSA_GW_ALLOWLIST_MODIFY, because reads and mutations want different answers. "
+            "The usual posture is CSA_GW_ALLOWLIST_READ=* with CSA_GW_ALLOWLIST_MODIFY set to "
+            "your list of document URLs. Refusing to guess which you meant.")
+    legacy = os.path.expanduser(LEGACY_ALLOWLIST_PATH)
+    if os.path.exists(legacy):
+        raise AllowlistError(
+            f"{legacy} is no longer read: the allowlist is split into "
+            f"allowlist-read.txt and allowlist-modify.txt in the same directory. Rename it "
+            f"(most likely to allowlist-modify.txt) so it is not silently ignored.")
 
 
 def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:
@@ -191,6 +226,33 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         client_secrets=explicit or (default if os.path.exists(default) else None),
         policy=policy_from_env(env),
     )
+
+
+def startup_warnings(settings: Settings) -> list[str]:
+    """What to tell the user on stderr before the first tool call.
+
+    An unconfigured server *starts* by design (a startup crash reaches the user as an opaque
+    "server failed to start"), so anything they need to know has to be said here or in a tool
+    error. Both fail-closed and wide-open are worth saying out loud: one means nothing will
+    work until they configure it, the other means everything is permitted.
+    """
+    policy = settings.policy
+    if policy is None:
+        return []
+    out: list[str] = []
+    for label, scope, variable in (
+            ("READ", policy.read, "CSA_GW_ALLOWLIST_READ"),
+            ("MODIFY", policy.modify, "CSA_GW_ALLOWLIST_MODIFY")):
+        if scope.all_files:
+            out.append(f"{label}: UNRESTRICTED — every file your Google account can reach. "
+                       f"Set {variable} to a list of document URLs to narrow it.")
+        elif not scope.ids:
+            out.append(f"{label}: nothing permitted, so every {label.lower()} will be "
+                       f"refused. Set {variable} to a list of document URLs, or to `*` for "
+                       f"unrestricted access.")
+        else:
+            out.append(f"{label}: {scope.describe()}.")
+    return out
 
 
 class WorkspaceProvider:

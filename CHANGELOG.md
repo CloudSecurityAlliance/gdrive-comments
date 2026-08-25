@@ -1,5 +1,76 @@
 # Changelog
 
+## 2026-08-25 — v0.9.0 (read and modify allowlists, and unset now means nothing)
+
+**Breaking.** The single `CSA_GW_ALLOWLIST` becomes two — `CSA_GW_ALLOWLIST_READ` and
+`CSA_GW_ALLOWLIST_MODIFY` — and both **fail closed**: unset permits nothing, and unrestricted
+access has to be typed as `*`.
+
+Reads and mutations are different risks and want different answers. The intended posture is
+`READ=*` with `MODIFY` a short reviewed list: the agent already sees whatever your credentials
+see, so **what is worth bounding is what it can break**. `READ=*` is also exactly what Google's
+and Anthropic's Drive servers do — they simply have no way to narrow it, which is why *this* is
+now a row in the README's comparison table. Neither of them offers anything equivalent.
+
+### Changed (breaking)
+
+- **`CSA_GW_ALLOWLIST` is refused**, not reinterpreted. Its meaning changed, and silently
+  treating it as the modify list would leave reads fail-closed and break them for reasons nobody
+  could see. The error names both replacements. A leftover
+  `~/.csa_google_workspace/allowlist.txt` is likewise an error rather than silently ignored.
+- **Unset means nothing is permitted** — for reads too. Previously an unset allowlist meant *no
+  restriction*. The server still starts (a startup crash reaches the user as an opaque "server
+  failed to start"), prints on **stderr** which variable to set, and every tool error says the
+  same.
+- **`*` is the escape hatch and must be typed** — as a value, or a line in the file. It logs a
+  warning every time it is parsed, because unrestricted access should be visible in review.
+- **Reads are now gated.** `get_file_metadata`, `read_file_content`, `list_comments` and the rest
+  check the read scope. A refused read raises `AccessError`, not `ReadOnlyError` — nothing about
+  writing is involved.
+- **`search_files` results are filtered** to the read scope rather than merely unopenable. A file
+  outside it must not be *named* either, or search becomes a way to enumerate what the policy
+  excludes.
+
+### Added
+
+- **`Scope`** — `everything()` / `nothing()` / `from_listing()`. `all_files` and "an empty set"
+  are deliberately different states: empty means nothing is permitted, and collapsing them into
+  one representation is how a fail-closed default turns fail-open during a refactor.
+- **`Listing`** — a parsed allowlist that is either "everything" or a specific set. An empty file
+  stays a configuration error, because it is indistinguishable from a typo; `*` is the way to say
+  "no restriction" out loud.
+- **`Gate(capability, access, file_scoped)`** — `_GATES` now states three things per `Backend`
+  method: what capability it costs, **which allowlist applies**, and whether it is file-scoped.
+  A test asserts every entry declares a known access kind.
+- **`startup_warnings()`**, printed to stderr by the CLI: says when a scope permits nothing (so
+  nothing will work until it is configured) and when one permits everything.
+- Default paths `~/.csa_google_workspace/allowlist-read.txt` and `allowlist-modify.txt`.
+
+### Unchanged, deliberately
+
+**The library's default stays permissive.** `Workspace.from_credentials` is called by a developer
+writing code, who has already made a decision; the MCP server is configuration handed to a model.
+Two artifacts, two threat models — and a fail-closed library default would have broken every
+embedder for no gain in the case that matters.
+
+### Scope of the claim
+
+What this is: per-capability gating plus two flat lists of documents. Deliberately simple,
+concrete, and honest — a volunteer's install is physically unable to change a document nobody
+listed. What it is not: a general authorization model. A broader design is being researched
+separately.
+
+Two properties should survive into whatever replaces it, because they are what make it worth
+relying on: enforcement lives in a **`Backend` wrapper**, so library embedders and MCP clients
+get the same guarantee from one auditable place; and the policy **cannot be widened in-band**,
+because no tool changes it.
+
+### Live-verified
+
+Against real Google, with two throwaway Docs: `READ=*` reads both, `MODIFY` permits a comment on
+the listed one and refuses it on the other, and narrowing `READ` makes the second file vanish
+from `search_files` as well as becoming unreadable.
+
 ## 2026-08-25 — v0.8.1 (the allowlist, configurable where you actually configure things)
 
 `CSA_GW_ALLOWLIST` was a path to a file, which meant distributing a second artifact. It now

@@ -27,16 +27,28 @@ deliberate later migration, noted in `TODO.md`.
 entries, any malformed line) raises rather than degrading to "no restrictions". The failure
 mode being avoided is an operator who believes writes are scoped when they are not.
 
-**Three ways to configure it**, because they suit different deployments:
+**Two scopes, configured independently** — `CSA_GW_ALLOWLIST_READ` and
+`CSA_GW_ALLOWLIST_MODIFY`. Reads and mutations are different risks and want different answers:
+the common posture is `READ=*` (matching what Google's and Anthropic's Drive servers do, since
+the agent already sees whatever the user's credentials see) with `MODIFY` a short, reviewed
+list. Splitting them is what makes that expressible.
 
-* **The default path** `~/.csa_google_workspace/allowlist.txt`, used automatically when it
-  exists — next to `client_secret.json`, and for the same reason. A curated list distributed
-  by a setup script needs no per-user configuration at all, which matters when the people
+**`*` means everything, and must be typed.** An unset scope is **fail closed** in the MCP
+server: no files, so every operation of that kind is refused with a message saying what to set.
+Unrestricted access is available — as a literal `*` entry — but it is a thing somebody chose,
+and it logs a warning every time.
+
+**Three ways to configure each**, because they suit different deployments:
+
+* **The default paths** `~/.csa_google_workspace/allowlist-read.txt` and
+  `allowlist-modify.txt`, used automatically when they exist — next to
+  `client_secret.json`, and for the same reason. A curated list distributed by a
+  setup script needs no per-user configuration at all, which matters when the people
   running it did not write it.
-* **`CSA_GW_ALLOWLIST=/path/to/file`** — an explicit path.
-* **`CSA_GW_ALLOWLIST=<urls>`** — the URLs *inline*, for an MCP client's JSON `env` block
-  where shipping a second file is awkward. Any value containing `://` is read as URLs rather
-  than a path; a filesystem path does not contain that.
+* **`CSA_GW_ALLOWLIST_MODIFY=/path/to/file`** — an explicit path.
+* **`CSA_GW_ALLOWLIST_MODIFY=<urls>`** — the URLs *inline*, for an MCP client's JSON `env`
+  block where shipping a second file is awkward. Any value containing `://` is read as URLs
+  rather than a path; a filesystem path does not contain that.
 """
 from __future__ import annotations
 
@@ -49,6 +61,12 @@ from . import exceptions as exc
 
 log = logging.getLogger(__name__)
 
+# The one entry that means "no restriction". A literal, because unrestricted access should be
+# something a person typed into a reviewed file rather than a default nobody noticed.
+ALL = "*"
+# Accepted as a synonym so the v0.8.1 spelling keeps working.
+ALL_SYNONYMS = frozenset({ALL, "any", "all"})
+
 # `/d/<id>` covers docs.google.com/{document,spreadsheets,presentation}/d/<id> and
 # drive.google.com/file/d/<id>.
 _ID_IN_PATH = re.compile(r"/d/([a-zA-Z0-9_-]{10,})")
@@ -60,6 +78,26 @@ _FOLDER = re.compile(r"/drive/(?:u/\d+/)?folders/([a-zA-Z0-9_-]+)")
 
 class AllowlistError(exc.CsaWorkspaceError):
     """The allowlist is configured but unusable. Never degrades to "no restrictions"."""
+
+
+@dataclass(frozen=True)
+class Listing:
+    """A parsed allowlist: either "everything", or a specific set of documents.
+
+    `all_files` is not just `entries == ()`; the two are different answers. An empty listing
+    is a configuration error (indistinguishable from a typo), whereas `all_files` is a
+    deliberate, logged decision.
+    """
+    all_files: bool
+    entries: tuple[Entry, ...] = ()
+
+    @property
+    def file_ids(self) -> frozenset[str]:
+        return frozenset(e.file_id for e in self.entries)
+
+    def __repr__(self) -> str:
+        return ("Listing(all_files=True)" if self.all_files
+                else f"Listing(files={len(self.entries)})")
 
 
 @dataclass(frozen=True)
@@ -111,11 +149,14 @@ def parse_document_url(text: str) -> str:
         f"https://docs.google.com/document/d/<id>/edit — a full URL, not a bare file id.")
 
 
-def parse_allowlist(text: str, *, source: str = "<string>") -> tuple[Entry, ...]:
+def parse_allowlist(text: str, *, source: str = "<string>") -> Listing:
     """Parse the allowlist format. Every malformed line is reported, not just the first.
 
     Reporting all of them matters: an operator fixing a curated list of thirty URLs should
     not have to run the server thirty times to find the thirty typos.
+
+    A line of `*` means *every file*, and short-circuits the rest. It logs a warning, because
+    the whole point of this file is that unrestricted access should be visible.
     """
     entries: list[Entry] = []
     problems: list[str] = []
@@ -127,6 +168,13 @@ def parse_allowlist(text: str, *, source: str = "<string>") -> tuple[Entry, ...]
             continue
         url, _, comment = line.partition("#")
         reason = comment.strip() or None
+
+        if url.strip().lower() in ALL_SYNONYMS:
+            log.warning("allowlist %s:%d grants access to EVERY file the credentials can "
+                        "reach (%r)%s", source, number, url.strip(),
+                        f": {reason}" if reason else "")
+            return Listing(all_files=True)
+
         try:
             file_id = parse_document_url(url)
         except AllowlistError as e:
@@ -147,9 +195,9 @@ def parse_allowlist(text: str, *, source: str = "<string>") -> tuple[Entry, ...]
     if not entries:
         raise AllowlistError(
             f"the allowlist at {source} contains no usable entries. Refusing to run with an "
-            f"empty allowlist, because that is indistinguishable from a typo'd path and "
-            f"would silently permit nothing (or, if ignored, everything).")
-    return tuple(entries)
+            f"empty allowlist, because that is indistinguishable from a typo. Use a line "
+            f"containing just `*` if unrestricted access is genuinely what you want.")
+    return Listing(all_files=False, entries=tuple(entries))
 
 
 def is_inline(value: str) -> bool:
@@ -162,7 +210,7 @@ def is_inline(value: str) -> bool:
     return "://" in value
 
 
-def parse_inline(value: str) -> tuple[Entry, ...]:
+def parse_inline(value: str, *, source: str = "inline") -> Listing:
     """Parse URLs given directly in configuration.
 
     Newlines separate entries, so a JSON `env` value can use `\n` and keep the `# reason`
@@ -171,10 +219,10 @@ def parse_inline(value: str) -> tuple[Entry, ...]:
     character, and it means the ambiguous case is simply not reachable.
     """
     text = value if "#" in value else re.sub(r"[,;\s]+", "\n", value.strip())
-    return parse_allowlist(text, source="CSA_GW_ALLOWLIST")
+    return parse_allowlist(text, source=source)
 
 
-def load_allowlist(path: str) -> tuple[Entry, ...]:
+def load_allowlist(path: str) -> Listing:
     """Read and validate an allowlist file. Raises `AllowlistError` on any problem."""
     resolved = Path(path).expanduser()
     try:
@@ -185,6 +233,7 @@ def load_allowlist(path: str) -> tuple[Entry, ...]:
             f"rather than a fallback to unrestricted writes.") from e
     except OSError as e:
         raise AllowlistError(f"cannot read the allowlist at {resolved}: {e}") from e
-    entries = parse_allowlist(text, source=str(resolved))
-    log.info("write allowlist loaded from %s: %d file(s)", resolved, len(entries))
-    return entries
+    listing = parse_allowlist(text, source=str(resolved))
+    log.info("allowlist loaded from %s: %s", resolved,
+             "EVERY file" if listing.all_files else f"{len(listing.entries)} file(s)")
+    return listing

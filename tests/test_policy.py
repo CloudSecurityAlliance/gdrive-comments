@@ -74,6 +74,7 @@ def test_default_enabled_and_disabled_together_cover_everything():
 # --- enforcement -----------------------------------------------------------
 
 def _ws(*capabilities):
+    """Scopes left at their permissive library default, so these exercise capabilities only."""
     return Workspace(PolicyBackend(FakeBackend(dict(FILES)), Policy.of(*capabilities)))
 
 
@@ -143,9 +144,10 @@ def test_repr_names_the_enabled_set_and_the_wrapped_backend():
     assert "FakeBackend" in text and "file.trash" in text
 
 
-# --- dimension 2: the file allowlist ---------------------------------------
+# --- dimension 2: the read and modify allowlists ---------------------------
 
 from csa_google_workspace.allowlist import parse_allowlist  # noqa: E402
+from csa_google_workspace.policy import Scope  # noqa: E402
 
 DOC_URL = "https://docs.google.com/document/d/1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8/edit"
 DOC_ID = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
@@ -153,82 +155,155 @@ FILES_TWO = {
     DOC_ID: {"id": DOC_ID, "name": "Allowed", "mimeType": DOC, "webViewLink": "https://x"},
     "other": {"id": "other", "name": "Not allowed", "mimeType": DOC, "webViewLink": "https://x"},
 }
+ONE_FILE = Scope.from_listing(parse_allowlist(DOC_URL))
 
 
-def _scoped(*capabilities):
-    entries = parse_allowlist(DOC_URL)
-    return Workspace(PolicyBackend(FakeBackend(dict(FILES_TWO)),
-                                   Policy.from_entries(frozenset(capabilities), entries)))
+def _ws2(*capabilities, read=None, modify=None):
+    pol = Policy(enabled=frozenset(capabilities),
+                 read=read or Scope.everything(),
+                 modify=modify or Scope.everything())
+    return Workspace(PolicyBackend(FakeBackend(dict(FILES_TWO)), pol))
 
+
+# --- the modify scope -------------------------------------------------------
 
 def test_a_listed_file_may_be_written():
-    doc = _scoped(policy.COMMENT_CREATE).open(DOC_ID)
+    doc = _ws2(policy.COMMENT_CREATE, modify=ONE_FILE).open(DOC_ID)
     assert doc.create_comment("allowed").content == "allowed"
 
 
 def test_an_unlisted_file_may_not_be_written():
-    doc = _scoped(policy.COMMENT_CREATE).open("other")
+    doc = _ws2(policy.COMMENT_CREATE, modify=ONE_FILE).open("other")
     with pytest.raises(exc.ReadOnlyError) as e:
         doc.create_comment("nope")
     message = str(e.value)
-    assert "not in the write allowlist" in message
-    assert "1 file(s) listed" in message
-    assert "cannot be added from here" in message      # not widenable in-band
+    assert "not in the modify allowlist" in message
+    assert "CSA_GW_ALLOWLIST_MODIFY" in message
+    assert "cannot be changed from here" in message      # not widenable in-band
 
 
-def test_an_unlisted_file_may_still_be_read():
-    """#82 is damage containment, not confidentiality."""
-    ws = _scoped(policy.COMMENT_CREATE)
-    doc = ws.open("other")
-    assert doc.name == "Not allowed"
-    assert doc.comments.all() == []
+def test_an_unlisted_file_is_still_readable_when_read_is_wide():
+    """The whole point of splitting the two: READ=* with MODIFY locked down."""
+    ws = _ws2(policy.COMMENT_CREATE, modify=ONE_FILE)
+    assert ws.open("other").name == "Not allowed"
+    assert ws.open("other").comments.all() == []
 
 
-def test_the_two_dimensions_compose_as_a_ceiling_and_a_narrowing():
-    """A capability absent from `enabled` cannot be reached by listing the file, and a file
-    absent from the list cannot be reached by enabling the capability."""
-    listed = _scoped().open(DOC_ID)                     # listed, but no capabilities
+# --- the read scope ---------------------------------------------------------
+
+def test_a_read_outside_the_read_scope_is_refused():
+    with pytest.raises(exc.AccessError) as e:
+        _ws2(read=ONE_FILE).open("other")
+    assert "CSA_GW_ALLOWLIST_READ" in str(e.value)
+
+
+def test_a_refused_read_is_an_access_error_not_a_read_only_error():
+    """Nothing about writing is involved, and the exception type is part of the API."""
+    with pytest.raises(exc.AccessError):
+        _ws2(read=ONE_FILE).open("other")
+    assert not issubclass(exc.AccessError, exc.ReadOnlyError)
+
+
+def test_a_read_inside_the_read_scope_works():
+    assert _ws2(read=ONE_FILE).open(DOC_ID).name == "Allowed"
+
+
+def test_search_results_outside_the_read_scope_are_filtered_out():
+    """A listing has no single file to check, so the results are filtered. Anything outside
+    the read scope must not be *named* either, or search enumerates what the policy excludes."""
+    hits = _ws2(read=ONE_FILE).files.search("name contains 'llowed'")
+    assert [h.id for h in hits] == [DOC_ID]          # "Not allowed" also matches the query
+
+
+def test_search_is_unfiltered_when_read_is_everything():
+    hits = _ws2().files.search("name contains 'llowed'")
+    assert {h.id for h in hits} == {DOC_ID, "other"}
+
+
+def test_nothing_is_readable_when_the_read_scope_is_empty():
+    """Fail closed: the MCP server's default when nothing is configured."""
+    ws = Workspace(PolicyBackend(FakeBackend(dict(FILES_TWO)),
+                                 Policy(enabled=frozenset(), read=Scope.nothing(),
+                                        modify=Scope.nothing())))
+    with pytest.raises(exc.AccessError) as e:
+        ws.open(DOC_ID)
+    assert "no read allowlist is configured" in str(e.value)
+    assert ws.files.search("name contains 'llowed'") == []
+
+
+# --- composition ------------------------------------------------------------
+
+def test_the_three_bounds_are_each_a_ceiling():
+    listed = _ws2(modify=ONE_FILE).open(DOC_ID)          # in scope, no capability
     with pytest.raises(exc.ReadOnlyError) as e:
         listed.create_comment("no")
     assert "capability is disabled" in str(e.value)
 
-    unlisted = _scoped(policy.COMMENT_CREATE).open("other")
+    unlisted = _ws2(policy.COMMENT_CREATE, modify=ONE_FILE).open("other")
     with pytest.raises(exc.ReadOnlyError) as e:
         unlisted.create_comment("no")
-    assert "not in the write allowlist" in str(e.value)
+    assert "not in the modify allowlist" in str(e.value)
 
 
-def test_content_writes_are_file_scoped_too():
+def test_content_writes_are_modify_scoped_too():
     edit = [{"insertText": {"location": {"index": 1}, "text": "x"}}]
-    _scoped(policy.CONTENT_WRITE).open(DOC_ID).batch_update(edit)   # allowed
+    _ws2(policy.CONTENT_WRITE, modify=ONE_FILE).open(DOC_ID).batch_update(edit)
     with pytest.raises(exc.ReadOnlyError):
-        _scoped(policy.CONTENT_WRITE).open("other").batch_update(edit)
+        _ws2(policy.CONTENT_WRITE, modify=ONE_FILE).open("other").batch_update(edit)
 
 
-def test_no_allowlist_means_no_file_restriction():
-    """The default, because it is what this library has always done. Flipping it to
-    fail-closed is a recorded 1.0.0 decision, not a silent change."""
-    ws = Workspace(PolicyBackend(FakeBackend(dict(FILES_TWO)),
-                                 Policy.of(policy.COMMENT_CREATE)))
-    assert ws.open("other").create_comment("fine").content == "fine"
+def test_a_star_scope_permits_everything():
+    everything = Scope.from_listing(parse_allowlist("*"))
+    assert everything.allows("anything-at-all")
+    _ws2(policy.COMMENT_CREATE, modify=everything).open("other").create_comment("fine")
 
 
-def test_repr_says_how_many_files_are_in_scope():
-    scoped = PolicyBackend(FakeBackend({}), Policy.from_entries(
-        frozenset({policy.COMMENT_CREATE}), parse_allowlist(DOC_URL)))
-    assert "1 file(s)" in repr(scoped)
-    assert "unrestricted" in repr(PolicyBackend(FakeBackend({}), Policy.default()))
+# --- Scope itself -----------------------------------------------------------
+
+def test_scope_distinguishes_everything_from_nothing():
+    """Collapsing these into one representation is how a fail-closed default becomes
+    fail-open during a refactor."""
+    assert Scope.everything().allows("x") and not Scope.nothing().allows("x")
+    assert Scope.everything().describe() == "every file"
+    assert Scope.nothing().describe() == "no files"
+    assert ONE_FILE.describe() == "1 listed file(s)"
+
+
+def test_the_library_default_is_permissive_unlike_the_server():
+    """`Workspace.from_credentials` is called by a developer who has made a decision; the MCP
+    server is configuration handed to a model. Two artifacts, two defaults."""
+    assert Policy.default().read.all_files and Policy.default().modify.all_files
+
+
+# --- Policy construction ---------------------------------------------------
+
+def test_with_scopes_leaves_capabilities_alone():
+    p = Policy.of(policy.COMMENT_CREATE).with_scopes(modify=ONE_FILE)
+    assert p.enabled == frozenset({policy.COMMENT_CREATE})
+    assert p.modify is ONE_FILE and p.read.all_files
+
+
+def test_repr_describes_both_scopes():
+    text = repr(PolicyBackend(FakeBackend({}), Policy.of(policy.COMMENT_CREATE)
+                              .with_scopes(modify=ONE_FILE)))
+    assert "read=every file" in text and "modify=1 listed file(s)" in text
 
 
 def test_every_file_scoped_gate_receives_a_file_id():
-    """`Gate.file_scoped` is a claim about the method's first argument. If a gated method
-    ever stops taking one, the wrapper fails closed — this asserts the claim is true today
-    for every entry, so that failure never reaches a user."""
+    """`Gate.file_scoped` is a claim about the method's first argument. If a gated method ever
+    stops taking one, the wrapper fails closed — this asserts the claim holds today, so that
+    failure never reaches a user."""
     import inspect
 
     from csa_google_workspace.policy import _GATES
     for name, gate in _GATES.items():
-        if gate.capability is None or not gate.file_scoped:
+        if not gate.file_scoped:
             continue
         first = list(inspect.signature(getattr(Backend, name)).parameters)[1]
         assert first == "file_id", f"{name} is file_scoped but its first parameter is {first!r}"
+
+
+def test_every_gate_declares_a_known_access_kind():
+    from csa_google_workspace.policy import _GATES, MODIFY, READ
+    for name, gate in _GATES.items():
+        assert gate.access in (READ, MODIFY), f"{name} has access={gate.access!r}"

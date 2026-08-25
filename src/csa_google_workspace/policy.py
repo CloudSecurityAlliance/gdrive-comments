@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import exceptions as exc
-from .allowlist import Entry
+from .allowlist import Entry, Listing
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,47 @@ DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COM
 # Google's own MCP server declines to offer at all.
 DEFAULT_DISABLED = frozenset({FILE_UPDATE, FILE_TRASH, FILE_SHARE})
 
+READ = "read"
+MODIFY = "modify"
+
+
+@dataclass(frozen=True)
+class Scope:
+    """Which files one *kind* of access may touch: everything, or a named set.
+
+    `all_files` and "an empty set" are deliberately different states. Empty means *nothing is
+    permitted* — the fail-closed default for the MCP server — and `all_files` is a decision
+    somebody typed as a literal `*`. Collapsing them into one representation is how a
+    fail-closed default turns into a fail-open one during a refactor.
+    """
+    all_files: bool = False
+    ids: frozenset[str] = frozenset()
+    entries: tuple[Entry, ...] = field(default=(), repr=False)
+
+    @classmethod
+    def everything(cls) -> Scope:
+        return cls(all_files=True)
+
+    @classmethod
+    def nothing(cls) -> Scope:
+        return cls(all_files=False)
+
+    @classmethod
+    def from_listing(cls, listing: Listing) -> Scope:
+        return cls(all_files=listing.all_files, ids=listing.file_ids,
+                   entries=listing.entries)
+
+    def allows(self, file_id: str) -> bool:
+        return self.all_files or file_id in self.ids
+
+    def describe(self) -> str:
+        if self.all_files:
+            return "every file"
+        if not self.ids:
+            return "no files"
+        return f"{len(self.ids)} listed file(s)"
+
+
 @dataclass(frozen=True)
 class Gate:
     """What a `Backend` method needs in order to proceed.
@@ -76,10 +117,14 @@ class Gate:
     creation, which cannot damage a file that already exists.
     """
     capability: str | Callable[..., str] | None
-    file_scoped: bool = True
+    access: str = MODIFY            # READ or MODIFY — which allowlist applies
+    file_scoped: bool = True        # False for the account axis, which has no file id
 
 
-READ = Gate(capability=None, file_scoped=False)
+# A per-file read: no capability needed, but the read allowlist applies.
+READS_FILE = Gate(capability=None, access=READ, file_scoped=True)
+# A listing (the account axis). No file id to check, so the *results* are filtered instead.
+READS_LISTING = Gate(capability=None, access=READ, file_scoped=False)
 
 
 def _reply_gate(file_id: str, comment_id: str, content: Any = None,
@@ -101,65 +146,60 @@ def _reply_gate(file_id: str, comment_id: str, content: Any = None,
 _GATES: dict[str, Gate] = {
     # reads — never gated: #82 is damage containment, not confidentiality. The agent already
     # sees whatever the user's credentials see.
-    "get_file_metadata": READ,
-    "list_permissions": READ,
-    "search_files": READ,
-    "list_comments": READ,
-    "get_comment": READ,
-    "export_file": READ,
-    "get_document": READ,
-    "get_spreadsheet": READ,
-    "get_values": READ,
-    "get_presentation": READ,
+    "get_file_metadata": READS_FILE,
+    "list_permissions": READS_FILE,
+    "search_files": READS_LISTING,
+    "list_comments": READS_FILE,
+    "get_comment": READS_FILE,
+    "export_file": READS_FILE,
+    "get_document": READS_FILE,
+    "get_spreadsheet": READS_FILE,
+    "get_values": READS_FILE,
+    "get_presentation": READS_FILE,
     # comment writes
-    "create_comment": Gate(COMMENT_CREATE),
-    "create_reply": Gate(_reply_gate),       # reply vs resolve/reopen — see above
-    "update_comment": Gate(COMMENT_EDIT),
-    "update_reply": Gate(COMMENT_EDIT),
-    "delete_comment": Gate(COMMENT_DELETE),
-    "delete_reply": Gate(COMMENT_DELETE),
+    "create_comment": Gate(COMMENT_CREATE, MODIFY),
+    "create_reply": Gate(_reply_gate, MODIFY),   # reply vs resolve/reopen — see above
+    "update_comment": Gate(COMMENT_EDIT, MODIFY),
+    "update_reply": Gate(COMMENT_EDIT, MODIFY),
+    "delete_comment": Gate(COMMENT_DELETE, MODIFY),
+    "delete_reply": Gate(COMMENT_DELETE, MODIFY),
     # content writes
-    "docs_batch_update": Gate(CONTENT_WRITE),
-    "sheets_values_update": Gate(CONTENT_WRITE),
-    "sheets_values_append": Gate(CONTENT_WRITE),
-    "sheets_values_clear": Gate(CONTENT_WRITE),
-    "sheets_batch_update": Gate(CONTENT_WRITE),
-    "slides_batch_update": Gate(CONTENT_WRITE),
+    "docs_batch_update": Gate(CONTENT_WRITE, MODIFY),
+    "sheets_values_update": Gate(CONTENT_WRITE, MODIFY),
+    "sheets_values_append": Gate(CONTENT_WRITE, MODIFY),
+    "sheets_values_clear": Gate(CONTENT_WRITE, MODIFY),
+    "sheets_batch_update": Gate(CONTENT_WRITE, MODIFY),
+    "slides_batch_update": Gate(CONTENT_WRITE, MODIFY),
     # API-impossible today; ApiBackend raises UnsupportedOperation. Gated anyway so a future
     # PlaywrightBackend does not arrive ungated.
-    "accept_suggestion": Gate(CONTENT_WRITE),
-    "create_cell_anchored_comment": Gate(COMMENT_CREATE),
+    "accept_suggestion": Gate(CONTENT_WRITE, MODIFY),
+    "create_cell_anchored_comment": Gate(COMMENT_CREATE, MODIFY),
 }
 
 
 @dataclass(frozen=True)
 class Policy:
-    """What this deployment may mutate: which capabilities, and on which files.
+    """What this deployment may do: which capabilities, and which files for read vs modify.
 
-    The two dimensions compose one way only — **global is a ceiling, the file list narrows**.
-    A capability absent from `enabled` cannot be reached by listing a file, and a file absent
-    from `allowed_files` cannot be reached by enabling a capability.
+    Three independent bounds, composing one way only — **each is a ceiling, none can widen
+    another**. A capability absent from `enabled` cannot be reached by listing a file; a file
+    absent from `modify` cannot be reached by enabling a capability; and a file absent from
+    `read` cannot be reached at all.
 
-    `allowed_files=None` means *no file restriction* — every file the credentials can reach.
-    That is the default, because it is what this library has always done; making it
-    fail-closed is a deliberate 1.0.0 decision recorded in `TODO.md`, not something to change
-    silently under existing users.
+    Reads and mutations are separated because they are different risks. The usual posture is
+    `read=Scope.everything()` — matching what Google's and Anthropic's Drive servers do, since
+    the agent already sees whatever the user's credentials see — with `modify` a short,
+    reviewed list. Bounding what can be *broken* is the part that helps.
 
-    Construct with `Policy.default()` for today's behaviour, or `Policy(enabled=frozenset())`
-    for a policy that permits no mutation at all — the same outcome as `read_only=True`,
-    reached from the other direction.
+    `Policy.default()` is **permissive** on both scopes. That is deliberate and it is *not*
+    the MCP server's default: this class is also the library's, and `Workspace.from_credentials`
+    is called by a developer writing code who has already made a decision. The MCP server is
+    configuration handed to a model, so it fails closed when nothing is configured. Two
+    artifacts, two threat models — see `mcp/_config.py`.
     """
     enabled: frozenset[str]
-    allowed_files: frozenset[str] | None = None
-    entries: tuple[Entry, ...] = field(default=(), repr=False)
-
-    @classmethod
-    def from_entries(cls, enabled: frozenset[str], entries: tuple[Entry, ...]) -> Policy:
-        return cls(enabled=enabled, allowed_files=frozenset(e.file_id for e in entries),
-                   entries=entries)
-
-    def allows_file(self, file_id: str) -> bool:
-        return self.allowed_files is None or file_id in self.allowed_files
+    read: Scope = field(default_factory=Scope.everything)
+    modify: Scope = field(default_factory=Scope.everything)
 
     @classmethod
     def default(cls) -> Policy:
@@ -173,19 +213,26 @@ class Policy:
                              f"known: {', '.join(ALL_CAPABILITIES)}")
         return cls(enabled=frozenset(capabilities))
 
+    def scope_for(self, access: str) -> Scope:
+        return self.read if access == READ else self.modify
+
     def allows(self, capability: str | None) -> bool:
         return capability is None or capability in self.enabled
+
+    def with_scopes(self, *, read: Scope | None = None,
+                    modify: Scope | None = None) -> Policy:
+        return Policy(enabled=self.enabled, read=read or self.read,
+                      modify=modify or self.modify)
 
     def with_enabled(self, *capabilities: str) -> Policy:
         """Widen the capability set. Only ever called by whoever *configures* the server,
         never in-band: an agent that can widen its own policy does not have one."""
         widened = Policy.of(*(self.enabled | set(Policy.of(*capabilities).enabled)))
-        return Policy(enabled=widened.enabled, allowed_files=self.allowed_files,
-                      entries=self.entries)
+        return Policy(enabled=widened.enabled, read=self.read, modify=self.modify)
 
     def without(self, *capabilities: str) -> Policy:
-        return Policy(enabled=self.enabled - set(capabilities),
-                      allowed_files=self.allowed_files, entries=self.entries)
+        return Policy(enabled=self.enabled - set(capabilities), read=self.read,
+                      modify=self.modify)
 
 
 class PolicyBackend:
@@ -214,8 +261,6 @@ class PolicyBackend:
                 f"refused. Add it there (with None for a read) rather than bypassing this.")
         gate = _GATES[name]
         inner = getattr(self._inner, name)
-        if gate.capability is None:
-            return inner                                  # a read; no wrapper needed
 
         def guarded(*args: Any, **kwargs: Any) -> Any:
             rule = gate.capability
@@ -226,6 +271,8 @@ class PolicyBackend:
                     f"the {capability!r} capability is disabled for this server, so {name} "
                     f"is refused. An operator enables it in configuration; it cannot be "
                     f"turned on from here.")
+
+            scope = self._policy.scope_for(gate.access)
             if gate.file_scoped:
                 file_id = kwargs.get("file_id") or (args[0] if args else None)
                 if file_id is None:
@@ -234,25 +281,47 @@ class PolicyBackend:
                     raise exc.UnsupportedOperation(
                         f"{name} is declared file-scoped but was called without a file id, "
                         f"so the allowlist cannot be applied. This is a bug.")
-                if not self._policy.allows_file(file_id):
-                    log.warning("policy denied %s on %s: not in the write allowlist",
-                                name, file_id)
-                    raise exc.ReadOnlyError(self._not_allowlisted(name, file_id))
-            log.debug("policy allowed %s (%s)", name, capability)
-            return inner(*args, **kwargs)
+                if not scope.allows(file_id):
+                    log.warning("policy denied %s on %s: outside the %s allowlist",
+                                name, file_id, gate.access)
+                    raise self._denied(name, file_id, gate.access, scope)
+                return inner(*args, **kwargs)
+
+            result = inner(*args, **kwargs)
+            # A listing has no single file to check, so the *results* are filtered. Anything
+            # outside the read scope is not merely unreadable — it must not be named either,
+            # or search becomes a way to enumerate files the policy excludes.
+            return self._filter_listing(name, result, scope)
 
         guarded.__name__ = name
         return guarded
 
-    def _not_allowlisted(self, name: str, file_id: str) -> str:
-        count = len(self._policy.allowed_files or ())
-        return (f"{name} is refused: file {file_id} is not in the write allowlist "
-                f"({count} file(s) listed). Reads are unaffected. To permit it, an operator "
-                f"adds the document's URL to the allowlist file — it cannot be added from "
-                f"here.")
+    @staticmethod
+    def _filter_listing(name: str, result: Any, scope: Scope) -> Any:
+        if scope.all_files or not isinstance(result, dict) or "files" not in result:
+            return result
+        kept = [f for f in result["files"] if scope.allows(f.get("id", ""))]
+        dropped = len(result["files"]) - len(kept)
+        if dropped:
+            log.warning("policy filtered %d result(s) from %s: outside the read allowlist",
+                        dropped, name)
+        return {**result, "files": kept}
+
+    def _denied(self, name: str, file_id: str, access: str, scope: Scope) -> Exception:
+        which = "CSA_GW_ALLOWLIST_READ" if access == READ else "CSA_GW_ALLOWLIST_MODIFY"
+        if not scope.all_files and not scope.ids:
+            detail = (f"no {access} allowlist is configured, so nothing is permitted. An "
+                      f"operator sets {which} to a list of document URLs, or to `*` for "
+                      f"unrestricted {access} access.")
+        else:
+            detail = (f"it is not in the {access} allowlist ({scope.describe()}). An operator "
+                      f"adds the document's URL to {which}.")
+        message = f"{name} is refused on file {file_id}: {detail} It cannot be changed from here."
+        # A refused *read* is not a ReadOnlyError — nothing about writing is involved.
+        return exc.AccessError(message) if access == READ else exc.ReadOnlyError(message)
 
     def __repr__(self) -> str:
-        scope = ("unrestricted" if self._policy.allowed_files is None
-                 else f"{len(self._policy.allowed_files)} file(s)")
         return (f"PolicyBackend(inner={type(self._inner).__name__}, "
-                f"enabled={sorted(self._policy.enabled)}, files={scope})")
+                f"enabled={sorted(self._policy.enabled)}, "
+                f"read={self._policy.read.describe()}, "
+                f"modify={self._policy.modify.describe()})")

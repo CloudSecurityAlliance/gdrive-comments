@@ -130,16 +130,21 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
             gate is refused, not delegated, so a new method arrives *off*. `CSA_GW_CAPABILITIES`
             is the complete permitted list, not a delta, so it reviews like code. Default
             refuses rename/move, trash and share. Cannot be widened in-band.
-      - [x] **Per-URL scope, basic form** — **done 2026-08-25** (v0.8.0). A flat list of
-            document URLs in a plain-text file (`CSA_GW_ALLOWLIST`), matched by file id.
-            Fails closed on every failure mode: missing file, unreadable, no usable entries,
-            any malformed line. Folder URLs are a **loud error**, not an inert entry. Denials
-            log at WARNING with the file id.
+      - [x] **Per-URL scope** — **done 2026-08-25** (v0.8.0, split by access kind in v0.9.0).
+            Two flat lists of document URLs, `CSA_GW_ALLOWLIST_READ` and
+            `CSA_GW_ALLOWLIST_MODIFY`, matched by file id. **Both fail closed**: unset permits
+            nothing, and `*` must be typed. Folder URLs are a **loud error**, not an inert
+            entry. `search_files` results are filtered to the read scope. Denials log at
+            WARNING.
       - [ ] **Still open in the basic form:** per-capability scope (a structured format — this
             file cannot express "commentable but not editable"), optional expiry, dead-entry
             detection (an allowlisted file that has been trashed), and a **dry-run** answering
             "what would this run touch" before it touches anything.
-      - [ ] **Decide the no-allowlist default before 1.0.0.** Today an unset `CSA_GW_ALLOWLIST`
+      - [x] **The no-allowlist default: decided and flipped** (v0.9.0). Unset is fail closed
+            in the MCP server; `*` is the typed escape hatch. The library keeps a permissive
+            default, because `from_credentials` is called by a developer who has made a
+            decision while the server is configuration handed to a model.
+      - [ ] **Superseded by the broader model, eventually.** Today an unset `CSA_GW_ALLOWLIST`
             with no default file means no file restriction, because that is what this library
             has always done and flipping it silently would break every existing user. #82's
             requirement surface asks for fail-closed *including the no-policy-configured
@@ -148,6 +153,19 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
             already exists (`CSA_GW_ALLOWLIST=any`, shipped v0.8.0), so the flip is a
             one-line change to a default plus a CHANGELOG note, and nobody ends up stuck.
       - [ ] **Folders** — see the next section. Deliberately not attempted yet.
+
+### What shipped is a first control, not the design
+
+Worth stating plainly so nobody reads more into it than is there. v0.8–0.9 give **per-capability
+gating plus two flat lists of document URLs**. That is enough to be concrete — a volunteer's
+install is physically unable to change a document nobody listed — and it is enough to demonstrate
+that the project takes the read→act path seriously. It is **not** a general authorization model.
+
+A broader long-term design is being researched separately. Two properties of what is here should
+survive into it, because they are what make it worth relying on at all: enforcement lives in a
+**`Backend` wrapper**, so library embedders and MCP clients get the same guarantee from one
+auditable place; and the policy **cannot be widened in-band**, because no tool changes it. Any
+richer model that gives those up is a step backwards regardless of what else it adds.
 
 ### Folders in the allowlist — the design questions, unanswered
 
