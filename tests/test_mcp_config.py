@@ -19,6 +19,18 @@ from csa_google_workspace import Workspace, exceptions
 from csa_google_workspace.mcp import _config
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_allowlist(tmp_path, monkeypatch):
+    """Point the default allowlist path at somewhere that does not exist.
+
+    Without this, every assertion here about "no policy configured" would pass or fail
+    depending on whether the developer happens to have ~/.csa_google_workspace/allowlist.txt
+    — the same machine-dependent trap that once made a `login` test pass only because CI
+    lacked a client_secret.json. Tests that *want* the default path patch it themselves.
+    """
+    monkeypatch.setattr(_config, "DEFAULT_ALLOWLIST_PATH", str(tmp_path / "absent.txt"))
+
+
 class FakeCreds:
     valid = True
 
@@ -286,3 +298,71 @@ def test_no_allowlist_variable_leaves_files_unrestricted():
     from csa_google_workspace.mcp._config import settings_from_env
     policy = settings_from_env({"CSA_GW_CAPABILITIES": "comment.create"}).policy
     assert policy is not None and policy.allowed_files is None
+
+
+# --- the three ways to configure the allowlist ------------------------------
+
+def test_the_default_path_is_used_when_it_exists(tmp_path, monkeypatch):
+    """Same pattern as client_secret.json: a curated list dropped in place by a setup script
+    needs no per-user configuration, because the people running it did not write it."""
+    default = tmp_path / "allowlist.txt"
+    default.write_text(f"{_ALLOW_URL}\n", encoding="utf-8")
+    monkeypatch.setattr(_config, "DEFAULT_ALLOWLIST_PATH", str(default))
+    policy = _config.settings_from_env({}).policy
+    assert policy is not None and policy.allowed_files == frozenset({_ALLOW_ID})
+
+
+def test_an_explicit_path_overrides_the_default(tmp_path, monkeypatch):
+    other_id = "2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    default = tmp_path / "allowlist.txt"; default.write_text(_ALLOW_URL, encoding="utf-8")
+    explicit = tmp_path / "other.txt"
+    explicit.write_text(f"https://docs.google.com/document/d/{other_id}/edit", encoding="utf-8")
+    monkeypatch.setattr(_config, "DEFAULT_ALLOWLIST_PATH", str(default))
+    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST": str(explicit)}).policy
+    assert policy is not None and policy.allowed_files == frozenset({other_id})
+
+
+def test_urls_can_be_given_inline_for_a_json_env_block():
+    """A JSON `env` value cannot easily ship a second file alongside it."""
+    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST": _ALLOW_URL}).policy
+    assert policy is not None and policy.allowed_files == frozenset({_ALLOW_ID})
+
+
+def test_inline_urls_accept_commas_and_whitespace():
+    other_id = "2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    value = f"{_ALLOW_URL}, https://docs.google.com/document/d/{other_id}/edit"
+    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST": value}).policy
+    assert policy is not None
+    assert policy.allowed_files == frozenset({_ALLOW_ID, other_id})
+
+
+def test_inline_urls_with_newlines_keep_their_reasons():
+    """`\\n` in a JSON string, so the reason-per-entry survives inline configuration."""
+    other_id = "2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    value = (f"{_ALLOW_URL}  # CCM mapping\n"
+             f"https://docs.google.com/document/d/{other_id}/edit  # AICM tracker")
+    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST": value}).policy
+    assert policy is not None
+    assert sorted(e.reason for e in policy.entries) == ["AICM tracker", "CCM mapping"]
+
+
+def test_a_path_is_not_mistaken_for_a_url(tmp_path, monkeypatch):
+    """`://` is the discriminator. Guessing with os.path.exists instead would silently
+    reinterpret a mistyped path as a URL list, which is the failure this must not have."""
+    from csa_google_workspace.allowlist import AllowlistError
+    with pytest.raises(AllowlistError) as e:
+        _config.settings_from_env({"CSA_GW_ALLOWLIST": str(tmp_path / "typo.txt")})
+    assert "no allowlist file at" in str(e.value)      # read as a path, and reported as one
+
+
+def test_any_is_the_explicit_opt_out(tmp_path, monkeypatch):
+    """Even with a default allowlist present, `any` means unrestricted — deliberately, and
+    typed by somebody. That is what makes flipping the 1.0.0 default possible."""
+    default = tmp_path / "allowlist.txt"; default.write_text(_ALLOW_URL, encoding="utf-8")
+    monkeypatch.setattr(_config, "DEFAULT_ALLOWLIST_PATH", str(default))
+    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST": "any"}).policy
+    assert policy is None or policy.allowed_files is None
+
+
+def test_any_is_case_insensitive():
+    assert _config.settings_from_env({"CSA_GW_ALLOWLIST": "ANY"}).policy is None

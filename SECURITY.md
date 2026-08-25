@@ -74,8 +74,13 @@ What it does about it, and what it does not:
   delegated, so a new method arrives *off* rather than unguarded.
   It also cannot be widened in-band. An agent has no tool that changes the policy; only whoever
   starts the server does. Session scoping that the guest can broaden is not scoping.
-- **`CSA_GW_ALLOWLIST` — the write allowlist**, #82's second dimension, shipped in v0.8.0. A
-  plain-text file, one Google document URL per line, `#` for comments. **Writes are refused for
+- **`CSA_GW_ALLOWLIST` — the write allowlist**, #82's second dimension, shipped in v0.8.0.
+  One Google document URL per line, `#` for comments. Configurable three ways so it fits the
+  deployment: a **path**, the **URLs inline** (for an MCP client's JSON `env` block), or the
+  default `~/.csa_google_workspace/allowlist.txt` when present — the last of these so a
+  **curated list can be distributed by a setup script with no per-user configuration**, which
+  is the case that matters when the people running it did not write it. `any` is the explicit
+  opt-out. **Writes are refused for
   any file not listed; reads are unaffected**, because #82 is damage containment rather than
   confidentiality — the agent already sees whatever the credentials see, so what must be bounded
   is what it can *break*.

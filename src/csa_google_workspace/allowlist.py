@@ -26,6 +26,17 @@ deliberate later migration, noted in `TODO.md`.
 **Fail closed.** A configured-but-unusable allowlist (missing file, unreadable, no valid
 entries, any malformed line) raises rather than degrading to "no restrictions". The failure
 mode being avoided is an operator who believes writes are scoped when they are not.
+
+**Three ways to configure it**, because they suit different deployments:
+
+* **The default path** `~/.csa_google_workspace/allowlist.txt`, used automatically when it
+  exists — next to `client_secret.json`, and for the same reason. A curated list distributed
+  by a setup script needs no per-user configuration at all, which matters when the people
+  running it did not write it.
+* **`CSA_GW_ALLOWLIST=/path/to/file`** — an explicit path.
+* **`CSA_GW_ALLOWLIST=<urls>`** — the URLs *inline*, for an MCP client's JSON `env` block
+  where shipping a second file is awkward. Any value containing `://` is read as URLs rather
+  than a path; a filesystem path does not contain that.
 """
 from __future__ import annotations
 
@@ -139,6 +150,28 @@ def parse_allowlist(text: str, *, source: str = "<string>") -> tuple[Entry, ...]
             f"empty allowlist, because that is indistinguishable from a typo'd path and "
             f"would silently permit nothing (or, if ignored, everything).")
     return tuple(entries)
+
+
+def is_inline(value: str) -> bool:
+    """Is this configuration value a list of URLs rather than a path?
+
+    `://` is the discriminator: a URL always has it and a filesystem path does not. Chosen
+    over a second environment variable so there is one place to look, and over guessing by
+    `os.path.exists` — which would silently reinterpret a mistyped path as a URL list.
+    """
+    return "://" in value
+
+
+def parse_inline(value: str) -> tuple[Entry, ...]:
+    """Parse URLs given directly in configuration.
+
+    Newlines separate entries, so a JSON `env` value can use `\n` and keep the `# reason`
+    comments. Commas, semicolons and whitespace also separate entries **when the value has no
+    `#`** — that condition is what stops a separator and a comment fighting over the same
+    character, and it means the ambiguous case is simply not reachable.
+    """
+    text = value if "#" in value else re.sub(r"[,;\s]+", "\n", value.strip())
+    return parse_allowlist(text, source="CSA_GW_ALLOWLIST")
 
 
 def load_allowlist(path: str) -> tuple[Entry, ...]:

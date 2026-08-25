@@ -140,13 +140,13 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
             detection (an allowlisted file that has been trashed), and a **dry-run** answering
             "what would this run touch" before it touches anything.
       - [ ] **Decide the no-allowlist default before 1.0.0.** Today an unset `CSA_GW_ALLOWLIST`
-            means no file restriction, because that is what this library has always done and
-            flipping it silently would break every existing user. #82's requirement surface
-            asks for fail-closed *including the no-policy-configured default*. **Recommendation:
-            flip it at 1.0.0** — a public release whose selling point is scoped write access
-            should not default to unscoped — and make the blunt escape hatch explicit
-            (`CSA_GW_ALLOWLIST=any`) so that choosing unrestricted writes is a thing someone
-            typed, not a thing they never thought about.
+            with no default file means no file restriction, because that is what this library
+            has always done and flipping it silently would break every existing user. #82's
+            requirement surface asks for fail-closed *including the no-policy-configured
+            default*. **Recommendation: flip it at 1.0.0** — a public release whose selling
+            point is scoped write access should not default to unscoped. The escape hatch
+            already exists (`CSA_GW_ALLOWLIST=any`, shipped v0.8.0), so the flip is a
+            one-line change to a default plus a CHANGELOG note, and nobody ends up stuck.
       - [ ] **Folders** — see the next section. Deliberately not attempted yet.
 
 ### Folders in the allowlist — the design questions, unanswered
