@@ -1,4 +1,4 @@
-from .. import _content
+from .. import _content, _formats
 from .. import suggestions as _suggestions
 from ..base import Document, occurrences_changed
 
@@ -15,6 +15,16 @@ class Doc(Document):
             raise ValueError(f"suggestions must be one of {sorted(_VIEW)} or None")
         mode = _VIEW[suggestions] if suggestions else None
         return _content.doc_text(self._backend.get_document(self.id, mode))
+
+    def as_markdown(self) -> str:
+        """This document as Markdown.
+
+        Drive's own conversion, so headings, lists, tables and links survive — unlike
+        `as_text()`, which is text runs only. This is the format CSA's `document-pipeline`
+        plugin consumes (Markdown -> tagged PDF/UA-1), which makes a Doc a usable *source*
+        for a publishing toolchain rather than a dead end.
+        """
+        return self.export(_formats.MARKDOWN).decode("utf-8")
 
     @property
     def suggestions(self) -> list[_suggestions.Suggestion]:
