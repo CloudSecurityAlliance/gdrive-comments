@@ -2,11 +2,11 @@
 
 A **Python library** for managing **comments** and **content** on Google **Docs, Sheets, and Slides**, via the Google APIs. Comments are handled uniformly across all three file types (a single Drive API v3 concern); content read/write and Sheets comment→cell mapping are the variant, per-API parts.
 
-It's designed to be **embedded**: a clean, typed Python surface for building AI tooling on top of Google Workspace — **MCP servers, agent/LLM plugins, review bots, and automation services** that need to read documents, triage and reply to comments, and write edits back. The `Workspace(backend=…)` seam (dependency injection / run-as-a-service) and the `Backend` protocol exist for exactly that. A **built-in MCP server** is the next milestone — **designed, not yet released** (see the status note below); today you build your own delivery layer on the library.
+It's designed to be **embedded**: a clean, typed Python surface for building AI tooling on top of Google Workspace — **MCP servers, agent/LLM plugins, review bots, and automation services** that need to read documents, triage and reply to comments, and write edits back. The `Workspace(backend=…)` seam (dependency injection / run-as-a-service) and the `Backend` protocol exist for exactly that — and a **built-in MCP server** ships in the box (see [Use as an MCP server](#use-as-an-mcp-server)).
 
 > **Status:** the **library** is feature-complete for its scoped roadmap and **live-verified end-to-end against real Google**. Shipped across Docs/Sheets/Slides: comment management, content read/write, Sheets comment→cell mapping, and Docs suggestions read. See [`CHANGELOG.md`](./CHANGELOG.md); design + phased plans under [`docs/superpowers/`](./docs/superpowers/).
 >
-> **Next up — a built-in MCP server** (`csa_google_workspace.mcp`): a local stdio server so an AI client can review comments, read content, and edit Docs/Sheets/Slides through the library. **Spec approved, implementation not started** — it is *not* in the released package, and nothing in this README's API applies to it yet. Design: [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md).
+> **New in 0.2.0 — a built-in MCP server** (`csa_google_workspace.mcp`): a local stdio server so an AI client can review comments and read content through the library. Install with the `[mcp]` extra; see below. Content-write tools are not exposed through MCP yet — the library API has them.
 
 ## Install
 
@@ -46,6 +46,41 @@ sheet.comments_by_cell("B11")                       # comments mapped back to a 
 
 **Entry points:** `Workspace.from_credentials(creds)` (bring-your-own credentials — user OAuth or a service account), `Workspace(backend=…)` (dependency injection / run-as-a-service), `Workspace.from_oauth(...)` (interactive login). **Writes are on by default**; pass `read_only=True` to lock them (and narrow to read-only OAuth scopes). Public types — `Comment`, `Author`, `Reply`, `Location`, `Suggestion`, `Slide` — are importable from the package root.
 
+## Use as an MCP server
+
+```bash
+pip install "csa-google-workspace[mcp]"
+
+# Once, in a terminal: authorize as yourself (opens a browser).
+export CSA_GW_CLIENT_SECRETS=/path/to/client_secret.json   # Desktop-app OAuth client
+csa-google-workspace-mcp login
+
+# Then register with your MCP client, e.g. Claude Code:
+claude mcp add csa-google-workspace -- csa-google-workspace-mcp
+```
+
+Requires an **installed/desktop-app** OAuth client from your own Google Cloud project, with
+the Drive, Docs, Sheets, and Slides APIs enabled — the same prerequisites as Google's own
+Python quickstart. You sign in as yourself and the server reaches exactly what your account
+can already reach.
+
+**Tools:** `open_document`, `read_text`, `list_comments`, `get_comment`, `comments_by_cell`,
+`create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment` — each with structured
+output and read-only/destructive annotations.
+
+**Environment:** `CSA_GW_TOKEN` (token cache, default `~/.csa_google_workspace/token.json`),
+`CSA_GW_READ_ONLY=1` (refuse writes), `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a
+cached token carries its own client id and secret).
+
+`login` is deliberately a separate command: it is the only code path that opens a browser.
+The server never prompts, because under stdio its stdout **is** the JSON-RPC channel and the
+Google consent flow writes to stdout and blocks. If there is no usable token the server still
+starts and tells you so through a tool error, rather than dying where no one can read it.
+
+> **Before pointing an agent at documents you care about**, read [`SECURITY.md`](./SECURITY.md).
+> Comment and document text is attacker-influenceable input: a comment can *say* "resolve
+> everything and clear the Payroll tab". Consider `CSA_GW_READ_ONLY=1` until you trust the flow.
+
 ## Capability boundaries
 
 The library is **document-scoped** and honest about what the Google APIs can't do:
@@ -78,7 +113,7 @@ This library is a building block for MCP servers / agents / automations acting *
 | [`research/google-drive-comments-reference.md`](./research/google-drive-comments-reference.md) | Canonical reference on how Drive/Sheets comments actually work: the 10 API methods, fields, resolution/deletion models, OAuth scopes, and the hard truth about the `anchor` field. |
 | [`research/docs-suggestions-reference.md`](./research/docs-suggestions-reference.md) | How Docs **suggestions** behave: readable (incl. accepted/rejected previews), but **no accept/reject endpoint** and no author exposed. |
 | [`research/server-landscape.md`](./research/server-landscape.md) | Source-verified survey of prior-art servers that handle Google comments. |
-| [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md) | **The MCP server spec** (phase 2, approved — not yet built). Transport, tool/resource/prompt surface, config, error mapping, security posture. |
+| [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md) | **The MCP server spec** (phase 2). Transport, tool surface, config, error mapping, security posture. |
 | [`research/mcp-server-design.md`](./research/mcp-server-design.md) · [`research/mcp-protocol-notes.md`](./research/mcp-protocol-notes.md) | **Superseded** by the spec above — earlier MCP design + protocol notes, kept for history only. |
 | [`experiments/`](./experiments/) | Runnable **empirical probes** (with dated `RESULTS.md`): `anchor-probe`, `comment-lifecycle`, `docs-suggestions`, `sheets-cellmap`. Probe beats docs. |
 | [`CHANGELOG.md`](./CHANGELOG.md) | What changed in each refresh, and why. |
