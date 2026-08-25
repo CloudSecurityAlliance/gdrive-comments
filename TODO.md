@@ -115,7 +115,7 @@ several hundred steps and nobody executes it.
 | **3** | **Discovery** — `search_files`, `list_recent_files` | library: new axis on `Workspace` | 2 | Biggest usability win. |
 | **4** | **File lifecycle** — `create_file`, `copy_file`, `update_file`, `trash_file` | library: new axis | 2, 3 | |
 | **5** | **Permissions** — `get_file_permissions`, `share_file` | library | **2** | `share_file` is an exfiltration primitive. |
-| **6** | **Format breadth** — PDF, Office, ODF, images | `export` plumbing | — | Nearly free; `Document.export()` exists, just unexposed. Can ride with 1. |
+| **6** | **Format breadth** — Markdown, PDF, Office, ODF, EPUB (**not** images) | `export` plumbing + a format table | — | Nearly free; `Document.export()` exists, just unexposed. Rides with 1. |
 | **7** | **Differentiators** — `approvals`, `revisions`, `changes`+`watch` | 3 new API surfaces | — | Own brainstorm each. `approvals` is the most on-mission thing found. |
 | **8** | **Docs `batchUpdate` breadth** — 37 unused request types | library | — | A programme, not a plan. Tables first. |
 | **9** | **Hosted server** — unlocks `files.watch` push, and removes install/OAuth-client/login for everyone | new transport + auth + custody | **2**, and a CASA decision | Largest item here, and almost all of it is security rather than features. Own section below. |
@@ -138,13 +138,45 @@ So #82 is not a security chore that can be deferred; it is **a schema decision w
 deadline.** Design the policy while 22 methods are uniform and the exceptions are deliberate.
 Add discovery and creation first and the policy has to be retrofitted around them.
 
-### Recommended first step
+### Recommended first step — **planned, 2026-08-25**
 
-**#1 + #6 together.** One coherent plan, no library changes, ships the naming alignment and the
-transferability that makes the flavour switch possible, adds format breadth almost for free, and
-leaves `server.py` split into `_comments.py` / `_content.py` / `_files.py` — a shape that can
-absorb the rest. `server.py` is 265 lines with 10 tools today; the next dozen tools need that
-split regardless.
+**#1 + #6 together.** One coherent plan: ships the naming alignment and the transferability that
+makes the flavour switch possible, adds format breadth almost for free, and leaves `mcp/` split
+into a `_tools/` package — a shape that can absorb the rest. `server.py` is 265 lines with 10
+tools today; the next dozen tools need that split regardless.
+
+- Plan: [`docs/superpowers/plans/2026-08-25-tool-alignment-and-format-breadth.md`](docs/superpowers/plans/2026-08-25-tool-alignment-and-format-breadth.md)
+- Shape it lands in: [`docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md`](docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md)
+
+Two corrections that came out of writing it, both from probing rather than reading:
+
+- **#6 is not quite "no library change".** It needs a small one — a per-type export-format
+  table, because the formats genuinely differ (a Doc exports Markdown; a deck exports
+  PDF/PPTX/ODP/text and nothing else). One shared enum would hand two thirds of callers an
+  unfixable 400. Library, not delivery layer: it is domain fact, and library users want the
+  same guard.
+- **"images" was wrong.** Only *drawings* export PNG/JPEG/SVG, and the library cannot open a
+  drawing. See [`experiments/export-formats/RESULTS.md`](experiments/export-formats/RESULTS.md).
+
+### Why #6 is worth more than "a few more mime types"
+
+`text/markdown` export is Drive's own conversion, so headings, lists, tables and links survive —
+unlike `as_text()`, which is text runs only. That turns a Google Doc into a usable **source**
+for a Markdown toolchain rather than a dead end, and CSA already has the toolchain: the internal
+**`document-pipeline`** plugin (v2.3.1) takes *Markdown → tagged PDF/UA-1* with a design-rule
+preflight, composition review, citations and CSA brand styling. **A public version is planned**,
+which is what makes this worth designing around rather than treating as one org's convenience.
+
+Drive also *imports* `text/markdown` into a Doc, so the loop closes:
+
+    Google Doc --export text/markdown--> document-pipeline --> branded, accessible PDF/UA-1
+         ^                                                                 |
+         +----- import text/markdown (#4 create_file) <--- revised source -+
+
+Draft and review where the comments are, typeset where the brand rules are, put the result back
+where it can be reviewed again. The export half is #6 and lands now; the import half is #4 —
+`create_file` should accept `text/markdown` and let Drive convert, rather than uploading plain
+text and losing the structure.
 
 ## Hosted MCP server — wanted, and a large piece of work
 
