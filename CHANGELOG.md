@@ -34,6 +34,19 @@ touch.
 Also absent without `Settings`: a server built by a library embedder wiring its own `Workspace`
 gets the document tools and none of this, because there is no server configuration to describe.
 
+### Docs
+
+The tool-by-tool comparison was one table with six columns, and the *Google API* column made it
+too wide to read — one row ran to nearly 400 characters. It is now **two** tables: capability ·
+what it does · Google · Claude · ours, followed by capability · underlying Google API. Nothing
+is lost and the API mapping gets to be as wide as it needs to be.
+
+Splitting it also made two things visible that the wide version buried: **`drive.files.list`
+does the work of two tools** (discovery is one method with different parameters), and
+**`drive.replies.create` is both replying and resolving**, because resolve is an *action reply*
+rather than a state change — which is exactly why its capability gate has to inspect the call's
+arguments rather than its name.
+
 ### Notes for the next person
 
 - `Resource.mime_type`, not `mimeType` — snake_case in mcp 2.x, same as `Tool.input_schema`.

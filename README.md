@@ -302,40 +302,84 @@ are identical in name *and* parameters; Claude's descriptions add model-facing g
 The last column is our current tool name — **where it differs from the shared name, that is
 work still to do**, tracked in [`TODO.md`](./TODO.md).
 
-| Tool | What it does | Google API | Google | Claude | Our tool |
-|---|---|---|---|---|---|
-| `search_files` | Find files by Drive query — `title`, `fullText`, `mimeType`, `modifiedTime`, `parentId`, `owner`, `sharedWithMe` | `drive.files.list` (`q=`) | ✅ | ✅ | ✅ `search_files` |
-| `list_recent_files` | Recently touched files, by `recency` / `lastModified` / `lastModifiedByMe` | `drive.files.list` (`orderBy`) | ✅ | ✅ | ✅ `list_recent_files` |
-| `get_file_metadata` | Name, type, owner, times, plus a content snippet | `drive.files.get` | ✅ | ✅ | ✅ `get_file_metadata` |
-| `get_file_permissions` | Who the file is shared with, and at what role | `drive.permissions.list` | ✅ | ✅ | ✅ `get_file_permissions` *(+ `public` / `writers` roll-ups)* |
-| `read_file_content` | Natural-language text of a file; optionally comments inlined. 13 mime types incl. PDF, Office, ODF, PNG/JPEG | `files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get` (+ `drive.comments.list`) | ✅ | ✅ | ✅ `read_file_content` *(Google-native types only)* |
-| `download_file_content` | Raw bytes as base64, with an export mime type for Google-native files | `files.export` / `files.get(alt=media)` | ✅ | ✅ | ✅ `download_file_content` |
-| `create_file` | Create or upload — text or base64 content, or an empty Doc/Sheet/Slides/folder | `drive.files.create` + media upload | ✅ | ✅ | ✗ *planned* |
-| `copy_file` | Duplicate, with optional new title and parent | `drive.files.copy` | ✅ | ✅ | ✗ *planned* |
-| `update_file` | **Metadata only — rename and move.** Does *not* touch content | `drive.files.update` (`name`, `parents`) | ✗ | ✅ | ✗ *planned* |
-| `share_file` | Grant an arbitrary email address `reader` / `commenter` / `writer` | `drive.permissions.create` | ✗ | ✅ | ✗ *planned, gated on #82* |
-| `trash_file` | Move to trash. Not a permanent delete | `drive.files.update` (`trashed=true`) | ✗ | ✅ | ✗ *planned* |
-| — | List comments as **structured objects**: ids, authors, resolved state, replies, cell | `drive.comments.list` / `.get` | ✗ | *inline text only* | ✅ `list_comments`, `get_comment` |
-| — | Post a comment on a file | `drive.comments.create` | ✗ | ✗ | ✅ `create_comment` |
-| — | Reply to a comment thread | `drive.replies.create` | ✗ | ✗ | ✅ `reply_comment` |
-| — | Resolve or reopen a thread (an *action reply*, not a PATCH) | `drive.replies.create` | ✗ | ✗ | ✅ `resolve_comment`, `reopen_comment` |
-| — | Map a Sheets comment back to **the cell it is about** | `files.export` (XLSX) → parse `threadedComments` → A1 | ✗ | ✗ | ✅ `comments_by_cell` |
-| — | Preview a Doc **as if suggestions were accepted or rejected** | `docs.documents.get(suggestionsViewMode=…)` | ✗ | ✗ | ⚠️ library only (`Doc.as_text(suggestions=…)`) |
-| — | Fold comment threads **into** the document text, anchored where they were left | `drive.comments.list` + unique quoted-text match | ✗ | ✅ | ✅ `read_file_content(includeComments=True)` |
-| — | **Edit an existing Doc** — replace, insert, append, delete a range | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
-| — | **Edit an existing Sheet** — write, append rows, clear | `sheets…values.update` / `.append` / `.clear` | ✗ | ✗ | ⚠️ library only, MCP soon |
-| — | **Edit an existing Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
-| — | **Scope which files may be READ** to a named list | checked before every `files.get` / `export` / `documents.get` | ⚠️ not configurable — but bounded by the `drive.file` scope, so Google enforces the equivalent upstream | ✗ | ✅ `CSA_GW_ALLOWLIST_READ` |
-| — | **Scope which files may be CHANGED** to a named list | checked before every mutation | ⚠️ not configurable — but its only writes create *new* files, so there is nothing to scope | ✗ | ✅ `CSA_GW_ALLOWLIST_MODIFY` |
-| — | **Turn individual mutation kinds off** — comment / edit / rename / trash / share, each independently | enforced client-side | ⚠️ not configurable — enforced instead by the tools it does not ship | ✗ | ✅ `CSA_GW_CAPABILITIES` |
-| — | Browser consent from inside the MCP client | OAuth loopback + MCP URL elicitation | n/a *hosted* | n/a *built in* | ✅ `authenticate` |
+| Tool | What it does | Google | Claude | Ours |
+|---|---|---|---|---|
+| `search_files` | Find files by Drive query | ✅ | ✅ | ✅ |
+| `list_recent_files` | Recently touched files | ✅ | ✅ | ✅ |
+| `get_file_metadata` | Name, type, owner, times, content snippet | ✅ | ✅ | ✅ |
+| `get_file_permissions` | Who it is shared with, and at what role | ✅ | ✅ | ✅ ¹ |
+| `read_file_content` | A file's text, optionally with comments inlined | ✅ | ✅ | ⚠️ ² |
+| `download_file_content` | Raw bytes as base64, converted on the way out | ✅ | ✅ | ✅ |
+| `create_file` | Create or upload a **new** file | ✅ | ✅ | ✗ *planned* |
+| `copy_file` | Duplicate a file | ✅ | ✅ | ✗ *planned* |
+| `update_file` | Rename and move. **Metadata only** | ✗ | ✅ | ✗ *planned* |
+| `share_file` | Grant an address `reader`/`commenter`/`writer` | ✗ | ✅ | ✗ *planned* |
+| `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✗ *planned* |
+| `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
+| `create_comment` | Post a comment | ✗ | ✗ | ✅ |
+| `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
+| `resolve_comment`, `reopen_comment` | Close or reopen a thread | ✗ | ✗ | ✅ |
+| `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
+| `read_file_content(includeComments)` | Fold threads into the text where they were left | ✗ | ✅ | ✅ |
+| — | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ⚠️ ³ |
+| — | Preview a Doc as if suggestions were accepted/rejected | ✗ | ✗ | ⚠️ ³ |
+| `describe_configuration` + resources | The server explaining its own limits | ✗ | ✗ | ✅ |
+| `authenticate` | Browser consent from inside the MCP client | n/a *hosted* | n/a *built in* | ✅ |
+| — | Scope which files may be **read** | ⚠️ ⁴ | ✗ | ✅ |
+| — | Scope which files may be **changed** | ⚠️ ⁵ | ✗ | ✅ |
+| — | Turn individual **mutation kinds** off | ⚠️ ⁶ | ✗ | ✅ |
 
-Two notes on the rows we now match. Our `read_file_content` reaches **Google-native types
-only** — Docs, Sheets, Slides — not their 13 mime types; Drive converts a PDF or a PNG into a
-Doc by OCR, but doing that *creates a file*, so it is not a read and does not belong behind a
-read-only tool. And `includeComments` anchors a thread by **unique quoted-text match**, because
-the Drive comment anchor is an opaque range id with no decodable position: a quote appearing
-twice, or not at all, is reported unanchored rather than guessed.
+¹ Plus `public` / `writers` roll-ups.
+² Google-native types only — Docs, Sheets, Slides — not their 13 mime types. See below.
+³ In the Python library today; not yet an MCP tool.
+⁴ Not configurable, but bounded by the **`drive.file`** scope, so Google enforces the
+equivalent upstream — where it cannot be misconfigured.
+⁵ Not configurable, but its only writes create *new* files, so there is nothing to scope.
+⁶ Not configurable, but enforced instead by the tools it does not ship.
+
+### The same table, by underlying API
+
+Worth capturing separately, because the mapping is genuinely interesting: how little of Drive
+any of the three servers touches, and how much of one capability lives in a single method.
+
+| Tool | Google API |
+|---|---|
+| `search_files` | `drive.files.list` (`q=`) |
+| `list_recent_files` | `drive.files.list` (`orderBy=`) |
+| `get_file_metadata` | `drive.files.get` |
+| `get_file_permissions` | `drive.permissions.list` |
+| `read_file_content` | `drive.files.export` + `docs.documents.get` / `sheets.spreadsheets.values.get` / `slides.presentations.get` (+ `drive.comments.list` for `includeComments`) |
+| `download_file_content` | `drive.files.export` (Google-native) · `drive.files.get(alt=media)` (uploaded) |
+| `create_file` | `drive.files.create` + media upload |
+| `copy_file` | `drive.files.copy` |
+| `update_file` | `drive.files.update` (`name`, `parents`) |
+| `share_file` | `drive.permissions.create` |
+| `trash_file` | `drive.files.update` (`trashed=true`) |
+| `list_comments`, `get_comment` | `drive.comments.list` / `.get` |
+| `create_comment` | `drive.comments.create` |
+| `reply_comment` | `drive.replies.create` |
+| `resolve_comment`, `reopen_comment` | `drive.replies.create` — an **action reply**, never a PATCH |
+| `comments_by_cell` | `drive.files.export` (XLSX) → parse `threadedComments` XML → A1 |
+| Edit an existing Doc | `docs.documents.batchUpdate` |
+| Edit an existing Sheet | `sheets.spreadsheets.values.update` / `.append` / `.clear` |
+| Edit an existing deck | `slides.presentations.batchUpdate` |
+| Suggestions preview | `docs.documents.get(suggestionsViewMode=…)` |
+| `authenticate` | OAuth loopback + MCP URL elicitation |
+| The three scoping controls | none — enforced in this library, before the API call |
+
+Two things fall out of reading that column. **`drive.files.list` does the work of two tools** —
+discovery is one method with different parameters. And **`drive.replies.create` is both replying
+and resolving**, because resolve is an *action reply* rather than a state change; that quirk is
+probe-verified, and it is why the capability gate for it has to inspect the call's arguments
+rather than its name.
+
+On footnote ², and on `includeComments`. Our `read_file_content` reaches **Google-native types
+only** — Docs, Sheets, Slides — not their 13 mime types. Drive *will* convert a PDF or a PNG
+into a Doc by OCR, but doing that **creates a file**, so it is not a read and does not belong
+behind a read-only tool; reaching those types honestly needs local extraction. And
+`includeComments` anchors a thread by **unique quoted-text match**, because the Drive comment
+anchor is an opaque range id with no decodable position — a quote appearing twice, or not at
+all, is reported unanchored rather than guessed.
 
 **Neither of the others can edit an existing file's content.** `create_file` uploads a *new*
 file; `update_file` only renames or moves. Read down the `batchUpdate` rows — that is the
