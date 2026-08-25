@@ -180,3 +180,6 @@ experiments/**/*_transcript.json
 
 # PyPI configuration file
 .pypirc
+
+# Playwright MCP scratch output (screenshots, snapshots, console logs)
+.playwright-mcp/
