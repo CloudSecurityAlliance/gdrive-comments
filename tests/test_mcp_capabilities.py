@@ -12,11 +12,11 @@ import asyncio
 
 from csa_google_workspace import Workspace
 from csa_google_workspace.backend import FakeBackend
-from csa_google_workspace.mcp._config import settings_from_env
-from csa_google_workspace.mcp._tools._capabilities import (
+from csa_google_workspace.mcp._capabilities import (
     TOOL_CAPABILITIES,
     reachable_capabilities,
 )
+from csa_google_workspace.mcp._config import settings_from_env
 from csa_google_workspace.mcp.server import create_server
 from csa_google_workspace.policy import ALL_CAPABILITIES
 
@@ -47,23 +47,28 @@ def test_declared_capabilities_are_real():
     assert not (named - set(ALL_CAPABILITIES))
 
 
-def test_the_reachable_set_is_smaller_than_the_editor_profile():
-    """The condition that caused the bug, asserted rather than assumed: this server exposes
-    only part of the library, so some enabled capabilities are genuinely unreachable. If this
-    ever becomes equality the reporting is still correct — but the gap is real today."""
+def test_the_reachable_set_never_exceeds_what_exists():
+    """The direction that would be a bug: claiming reachability for a capability that is not a
+    capability, or for one the profile does not grant."""
     from csa_google_workspace.policy import PROFILES
-    assert reachable_capabilities() < PROFILES["editor"]
+    assert reachable_capabilities() <= set(ALL_CAPABILITIES)
+    assert reachable_capabilities() <= PROFILES["full"]
 
 
 def test_describe_configuration_separates_enabled_from_reachable():
     app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(ENV))
     out = asyncio.run(app.call_tool("describe_configuration", {})).structured_content
-    assert "content.write" in out["capabilities_enabled"]
-    assert "content.write" not in out["capabilities_reachable"]
-    assert "content.write" in out["capabilities_unreachable"]
-    # And the three that *are* usable are reported as such.
-    assert set(out["capabilities_reachable"]) == {"comment.create", "comment.reply",
-                                                 "comment.resolve"}
+    # Asserted as a property rather than a fixed set, so closing a gap does not break the
+    # test that exists to prove gaps are reported. The invariant is that the three lists
+    # partition what the policy enables, and that nothing is in two of them.
+    enabled = set(out["capabilities_enabled"])
+    reachable = set(out["capabilities_reachable"])
+    unreachable = set(out["capabilities_unreachable"])
+    assert reachable | unreachable == enabled
+    assert not (reachable & unreachable)
+    assert not (enabled & set(out["capabilities_disabled"]))
+    # Comment writes are reachable today; anything still unreachable must be real.
+    assert {"comment.create", "comment.reply", "comment.resolve"} <= reachable
 
 
 def test_unrestricted_is_distinguishable_from_empty():
@@ -81,10 +86,32 @@ def test_unrestricted_is_distinguishable_from_empty():
     assert out2["modify_unrestricted"] is False and len(out2["modifiable_file_ids"]) == 1
 
 
-def test_the_config_resource_flags_the_unreachable_ones():
+def test_the_editor_profile_is_now_fully_reachable():
+    """The gap is closed: every capability the default profile enables has a tool behind it.
+
+    This started as a test that the *gap was reported*, which is why the reporting exists. It
+    is inverted rather than deleted, because "advertises nothing it cannot do" is the property
+    actually worth holding — and the reporting machinery still earns its keep for `full`, whose
+    file.update/trash/share have no tools and are not planned to."""
+    from csa_google_workspace.policy import PROFILES
+    assert PROFILES["editor"] <= reachable_capabilities()
+
     app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(ENV))
-    text = " ".join(c.content for c in asyncio.run(app.read_resource("csa-gw://config")))
-    flat = " ".join(text.split())
+    out = asyncio.run(app.call_tool("describe_configuration", {})).structured_content
+    assert out["capabilities_unreachable"] == []
+
+
+def test_the_config_resource_still_flags_a_gap_when_there_is_one():
+    """`full` enables the three operations Google's own server declines to offer, and this
+    server has no tools for them either. The reporting must say so rather than implying they
+    are available."""
+    env = dict(ENV, CSA_GW_PROFILE="full")
+    app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(env))
+    out = asyncio.run(app.call_tool("describe_configuration", {})).structured_content
+    assert set(out["capabilities_unreachable"]) == {"file.share", "file.trash", "file.update"}
+
+    flat = " ".join(" ".join(c.content for c in
+                             asyncio.run(app.read_resource("csa-gw://config"))).split())
     assert "not reachable through this server" in flat
     assert "do not plan work around them" in flat
     assert "not a mistake in the policy" in flat

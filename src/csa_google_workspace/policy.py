@@ -182,6 +182,12 @@ _GATES: dict[str, Gate] = {
     "get_spreadsheet": READS_FILE,
     "get_values": READS_FILE,
     "get_presentation": READS_FILE,
+    # creation: nothing existing to damage, so not file-scoped. `copy_file` is the exception —
+    # it reads a source, so that source must be in the READ scope. The copy it produces is a
+    # new file and therefore not in the modify allowlist either, so copying cannot be used to
+    # obtain a writable duplicate of something unwritable.
+    "create_file": Gate(FILE_CREATE, MODIFY, file_scoped=False),
+    "copy_file": Gate(FILE_CREATE, READ, file_scoped=True),
     # comment writes
     "create_comment": Gate(COMMENT_CREATE, MODIFY),
     "create_reply": Gate(_reply_gate, MODIFY),   # reply vs resolve/reopen — see above

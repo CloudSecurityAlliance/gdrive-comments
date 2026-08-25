@@ -9,7 +9,8 @@ from .auth import register_auth_tools
 from .comments import register_comment_tools
 from .config import register_config_tools
 from .content import register_content_tools
+from .content_write import register_content_write_tools
 from .files import register_file_tools
 
 __all__ = ["register_auth_tools", "register_comment_tools", "register_config_tools",
-           "register_content_tools", "register_file_tools"]
+           "register_content_tools", "register_content_write_tools", "register_file_tools"]

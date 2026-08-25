@@ -12,15 +12,23 @@ reporting them to a model as "enabled" reads as "available", and it is not.
 *server* actually reach?". Both are needed, because the MCP layer deliberately exposes only
 part of the library.
 
+Lives beside `_resources.py` rather than inside `_tools/` because both need it: putting it in
+the tools package made `_resources` -> `_tools._capabilities` -> `_tools/__init__` ->
+`_tools.config` -> `_resources` a cycle. It is a statement *about* the server, not a tool.
+
 Fail-closed like `_GATES`: `tests/test_mcp_capabilities.py` asserts every registered tool
 appears here, so a new tool cannot arrive undeclared and silently widen what the server claims.
 """
 from __future__ import annotations
 
-from ...policy import (
+from ..policy import (
     COMMENT_CREATE,
+    COMMENT_DELETE,
+    COMMENT_EDIT,
     COMMENT_REPLY,
     COMMENT_RESOLVE,
+    CONTENT_WRITE,
+    FILE_CREATE,
 )
 
 # Tool name -> the capability a call to it can require, or None for a read.
@@ -43,8 +51,21 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "reply_comment": COMMENT_REPLY,
     "resolve_comment": COMMENT_RESOLVE,
     "reopen_comment": COMMENT_RESOLVE,
+    "edit_comment": COMMENT_EDIT,
+    "delete_comment": COMMENT_DELETE,
+    # content writes
+    "replace_text": CONTENT_WRITE,
+    "append_text": CONTENT_WRITE,
+    "update_cells": CONTENT_WRITE,
+    "append_rows": CONTENT_WRITE,
+    "list_slides": None,
+    "insert_slide_text": CONTENT_WRITE,
+    # creation
+    "create_file": FILE_CREATE,
+    "copy_file": FILE_CREATE,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
+    "read_server_resource": None,
     "authenticate": None,
 }
 
