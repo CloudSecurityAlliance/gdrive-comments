@@ -21,6 +21,9 @@ USAGE = """usage: csa-google-workspace-mcp [login [--force]]
   login           authorize with Google in a browser and cache the token
   login --force   authorize again even if a cached token looks usable
 
+Clients that support MCP URL elicitation (Claude Code) can authorize in-session via
+the `authenticate` tool instead, with no terminal step.
+
 environment:
   CSA_GW_TOKEN           token cache path (default ~/.csa_google_workspace/token.json)
   CSA_GW_READ_ONLY=1     refuse writes
@@ -52,5 +55,5 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     # The server never resolves credentials here: a missing token must not stop the server
     # from starting, or the MCP client reports an opaque "server failed to start" and the
     # user never sees the remedy. Tools surface it instead, where it is readable.
-    create_server(WorkspaceProvider(settings)).run(transport="stdio")
+    create_server(WorkspaceProvider(settings), settings=settings).run(transport="stdio")
     return 0

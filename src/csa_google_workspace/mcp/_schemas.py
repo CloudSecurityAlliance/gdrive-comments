@@ -54,6 +54,11 @@ class TextOut(TypedDict):
     text: str
 
 
+class AuthOut(TypedDict):
+    status: str          # authorized | already_authorized | declined | timed_out
+    detail: str
+
+
 def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 

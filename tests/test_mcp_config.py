@@ -52,10 +52,27 @@ def test_read_only_flag_parsing(value, expected):
     assert _config.settings_from_env({"CSA_GW_READ_ONLY": value}).read_only is expected
 
 
-def test_client_secrets_is_not_required_by_the_server():
-    """Only `login` needs client secrets; the server refreshes from the cached token alone."""
+def test_client_secrets_are_optional_not_required(monkeypatch, tmp_path):
+    """The server must start and serve without any client secrets.
+
+    They are needed only to build a fresh consent URL for the in-band `authenticate` tool;
+    reading and refreshing a cached token needs none, because the token carries its own
+    client_id and secret. Patch the default path so this does not depend on whether the
+    developer's home directory happens to contain one.
+    """
+    monkeypatch.setattr(_config, "DEFAULT_CLIENT_SECRETS_PATH", str(tmp_path / "absent.json"))
     s = _config.settings_from_env({})
-    assert not hasattr(s, "client_secrets") or s.client_secrets is None
+    assert s.client_secrets is None
+    assert s.token_path == _config.DEFAULT_TOKEN_PATH        # everything else still resolves
+
+
+def test_client_secrets_picked_up_from_env_or_default(monkeypatch, tmp_path):
+    present = tmp_path / "client_secret.json"
+    present.write_text("{}")
+    monkeypatch.setattr(_config, "DEFAULT_CLIENT_SECRETS_PATH", str(present))
+    assert _config.settings_from_env({}).client_secrets == str(present)
+    other = tmp_path / "other.json"
+    assert _config.settings_from_env({"CSA_GW_CLIENT_SECRETS": str(other)}).client_secrets == str(other)
 
 
 # --- provider ---------------------------------------------------------------

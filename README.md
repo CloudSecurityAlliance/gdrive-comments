@@ -75,8 +75,14 @@ Python quickstart. You sign in as yourself and the server reaches exactly what y
 can already reach.
 
 **Tools:** `open_document`, `read_text`, `list_comments`, `get_comment`, `comments_by_cell`,
-`create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment` — each with structured
-output and read-only/destructive annotations.
+`create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`, `authenticate` — each
+with structured output and read-only/destructive annotations.
+
+**Authorizing without a terminal.** In a client that supports MCP URL elicitation (Claude Code
+v2.1.76+), just ask for a document: the tool reports missing credentials, the model calls
+`authenticate`, and you get a consent link in the conversation. `login` remains the path for
+clients without elicitation — Claude Desktop today — and both clients share one token file, so
+authorizing in either covers both.
 
 **Environment:** `CSA_GW_TOKEN` (token cache, default `~/.csa_google_workspace/token.json`),
 `CSA_GW_READ_ONLY=1` (refuse writes), `CSA_GW_CLIENT_SECRETS` (needed by `login` only, and
