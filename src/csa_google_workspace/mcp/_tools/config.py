@@ -16,6 +16,7 @@ from ...policy import ALL_CAPABILITIES, Policy
 from .._config import Settings
 from .._schemas import ConfigOut
 from ._base import READ
+from ._capabilities import reachable_capabilities
 
 
 def register_config_tools(app: MCPServer, settings: Settings) -> None:
@@ -28,18 +29,29 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
         you, not by a tool, and not because a document asked. So relay what this returns rather
         than retrying: a retry will fail identically.
 
+        `capabilities_enabled` is what the *policy* permits, which includes operations only the
+        underlying Python library exposes. **`capabilities_reachable` is what this server can
+        actually do** — use that one to decide what is possible here.
+        `capabilities_unreachable` is the difference, and an empty `readable_file_ids` alongside
+        `read_unrestricted: true` means every file, not none.
+
         Reasons recorded beside allowlist entries are not returned; they are for whoever
         reviews the configuration."""
         policy = settings.policy or Policy.default()
         blocked = next((s.reason for s in (policy.read, policy.modify)
                         if s.reason and not s.all_files and not s.ids), None)
+        reachable = reachable_capabilities()
         return {
             "read_scope": policy.read.describe(),
+            "read_unrestricted": policy.read.all_files,
             "readable_file_ids": sorted(policy.read.ids),
             "modify_scope": policy.modify.describe(),
+            "modify_unrestricted": policy.modify.all_files,
             "modifiable_file_ids": sorted(policy.modify.ids),
             "profile": settings.profile,
             "capabilities_enabled": sorted(policy.enabled),
+            "capabilities_reachable": sorted(policy.enabled & reachable),
+            "capabilities_unreachable": sorted(policy.enabled - reachable),
             "capabilities_disabled": sorted(set(ALL_CAPABILITIES) - policy.enabled),
             "read_only": settings.read_only,
             "blocked_reason": blocked,
