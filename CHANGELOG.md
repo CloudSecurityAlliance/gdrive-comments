@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-08-25 — v0.8.1 (the allowlist, configurable where you actually configure things)
+
+`CSA_GW_ALLOWLIST` was a path to a file, which meant distributing a second artifact. It now
+takes whichever of three forms suits the deployment, all through the same plain environment
+variable — so it works in a shell, in `.mcp.json`, or in Claude Desktop's config.
+
+### Added
+
+- **URLs inline.** Any value containing `://` is read as URLs rather than a path, so an MCP
+  client's JSON `env` block needs no companion file:
+
+  ```json
+  "CSA_GW_ALLOWLIST": "https://docs.google.com/document/d/AAA…/edit  # CCM mapping\nhttps://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker"
+  ```
+
+  Newlines separate entries and keep the `# reason` comments. Commas, semicolons and
+  whitespace also separate entries **when the value contains no `#`** — that condition is what
+  stops a separator and a comment fighting over one character, and it makes the ambiguous case
+  unreachable rather than merely unlikely.
+- **A default path: `~/.csa_google_workspace/allowlist.txt`**, used automatically when it
+  exists. Same reason `client_secret.json` has one: a **curated list distributed by a setup
+  script should need no per-user configuration**, because the people running it did not write
+  it. Explicit configuration always wins over it.
+- **`CSA_GW_ALLOWLIST=any`** — unrestricted writes, deliberately and case-insensitively. This
+  is what makes flipping the no-allowlist default at 1.0.0 a one-line change that leaves
+  nobody stuck: choosing unrestricted writes becomes something somebody typed.
+
+### Why `://` and not `os.path.exists`
+
+Detecting a path by checking whether it exists would silently reinterpret a **mistyped path**
+as a URL list — turning a typo into a different, wrong configuration instead of an error. `://`
+is a property of the value itself: a URL always has it, a filesystem path never does. A path
+that does not exist is still read as a path, and reported as one.
+
+### A test trap closed on the way
+
+The new default path made every "no policy configured" assertion depend on whether the
+developer happens to have `~/.csa_google_workspace/allowlist.txt` — the same
+machine-dependent failure that once let a `login` test pass only because CI lacked a
+`client_secret.json`. `tests/test_mcp_config.py` now has an autouse fixture pointing the
+default at a nonexistent path, and the tests that *want* the default patch it themselves.
+
 ## 2026-08-25 — v0.8.0 (the write allowlist: #82, second dimension)
 
 Gate **A4** completed in its basic form. `CSA_GW_ALLOWLIST` points at a plain-text list of

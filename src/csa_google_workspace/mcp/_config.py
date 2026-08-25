@@ -22,13 +22,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .. import auth
-from ..allowlist import load_allowlist
+from ..allowlist import Entry, is_inline, load_allowlist, parse_inline
 from ..exceptions import AuthError
 from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy
 from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
 DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"  # nosec B105 - a path
+DEFAULT_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist.txt"
+# The escape hatch. Explicit, so that running with unrestricted writes is something somebody
+# typed — which is what makes flipping the no-allowlist default at 1.0.0 possible without
+# leaving anyone stuck.
+ALLOWLIST_ANY = "any"
 def _launcher() -> str:
     """The command a user can actually paste, absolute where we can determine it.
 
@@ -98,15 +103,40 @@ def policy_from_env(env: Mapping[str, str]) -> Policy | None:
     making that fail-closed is a 1.0.0 decision recorded in TODO.md, not a silent change.
     """
     capabilities = _capabilities_from_env(env)
-    path = (env.get("CSA_GW_ALLOWLIST") or "").strip()
-    if capabilities is None and not path:
+    entries = _allowlist_from_env(env)
+    if capabilities is None and entries is None:
         return None
-    enabled = capabilities.enabled if capabilities is not None else DEFAULT_ENABLED
-    if not path:
-        return Policy(enabled=frozenset(enabled))
-    # Any problem here raises: a configured-but-unusable allowlist must never degrade into
-    # unrestricted writes.
-    return Policy.from_entries(frozenset(enabled), load_allowlist(path))
+    enabled = frozenset(capabilities.enabled if capabilities is not None else DEFAULT_ENABLED)
+    if entries is None:
+        return Policy(enabled=enabled)
+    return Policy.from_entries(enabled, entries)
+
+
+def _allowlist_from_env(env: Mapping[str, str]) -> tuple[Entry, ...] | None:
+    """The write allowlist, from `CSA_GW_ALLOWLIST` or the default path.
+
+    `None` means *no file restriction* — either nothing was configured, or the operator asked
+    for unrestricted writes explicitly with `CSA_GW_ALLOWLIST=any`.
+
+    Three sources, in order of precedence:
+
+      CSA_GW_ALLOWLIST=any                     unrestricted, deliberately
+      CSA_GW_ALLOWLIST=https://…               URLs inline, for a JSON `env` block
+      CSA_GW_ALLOWLIST=/path/to/file           an explicit path
+      (unset)                                  ~/.csa_google_workspace/allowlist.txt if present
+
+    The default path exists for the same reason `client_secret.json` has one: a curated list
+    distributed by a setup script should need no per-user configuration, because the people
+    running it did not write it. Anything configured but unusable **raises** — never a
+    fallback to unrestricted writes.
+    """
+    value = (env.get("CSA_GW_ALLOWLIST") or "").strip()
+    if value.lower() == ALLOWLIST_ANY:
+        return None
+    if value:
+        return parse_inline(value) if is_inline(value) else load_allowlist(value)
+    default = os.path.expanduser(DEFAULT_ALLOWLIST_PATH)
+    return load_allowlist(default) if os.path.exists(default) else None
 
 
 def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:

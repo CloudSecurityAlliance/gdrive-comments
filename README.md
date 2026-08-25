@@ -61,6 +61,66 @@ csa-google-workspace-mcp login --force        # ...or re-authorize deliberately
 claude mcp add csa-google-workspace -- csa-google-workspace-mcp
 ```
 
+### Scoping what it may change
+
+Two independent controls, both plain environment variables, so they can be set wherever your
+MCP client declares the server — a shell, `.mcp.json`, or Claude Desktop's config.
+
+| Variable | What it bounds |
+|---|---|
+| `CSA_GW_CAPABILITIES` | **What** may be mutated. The complete list, not a delta. Unset means the safe default: comment and content writes on; file rename/move, trash and share **off**. |
+| `CSA_GW_ALLOWLIST` | **Which files** may be written. Everything unlisted is read-only. |
+| `CSA_GW_READ_ONLY=1` | The blunt one. No writes at all, and narrower OAuth scopes. |
+
+`CSA_GW_ALLOWLIST` takes any of three forms:
+
+```jsonc
+{
+  "mcpServers": {
+    "csa-google-workspace": {
+      "command": "csa-google-workspace-mcp",
+      "env": {
+        // 1. URLs inline — no second file to ship
+        "CSA_GW_ALLOWLIST": "https://docs.google.com/document/d/AAA…/edit  # CCM mapping\nhttps://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker",
+        "CSA_GW_CAPABILITIES": "comment.create,comment.reply,comment.resolve"
+      }
+    }
+  }
+}
+```
+
+```bash
+CSA_GW_ALLOWLIST=/etc/csa/wg-documents.txt   # 2. a path to a file
+CSA_GW_ALLOWLIST=any                          # 3. unrestricted, deliberately
+```
+
+…and with none of them set, `~/.csa_google_workspace/allowlist.txt` is used **if it exists** —
+next to `client_secret.json`, and for the same reason: a curated list distributed by a setup
+script should need no per-user configuration, because the people running it did not write it.
+
+The file format is one URL per line, `#` starts a comment, and the comment is the *reason* —
+so `git diff` shows both what was granted and why:
+
+```
+# CSA WG documents this agent may write to.
+https://docs.google.com/document/d/1oW1BM…/edit?tab=t.0   # CCM v5 mapping, per WG lead
+https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
+```
+
+Four things worth knowing:
+
+- **Matching is by file id**, so every URL form for one document is one entry — and a **copy**
+  of an allowlisted document has a different id, so it is *not* writable. Entries also survive
+  renames and moves.
+- **Reads are never restricted.** The threat being contained is damage, not disclosure: the
+  agent already sees whatever your credentials see, so what is worth bounding is what it can
+  break.
+- **It fails closed.** A missing file, an unreadable one, an empty list or one bad line is a
+  hard error, never a quiet fallback to unrestricted writes.
+- **Folders are not supported yet** and a folder URL is rejected loudly rather than silently
+  matching nothing. The reasons are involved enough to be written down — see `TODO.md`,
+  *"Folders in the allowlist"*.
+
 **Why `pipx`.** This is a CLI you run, not a library you import, so it wants its own
 environment. `pip` into a shared or default virtualenv works until another project disagrees
 about a dependency — `mcp>=2.1` here versus something else pinning `mcp<2.0` is a conflict

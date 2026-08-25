@@ -8,9 +8,11 @@ import pytest
 
 from csa_google_workspace.allowlist import (
     AllowlistError,
+    is_inline,
     load_allowlist,
     parse_allowlist,
     parse_document_url,
+    parse_inline,
 )
 
 DOC_URL = "https://docs.google.com/document/d/1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8/edit?tab=t.0"
@@ -152,3 +154,38 @@ def test_the_source_path_appears_in_the_error(tmp_path):
     with pytest.raises(AllowlistError) as e:
         load_allowlist(str(path))
     assert str(path) in str(e.value)
+
+
+# --- inline configuration ---------------------------------------------------
+
+def test_is_inline_discriminates_urls_from_paths():
+    assert is_inline(DOC_URL)
+    assert not is_inline("/home/kurt/.csa_google_workspace/allowlist.txt")
+    assert not is_inline("C:\\Users\\kurt\\allowlist.txt")
+    assert not is_inline("~/allow.txt")
+
+
+def test_inline_accepts_a_single_url():
+    assert [e.file_id for e in parse_inline(DOC_URL)] == [DOC_ID]
+
+
+@pytest.mark.parametrize("separator", [", ", ",", " ", "  ", ";", "\n", "\t"])
+def test_inline_accepts_any_separator_when_there_are_no_comments(separator):
+    other = "https://docs.google.com/document/d/2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/edit"
+    entries = parse_inline(f"{DOC_URL}{separator}{other}")
+    assert len(entries) == 2
+
+
+def test_inline_with_comments_splits_only_on_newlines():
+    """The condition that stops a separator and a comment fighting over one character: when
+    `#` is present, newlines are the only separator, so the ambiguous case is unreachable."""
+    other = "https://docs.google.com/document/d/2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/edit"
+    entries = parse_inline(f"{DOC_URL}  # first, with a comma\n{other}  # second")
+    assert len(entries) == 2
+    assert entries[0].reason == "first, with a comma"
+
+
+def test_inline_errors_name_the_variable_not_a_file():
+    with pytest.raises(AllowlistError) as e:
+        parse_inline("https://example.com/nope")
+    assert "CSA_GW_ALLOWLIST" in str(e.value)
