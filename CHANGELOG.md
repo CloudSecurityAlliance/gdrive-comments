@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-08-25 — v0.11.0 (the server explains itself)
+
+Configuration this specific deserves somewhere to read about it. Two MCP **resources** and one
+tool, so neither the user nor the model has to guess what the server may touch — and so a
+refusal produces an explanation rather than a retry.
+
+### Added
+
+- **`csa-gw://config`** — the *effective* policy, as Markdown: what may be read, what may be
+  changed, which mutation kinds are on and which are off, whether read-only mode is set, and —
+  when something permits nothing — the specific diagnosis of why. Computed from the same
+  `Settings` the tools enforce, so it cannot drift from what actually happens.
+- **`csa-gw://help/configuration`** — the reference. Every variable, the accepted forms, the
+  three outcomes, a table of what each kind of mistake looks like, and the limits worth knowing
+  *before* hitting them: folders unsupported and why, matching by file id so a copy is not
+  included, per-capability file scope not expressible.
+- **`describe_configuration`** — the same facts as structured output, for clients that do not
+  surface resources, and because a tool is what the model can reach on its own. It **needs no
+  credentials and calls no Google API**, so it answers even when the server is unauthorized —
+  which is exactly when someone is most likely to ask.
+- `INSTRUCTIONS` now points at all of it, and says plainly: **do not retry a refused
+  operation** — the policy cannot be changed from inside a session, so a retry fails
+  identically. A resource the model never learns about is a resource nobody reads.
+
+### Deliberately absent
+
+**Allowlist reasons.** An entry's trailing comment is written for whoever reviews the
+configuration and may name people or unannounced work — the same reasoning that keeps it out of
+`Entry.__repr__`. File ids *are* included: those are exactly the files the agent may already
+touch.
+
+Also absent without `Settings`: a server built by a library embedder wiring its own `Workspace`
+gets the document tools and none of this, because there is no server configuration to describe.
+
+### Notes for the next person
+
+- `Resource.mime_type`, not `mimeType` — snake_case in mcp 2.x, same as `Tool.input_schema`.
+- Tests assert on **whitespace-flattened** prose. These documents are hard-wrapped, so a
+  sentence straddles a newline and a naive substring search fails against text that is
+  perfectly correct. Flattening tests the wording rather than the line breaks.
+
 ## 2026-08-25 — v0.10.1 (comment parsing: keep the fragment, refuse the silent drop)
 
 Whitespace formatting and quoting in reasons already worked; two parsing bugs did not.

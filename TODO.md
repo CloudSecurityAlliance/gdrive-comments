@@ -29,6 +29,9 @@ the task list.
   exposing document mutation to a model over a full-Drive token, with no per-file scope, is the
   confused-deputy scenario #82 describes.
 - [ ] **Docs suggestions** (`list_suggestions`) and the `as_text(suggestions=…)` preview.
+- [x] **Resources — the configuration ones, done 2026-08-25** (v0.11.0): `csa-gw://config`
+  (effective policy, live) and `csa-gw://help/configuration` (the reference), plus a
+  `describe_configuration` tool for clients that do not surface resources.
 - [ ] **The document-text Resource and comment-triage Prompt** — both in the spec, neither built.
 - [ ] **A launcher shim for Claude Desktop on macOS.** GUI apps inherit a minimal `PATH` where
   `python3` is the system 3.9, below the 3.10 floor — so Desktop fails where Claude Code works.
