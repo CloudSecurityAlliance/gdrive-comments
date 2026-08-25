@@ -100,6 +100,77 @@ Note the scope shift: everything *below* this section is library-internal, but p
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
 
+## Feature parity with the claude.ai Google Drive connector
+
+Match the built-in connector's tool surface so anyone moving between it and this server does
+not have to relearn anything — same names, same argument shapes, comparable prompt
+suggestions and description. **With one deliberate divergence: say plainly that this server
+does full read/write and is correspondingly dangerous.** The connector is a read-mostly
+convenience; this is a full-authority tool on the user's entire Drive.
+
+Its surface is 11 tools. Names below are the connector's own, taken from its live schemas
+rather than screenshots:
+
+**Read-only (6)** — `search_files`, `list_recent_files`, `get_file_metadata`,
+`get_file_permissions`, `read_file_content`, `download_file_content`
+
+**Write/delete (5)** — `create_file`, `update_file`, `copy_file`, `share_file`, `trash_file`
+
+### This reverses a documented capability boundary — decide that first
+
+`README.md` currently states, as a deliberate design boundary: *"No document discovery. You
+hand the library a file id/URL; there is no `files.list`/search."* `search_files` and
+`list_recent_files` are exactly that. So this is **a library change, not an MCP-layer
+change**: it needs `Backend` methods, `FakeBackend` parity, the conformance guard, and a
+decision to widen the library's scope. Not a tool-registration exercise.
+
+It also interacts with the reason discovery was excluded: `SECURITY.md` names the
+**autonomous sweep** as the highest-risk use case precisely because it ingests comments from
+many documents. Search is what makes an autonomous sweep easy.
+
+### `share_file` is an exfiltration primitive — gate it behind #82
+
+Worth separating from the other writes. `share_file(fileId, emailAddress, role)` grants an
+**arbitrary email address** reader/commenter/writer access. Every other write tool modifies
+content the user can see afterwards; this one silently hands an outsider a copy, and the user
+may never notice.
+
+Combined with the two things already true of this server — document text is
+attacker-influenceable, and there is no file allowlist — an injected comment saying *"share
+this with archive-bot@…"* is a working data-exfiltration path that no amount of tool-
+annotation hinting prevents. **`share_file` should not ship before file allowlisting
+([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)), and
+arguably wants its own explicit opt-in even then.**
+
+`trash_file` is destructive but recoverable (Drive trash, not permanent delete), so it ranks
+below `share_file` despite sounding worse.
+
+### Checklist
+
+- [ ] **Decide the discovery question.** Widen the library to support `files.list`/search, or
+  decline parity on those two tools and say why in the README. Everything else waits on this.
+- [ ] `search_files` — reuse the connector's **Drive query syntax** verbatim
+  (`title contains`, `fullText contains`, `mimeType`, `modifiedTime`, `parentId`, `owner`,
+  `sharedWithMe`, combined with `and`/`or`/`not`). Also copy its hard-won prompt guidance:
+  *do not put document-type words inside `title`/`fullText` clauses; map them to `mimeType`
+  instead* — that instruction exists because models get it wrong.
+- [ ] `list_recent_files` — `orderBy` of `recency` | `lastModified` | `lastModifiedByMe`,
+  page size default 10, token pagination.
+- [ ] `get_file_metadata`, `read_file_content`, `download_file_content` — largely wrappers
+  over what the library already does (`open`, `as_text`, `export`).
+- [ ] `get_file_permissions` — new surface (Drive permissions API). Read-only but sensitive:
+  it reveals who a document is shared with.
+- [ ] `create_file`, `update_file`, `copy_file`, `trash_file` — new surface (Drive files API).
+  Note the library is deliberately document-scoped today; file *lifecycle* is a new axis.
+- [ ] `share_file` — **blocked on #82.** See above.
+- [ ] **Tool descriptions and the server description must state the danger explicitly.**
+  Parity of names must not imply parity of risk. A user who has used the connector will
+  assume read-mostly; the description has to correct that before their first write.
+- [ ] Prompt suggestions, matching the connector's shape.
+- [ ] Pagination convention (`pageToken` / `next_page_token`) — the library has no paginated
+  accessor today; `ApiBackend.list_comments` paginates internally and returns everything.
+  Decide whether tools expose page tokens or keep hiding them.
+
 ## Publish — ✅ DONE
 
 - [x] **Release automation** — `.github/workflows/release.yml` (Trusted Publishing / OIDC);
