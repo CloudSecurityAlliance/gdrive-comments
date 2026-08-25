@@ -100,10 +100,10 @@ Note the scope shift: everything *below* this section is library-internal, but p
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
 
-## Roadmap — eight subsystems, in order
+## Roadmap — nine subsystems, in order
 
 Everything below this line was one item called "feature parity" until a code review showed it
-is eight independent pieces with real dependencies between them. Each is its own spec → plan →
+is nine independent pieces with real dependencies between them. Each is its own spec → plan →
 implement cycle; **do not try to plan them together.** At the granularity this project uses
 (every task a failing test, a run, an implementation, a run, a commit) a combined plan runs to
 several hundred steps and nobody executes it.
@@ -118,6 +118,7 @@ several hundred steps and nobody executes it.
 | **6** | **Format breadth** — PDF, Office, ODF, images | `export` plumbing | — | Nearly free; `Document.export()` exists, just unexposed. Can ride with 1. |
 | **7** | **Differentiators** — `approvals`, `revisions`, `changes`+`watch` | 3 new API surfaces | — | Own brainstorm each. `approvals` is the most on-mission thing found. |
 | **8** | **Docs `batchUpdate` breadth** — 37 unused request types | library | — | A programme, not a plan. Tables first. |
+| **9** | **Hosted server** — unlocks `files.watch` push, and removes install/OAuth-client/login for everyone | new transport + auth + custody | **2**, and a CASA decision | Largest item here, and almost all of it is security rather than features. Own section below. |
 
 ### Why #2 must come before #4 and #5 — and it is not only the security argument
 
@@ -144,6 +145,92 @@ transferability that makes the flavour switch possible, adds format breadth almo
 leaves `server.py` split into `_comments.py` / `_content.py` / `_files.py` — a shape that can
 absorb the rest. `server.py` is 265 lines with 10 tools today; the next dozen tools need that
 split regardless.
+
+## Hosted MCP server — wanted, and a large piece of work
+
+Wanted for real, not hypothetically: a hosted server is what unlocks **push notifications**
+(`files.watch`), reacting the instant a comment appears rather than sweeping on a timer — and it
+removes the install, the per-user OAuth client, and the `login` step for everyone.
+
+It is also the single largest piece of work on this roadmap, and almost all of it is security
+rather than features. Recording that honestly now, so nobody later mistakes it for "the same
+server, on a box".
+
+### Why it is not just a transport change
+
+The local server has exactly one user, whose credentials live on their own machine. A hosted one
+holds **per-user Google refresh tokens for many people** — each of which is full read/write/delete
+on that person's entire Drive. `SECURITY.md` calls a single such token the crown jewel; this is
+the crown jewels, plural, in one place, reachable from the internet.
+
+### Inbound auth — the part MCP actually specifies
+
+This is where MCP's OAuth framework finally applies: HTTP transports authenticate the *client to
+the server*, which the stdio server deliberately skips.
+
+- [ ] OAuth 2.1 **resource server**: validate every bearer token, reject anything not issued for
+  us (RFC 8707 audience binding). **Token passthrough is explicitly forbidden** by the spec.
+- [ ] Protected Resource Metadata (RFC 9728) + authorization-server discovery, so clients can
+  find the AS. `WWW-Authenticate` on 401 with a `scope` hint.
+- [ ] Client registration: **Client ID Metadata Documents** preferred; DCR is deprecated as of
+  revision `2026-07-28` and kept only for compatibility.
+- [ ] PKCE `S256`, mandatory. Refuse to proceed if the AS does not advertise
+  `code_challenge_methods_supported`.
+- [ ] **RFC 9207 `iss` validation** — new in `2026-07-28`, and required before an authorization
+  code is sent to any token endpoint.
+- [ ] Insufficient-scope handling: `403` + `WWW-Authenticate` with the scopes needed, so clients
+  can step up rather than fail.
+
+### Outbound Google auth — the part nobody specifies
+
+- [ ] **Two token systems, never conflated.** The MCP client's token authenticates them *to us*;
+  a separate per-user Google token authorizes *us to Google*. Mixing them is the confused-deputy
+  vulnerability the spec names.
+- [ ] Per-user Google refresh tokens in a real secret store, encrypted at rest, **isolated per
+  user**. `Workspace.from_credentials(creds)` is already the entry point for this; the token file
+  is not.
+- [ ] Key management and rotation; revocation on offboarding that actually takes effect.
+- [ ] **Reject domain-wide delegation** as the shortcut. A DWD service account can impersonate
+  anyone in the org — a single key with more authority than every user token combined.
+
+### Multi-tenancy
+
+- [ ] One `Workspace` per request/user, never shared — the rule `SECURITY.md` already states,
+  now load-bearing rather than advisory. `googleapiclient` clients are not thread-safe.
+- [ ] No cross-user bleed in any cache (the `Sheet` cell-map cache is per-instance today; keep it
+  that way).
+- [ ] Per-user rate limiting and quota attribution, not global.
+- [ ] Audit log of every mutation, attributed to a user, so a hijacked action is detectable after
+  the fact.
+
+### The push webhook itself
+
+- [ ] Verified domain + valid certificate — Drive will not deliver otherwise.
+- [ ] Validate the channel token on every delivery; treat the endpoint as **unauthenticated and
+  hostile** until it is.
+- [ ] Channel lifecycle: expiry, renewal, and cleanup of channels for revoked users.
+- [ ] A public endpoint is new attack surface on a service holding many people's Drive tokens.
+  Rate-limit and monitor it accordingly.
+
+### And the thing that gets worse, not better
+
+- [ ] **File allowlisting ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) matters more here.**
+  Prompt injection through document content is the named primary risk; a hosted server runs that
+  read→act path for many users continuously and unattended. The mitigation that does not depend
+  on a model behaving well is the only one that scales.
+- [ ] Public + full `drive` scope means Google **app verification plus an annual CASA
+  assessment**. Real recurring cost, and a decision to make before building rather than after.
+
+### Prior art in-house
+
+CSA has already worked most of this shape out once: `CINO-Customer-360`'s
+`docs/IT-SETUP.md` is a runbook for exactly this deployment — a FastMCP server behind an
+**Internal** Google OAuth consent screen, secrets in AWS Secrets Manager, a Cloudflare Tunnel
+hostname for the public surface, and Cloudflare Access in front of it. Start there rather than
+from scratch. Two caveats: the tunnel is **specified but not deployed** there (`cloudflared` was
+removed in its V1 — "we run no inbound web surface"), and its OAuth is `openid email profile`
+only, i.e. *identifying* the user to the service. That is the inbound half. Holding a full-Drive
+token per user on their behalf is the half nobody at CSA has built yet.
 
 ## Flavour switch — restrict this server to Google's or Claude's surface
 
@@ -188,10 +275,11 @@ This is the honest ceiling of the Python client, not a plan — but several item
 - [ ] **`changes`** — `getStartPageToken`, `list`, `watch`. Incremental sync: the correct answer
   to "sweep my documents" instead of re-reading everything, and it directly addresses the
   autonomous-sweep cost `SECURITY.md` worries about.
-- [ ] ~~**`files.watch`** — push notification.~~ **Not viable for a local server.** Drive push
-  requires a publicly reachable HTTPS endpoint on a *verified domain*; a stdio process behind
-  NAT cannot receive the callback. `changes.list` polling reaches the same outcome without the
-  infrastructure. Revisit only if a hosted variant ever exists.
+- [ ] **`files.watch` / `changes.watch`** — push notification. **Planned, for the hosted
+  server** (see its own section below), not for local stdio: Drive push requires a publicly
+  reachable HTTPS endpoint on a *verified domain*, which a process behind NAT cannot be.
+  `changes.list` polling covers the same ground locally until then. This is a genuine want —
+  reacting the moment a comment lands is a different product from sweeping on a timer.
 - [ ] **`files.modifyLabels` / `listLabels`** — Drive labels, i.e. classification and data
   governance. Plainly relevant to CSA's own work.
 - [ ] `permissions.*` (full: list/create/get/update/delete) — **gated on
