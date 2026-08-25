@@ -153,3 +153,49 @@ def test_search_files_omits_order_by_and_page_token_when_unset():
     files = _FilesStub({"files": []})
     ApiBackend(_ServicesWithFiles(files)).search_files("q")
     assert "orderBy" not in files.calls and "pageToken" not in files.calls
+
+
+class _PermsStub:
+    """drive.permissions() double. Pages, and records every call's kwargs."""
+
+    def __init__(self, pages):
+        self._pages = pages; self._i = 0; self.calls: list[dict] = []
+
+    def list(self, **kwargs):
+        self.calls.append(kwargs)
+        page = self._pages[self._i]; self._i += 1
+        return _Request(page)
+
+
+class _DriveWithPerms:
+    def __init__(self, perms): self._perms = perms
+
+    def permissions(self): return self._perms
+
+
+class _ServicesWithPerms:
+    def __init__(self, perms): self.drive = _DriveWithPerms(perms)
+
+
+def test_list_permissions_follows_pagination_and_asks_for_the_pii_fields():
+    """The default permissions.list response omits emailAddress and displayName, which are
+    the entire point of the call. And supportsAllDrives is not optional: a file on a shared
+    drive otherwise reports no permissions at all.
+
+    FakeBackend cannot cover either — it has no pages and no `fields` — which is why this
+    lives in the ApiBackend contract suite (CLAUDE.md invariant 4).
+    """
+    perms = _PermsStub([
+        {"permissions": [{"id": "p1"}], "nextPageToken": "n1"},
+        {"permissions": [{"id": "p2"}]},
+    ])
+    out = ApiBackend(_ServicesWithPerms(perms)).list_permissions("f")
+
+    assert [p["id"] for p in out] == ["p1", "p2"]
+    assert len(perms.calls) == 2
+    assert perms.calls[0]["fileId"] == "f"
+    assert "emailAddress" in perms.calls[0]["fields"]
+    assert "displayName" in perms.calls[0]["fields"]
+    assert perms.calls[0]["supportsAllDrives"] is True
+    assert "pageToken" not in perms.calls[0]
+    assert perms.calls[1]["pageToken"] == "n1"

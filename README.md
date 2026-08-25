@@ -74,11 +74,11 @@ the Drive, Docs, Sheets, and Slides APIs enabled — the same prerequisites as G
 Python quickstart. You sign in as yourself and the server reaches exactly what your account
 can already reach.
 
-**Tools:** `search_files`, `list_recent_files`, `get_file_metadata`, `read_file_content`,
-`download_file_content`, `list_comments`,
+**Tools:** `search_files`, `list_recent_files`, `get_file_metadata`, `get_file_permissions`,
+`read_file_content`, `download_file_content`, `list_comments`,
 `get_comment`, `comments_by_cell`, `create_comment`, `reply_comment`, `resolve_comment`,
 `reopen_comment`, `authenticate` — each with structured output and read-only/destructive
-annotations. The first five carry the same names and parameters as Google's Drive MCP server
+annotations. The first six carry the same names and parameters as Google's Drive MCP server
 and the claude.ai Drive connector, so habits transfer; `fileId` also accepts a share URL,
 which neither of theirs does.
 
@@ -133,16 +133,16 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | 12 (+ `authenticate`) |
-| **Of their tools, we have** | **5 of 8** | **5 of 11** | — |
+| MCP tools | 8 | 11 | 13 (+ `authenticate`) |
+| **Of their tools, we have** | **6 of 8** | **6 of 11** | — |
 | Tools they do not have | — | — | **7** — every one a comment tool |
 
-**Not parity yet, and the remaining gap is file lifecycle.** The six of theirs we still lack:
-`get_file_permissions`, `create_file`, `copy_file`, `update_file`, `share_file`, `trash_file`.
-Three of those would match Google's 8; Google deliberately omits the last three — the mutating,
-exfiltration and destructive ones — and here they are gated on
+**Not parity yet; what remains is file lifecycle.** The five of theirs we still lack:
+`create_file`, `copy_file`, `update_file`, `share_file`, `trash_file`. The first two would
+complete Google's 8. Google deliberately omits the last three — the mutating, exfiltration and
+destructive ones — and here they are gated on
 [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82) file allowlisting,
-which is a 1.0.0 gate.
+itself a 1.0.0 gate.
 
 **Discovery landed 2026-08-25**, which was the gap that actually cost users something: a session
 no longer has to begin with a pasted URL.
@@ -169,7 +169,7 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 | `search_files` | Find files by Drive query — `title`, `fullText`, `mimeType`, `modifiedTime`, `parentId`, `owner`, `sharedWithMe` | `drive.files.list` (`q=`) | ✅ | ✅ | ✅ `search_files` |
 | `list_recent_files` | Recently touched files, by `recency` / `lastModified` / `lastModifiedByMe` | `drive.files.list` (`orderBy`) | ✅ | ✅ | ✅ `list_recent_files` |
 | `get_file_metadata` | Name, type, owner, times, plus a content snippet | `drive.files.get` | ✅ | ✅ | ✅ `get_file_metadata` |
-| `get_file_permissions` | Who the file is shared with, and at what role | `drive.permissions.list` | ✅ | ✅ | ✗ *planned* |
+| `get_file_permissions` | Who the file is shared with, and at what role | `drive.permissions.list` | ✅ | ✅ | ✅ `get_file_permissions` *(+ `public` / `writers` roll-ups)* |
 | `read_file_content` | Natural-language text of a file; optionally comments inlined. 13 mime types incl. PDF, Office, ODF, PNG/JPEG | `files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get` (+ `drive.comments.list`) | ✅ | ✅ | ✅ `read_file_content` *(Google-native types only)* |
 | `download_file_content` | Raw bytes as base64, with an export mime type for Google-native files | `files.export` / `files.get(alt=media)` | ✅ | ✅ | ✅ `download_file_content` |
 | `create_file` | Create or upload — text or base64 content, or an empty Doc/Sheet/Slides/folder | `drive.files.create` + media upload | ✅ | ✅ | ✗ *planned* |

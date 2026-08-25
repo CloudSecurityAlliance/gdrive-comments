@@ -74,6 +74,23 @@ class FilesOut(TypedDict):
     files: list[FileRefOut]
 
 
+class PermissionOut(TypedDict):
+    id: str
+    type: str                 # user | group | domain | anyone
+    role: str                 # reader | commenter | writer | fileOrganizer | organizer | owner
+    display_name: str | None
+    email: str | None         # the payload of this call, unlike elsewhere here
+    domain: str | None
+    can_write: bool
+    is_public: bool
+
+
+class PermissionsOut(TypedDict):
+    permissions: list[PermissionOut]
+    public: bool              # anyone-with-the-link; the thing worth noticing
+    writers: int
+
+
 class CommentsOut(TypedDict):
     comments: list[CommentOut]
 
@@ -118,6 +135,20 @@ def document_out(doc: Any) -> DocumentOut:
 
 
 SNIPPET_CHARS = 500
+
+
+def permission_out(p: Any) -> PermissionOut:
+    return {"id": p.id, "type": p.type, "role": p.role, "display_name": p.display_name,
+            "email": p.email, "domain": p.domain, "can_write": p.can_write,
+            "is_public": p.is_public}
+
+
+def permissions_out(perms: list) -> PermissionsOut:
+    """Rolls up the two facts a reviewer actually asks for, so the model does not have to
+    derive them from the list and get it wrong."""
+    return {"permissions": [permission_out(p) for p in perms],
+            "public": any(p.is_public for p in perms),
+            "writers": sum(1 for p in perms if p.can_write)}
 
 
 def file_ref_out(ref: Any) -> FileRefOut:

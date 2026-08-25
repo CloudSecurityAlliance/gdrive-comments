@@ -14,6 +14,7 @@ JsonDict = dict[str, Any]
 
 class Backend(Protocol):
     def get_file_metadata(self, file_id: str) -> JsonDict: ...
+    def list_permissions(self, file_id: str) -> list[JsonDict]: ...
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None: ...
     def create_cell_anchored_comment(self, file_id: str, cell: str, text: str) -> None: ...
     def list_comments(self, file_id: str, include_deleted: bool = False,
@@ -48,7 +49,8 @@ class FakeBackend:
     """In-memory backend for unit tests. `files` maps file_id -> metadata dict."""
 
     def __init__(self, files, *, documents=None, spreadsheets=None,
-                 values=None, presentations=None, exports=None, comments=None):
+                 values=None, presentations=None, exports=None, comments=None,
+                 permissions=None):
         self._files = files
         # Keyed (file_id, comment_id) -> raw Drive comment dict, matching what
         # create_comment() builds. The seed exists for fixtures needing fields
@@ -62,6 +64,7 @@ class FakeBackend:
         self._values = values or {}
         self._presentations = presentations or {}
         self._exports = exports or {}
+        self._permissions = {fid: list(ps) for fid, ps in (permissions or {}).items()}
         self._writes = []
 
     def get_file_metadata(self, file_id: str) -> dict:
@@ -156,6 +159,10 @@ class FakeBackend:
 
     def export_file(self, file_id, mime_type):
         return self._fixture(self._exports, (file_id, mime_type), "export")
+
+    def list_permissions(self, file_id):
+        self.get_file_metadata(file_id)              # validates the file exists
+        return [copy.deepcopy(p) for p in self._permissions.get(file_id, [])]
 
     def search_files(self, query, *, page_size=25, order_by=None, page_token=None):
         """Substring-matches `name contains '...'` / `fullText contains '...'` clauses and
@@ -323,6 +330,25 @@ class ApiBackend:
     def export_file(self, file_id, mime_type):
         return _errors.call(self._services.drive.files()
                             .export(fileId=file_id, mimeType=mime_type).execute)
+
+    # emailAddress and displayName are omitted from the default response, and they are the
+    # entire point of this call.
+    _PERM_FIELDS = ("permissions(id,type,role,emailAddress,displayName,domain,deleted,"
+                    "pendingOwner),nextPageToken")
+
+    def list_permissions(self, file_id):
+        out, page = [], None
+        while True:
+            kw = {"fileId": file_id, "fields": self._PERM_FIELDS, "pageSize": 100,
+                  # A file on a shared drive otherwise reports no permissions at all.
+                  "supportsAllDrives": True}
+            if page:
+                kw["pageToken"] = page
+            resp = _errors.call(self._services.drive.permissions().list(**kw).execute)
+            out.extend(resp.get("permissions", []))
+            page = resp.get("nextPageToken")
+            if not page:
+                return out
 
     # Requested fields are explicit: the default response omits webViewLink, and asking for
     # everything makes a search of 100 files needlessly large.

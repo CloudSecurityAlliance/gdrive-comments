@@ -8,6 +8,7 @@ from .documents.sheet import Sheet
 from .documents.slides import Slide, Slides
 from .exceptions import DetachedError
 from .files import FileCollection, FileRef
+from .permissions import Permission
 from .suggestions import Suggestion
 from .workspace import Workspace
 
@@ -17,6 +18,6 @@ __all__ = [
     "Suggestion", "Slide", "EXPORT_FORMATS",
     # load-bearing types for embedders / custom backends (audit #26)
     "Backend", "Document", "CommentCollection", "DetachedError",
-    "FileRef", "FileCollection",
+    "FileRef", "FileCollection", "Permission",
 ]
-__version__ = "0.5.0"
+__version__ = "0.6.0"

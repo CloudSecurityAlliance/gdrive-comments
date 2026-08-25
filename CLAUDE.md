@@ -41,6 +41,7 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
 - `_services.py` — lazy Google API client registry. `_errors.py` — `HttpError`→typed translator + retry.
 - `base.py` — `Document` base + `CommentsMixin`. `documents/` — `Doc`/`Sheet`/`Slides` (per-type content read/write).
 - `comments.py` — `Author`/`Reply`/`Comment`/`Location`/`CommentCollection` + in-place mutation.
+- `permissions.py` — `Permission` + `PermissionsMixin` (`doc.permissions`). A uniform Drive concern, so a mixin — the same shape as `CommentsMixin`.
 - `files.py` — **the account axis**: `FileCollection` (`workspace.files`) + `FileRef`. The one place that is *not* reached through `open(file_id)`, because you cannot open a file you are searching for.
 - `suggestions.py` — `Suggestion` + read-only suggestion extraction (grouped by suggestion id).
 - `_cellmap.py` — Sheets comment→cell mapping: XLSX-export → parse `threadedComments` (defusedxml) → A1.
