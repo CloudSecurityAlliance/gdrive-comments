@@ -162,3 +162,60 @@ def test_unauthorized_message_tells_the_model_to_ask_the_user(monkeypatch):
         provider()
     low = str(ei.value).lower()
     assert "ask the user" in low or "the user" in low
+
+
+# --- CSA_GW_CAPABILITIES ----------------------------------------------------
+
+def test_no_capabilities_env_means_the_default_policy():
+    from csa_google_workspace.mcp._config import settings_from_env
+    assert settings_from_env({}).policy is None      # -> Policy.default() downstream
+
+
+def test_capabilities_default_token_expands_to_the_builtin_set():
+    from csa_google_workspace.mcp._config import settings_from_env
+    from csa_google_workspace.policy import DEFAULT_ENABLED, FILE_TRASH
+    policy = settings_from_env({"CSA_GW_CAPABILITIES": "default,file.trash"}).policy
+    assert policy is not None
+    assert policy.enabled == DEFAULT_ENABLED | {FILE_TRASH}
+
+
+def test_capabilities_is_absolute_not_a_delta():
+    """Reading the line must tell you everything permitted, without also knowing what the
+    defaults were the day it was written (#82: config that reviews like code)."""
+    from csa_google_workspace.mcp._config import settings_from_env
+    from csa_google_workspace.policy import COMMENT_CREATE
+    policy = settings_from_env({"CSA_GW_CAPABILITIES": "comment.create"}).policy
+    assert policy is not None and policy.enabled == frozenset({COMMENT_CREATE})
+
+
+def test_capabilities_none_permits_nothing():
+    from csa_google_workspace.mcp._config import settings_from_env
+    policy = settings_from_env({"CSA_GW_CAPABILITIES": "none"}).policy
+    assert policy is not None and policy.enabled == frozenset()
+
+
+def test_capabilities_all_permits_everything_including_the_dangerous_three():
+    from csa_google_workspace.mcp._config import settings_from_env
+    from csa_google_workspace.policy import ALL_CAPABILITIES
+    policy = settings_from_env({"CSA_GW_CAPABILITIES": "all"}).policy
+    assert policy is not None and policy.enabled == set(ALL_CAPABILITIES)
+
+
+def test_an_unknown_capability_fails_loudly_rather_than_running_narrower():
+    """A typo'd name would otherwise read as "configured" and behave as "off" — the failure
+    mode where an operator believes a capability is enabled and it silently is not."""
+    import pytest
+
+    from csa_google_workspace.mcp._config import settings_from_env
+    with pytest.raises(ValueError) as e:
+        settings_from_env({"CSA_GW_CAPABILITIES": "comment.create,file.nuke"})
+    assert "file.nuke" in str(e.value) and "file.share" in str(e.value)
+
+
+def test_read_only_overrides_a_permissive_capability_list():
+    """read_only is the stronger statement — it also narrows the OAuth scopes."""
+    from csa_google_workspace.mcp._config import WorkspaceProvider, settings_from_env
+    settings = settings_from_env({"CSA_GW_READ_ONLY": "1", "CSA_GW_CAPABILITIES": "all"})
+    assert settings.read_only is True
+    # The provider builds the Workspace, which is where read_only wins.
+    assert WorkspaceProvider(settings).settings.read_only is True
