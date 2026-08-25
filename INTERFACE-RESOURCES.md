@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-24
+**Last verified:** 2026-08-25
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -30,8 +30,8 @@ it means installing it and importing it.
   credentials (BYO `google.oauth2` credentials, or the bundled OAuth helper)
 - **Code:** [`src/`](src/)
 - **Status:** production — feature-complete for its scoped roadmap and
-  live-verified end-to-end against real Google. Current release **v0.2.0**
-  (2026-08-24), which added the MCP server below. Classifier still reads
+  live-verified end-to-end against real Google. Current release **v0.2.3**
+  (2026-08-25); the MCP server below arrived in v0.2.0. Classifier still reads
   `Development Status :: 4 - Beta`.
 - **Health check:**
   ```bash
@@ -68,7 +68,7 @@ it means installing it and importing it.
   `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a cached token carries its
   own client id and secret).
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped in v0.2.0** (2026-08-24).
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24).
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a

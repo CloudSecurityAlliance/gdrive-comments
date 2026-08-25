@@ -33,7 +33,7 @@ semantics, Sheets cell-mapping, suggestion reading, and a uniform door across th
   UI-automation backend.
 - **Creating cell-anchored comments** — impossible via the API (Sheets comments are file-level).
 - **File management** (upload/move/permissions), Gmail/Calendar/etc., real-time collaboration.
-- **MCP server packaging** — the library is import-first; an MCP wrapper may be layered later but
+- **MCP server packaging** — the library is import-first. *(Superseded: a built-in MCP server shipped in v0.2.0 as phase 2; see the 2026-07-23 spec. It is a delivery layer over this design, not a change to it.)* An MCP wrapper may be layered later but
   is not part of this spec.
 
 ---

@@ -1,7 +1,8 @@
 # Design spec — built-in MCP server (`csa_google_workspace.mcp`)
 
 **Date:** 2026-07-23 · **Revised:** 2026-08-05 (auth model — §3, §5, §6, §7, §9, §10, §11)
-**Status:** Approved for planning.
+**Status:** **Implemented** — shipped v0.2.0 (2026-08-24). Deviations from this document
+are marked *[as-built]* where they matter; deferred items are listed in `TODO.md`.
 **Phase:** 2 — a delivery layer over the shipped `csa-google-workspace` library (v0.1.2, on PyPI).
 
 > **2026-08-05 revision.** The original §5 had `main()` perform browser OAuth consent on first
@@ -100,6 +101,12 @@ small; split them along the same axis boundary when it stops being.
 Structured output (`structuredContent` + `outputSchema`, JSON Schema 2020-12) for anything
 list-shaped, so the client gets typed data, not prose. `file` is an id or share URL.
 
+> ***[as-built]*** **Shipped in v0.2.0:** `open_document`, `read_text`, `list_comments`,
+> `get_comment`, `comments_by_cell`, `create_comment`, `reply_comment`, `resolve_comment`,
+> `reopen_comment` — nine tools. **Not built:** `list_suggestions`, every content-write tool,
+> `edit_comment`/`delete_comment`, the Resource, and the Prompt. Content writes are blocked on
+> file allowlisting (#82); the rest are simply deferred. See `TODO.md`.
+
 ### Reads — `readOnlyHint: true`
 | Tool | Maps to | Returns |
 |------|---------|---------|
@@ -193,7 +200,8 @@ its own unit tests, not smuggled into the MCP layer.
 
 Two independent reasons, one normative and one mechanical.
 
-**The MCP spec forbids it.** Authorization, revision `2025-11-25`, §Protocol Requirements:
+**The MCP spec forbids it.** Authorization, §Protocol Requirements (unchanged through the
+current `2026-07-28` revision; quoted here from `2025-11-25`):
 
 > "Implementations using an STDIO transport **SHOULD NOT** follow this specification, and instead
 > **retrieve credentials from the environment**."
@@ -294,10 +302,10 @@ gates**:
 
 ## 8. Packaging
 
-- Optional extra in `pyproject.toml`: `[project.optional-dependencies] mcp = ["mcp>=1.27"]`.
-  Core library dependencies are unchanged. (The floor was `>=1.2` in the original draft; raised
-  because the design targets spec revision `2025-11-25` and §3's event-loop finding was verified
-  against `mcp` 1.27.0 — pinning below what we actually verified would be fiction.)
+- Optional extra in `pyproject.toml`: `[project.optional-dependencies] mcp = ["mcp>=2.1"]`
+  plus `typing_extensions` below Python 3.12. Core library dependencies are unchanged.
+  *[as-built]* The floor moved `>=1.2` → `>=1.27` → **`>=2.1`** as the target revision moved to
+  `2026-07-28`; SDK 1.x is maintenance-only, and `mcp.server.fastmcp` does not exist in 2.x.
 - Entry point: `[project.scripts] csa-google-workspace-mcp = "csa_google_workspace.mcp:main"`,
   plus `python -m csa_google_workspace.mcp`. **One console script, two modes:** a bare invocation
   runs the server; the single subcommand `login` runs interactive consent (§5). Argument parsing
@@ -308,8 +316,10 @@ gates**:
 
 ## 9. Testing
 
-- **Unit (gates CI):** `create_server(Workspace(FakeBackend(...)))` driven by FastMCP's
-  in-memory `Client` — call each tool, assert structured output and error mapping. No network,
+- **Unit (gates CI):** `create_server(lambda: Workspace(FakeBackend(...)))` driven in-process
+  through `await server.call_tool(...)` — call each tool, assert structured output and error
+  mapping. *[as-built]* A provider, not an instance (§3), and `call_tool` directly rather than a
+  client object; note it **raises** `ToolError` rather than returning an error result. No network,
   no credentials — the same `FakeBackend` strategy as the rest of the suite. The `mcp` extra is
   added to the `dev` install so CI can import it.
 - **Stdout purity (the regression guard for §5.1).** Run the server's startup path with

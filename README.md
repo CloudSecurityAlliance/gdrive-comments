@@ -6,7 +6,7 @@ It's designed to be **embedded**: a clean, typed Python surface for building AI 
 
 > **Status:** the **library** is feature-complete for its scoped roadmap and **live-verified end-to-end against real Google**. Shipped across Docs/Sheets/Slides: comment management, content read/write, Sheets comment→cell mapping, and Docs suggestions read. See [`CHANGELOG.md`](./CHANGELOG.md); design + phased plans under [`docs/superpowers/`](./docs/superpowers/).
 >
-> **New in 0.2.0 — a built-in MCP server** (`csa_google_workspace.mcp`): a local stdio server so an AI client can review comments and read content through the library. Install with the `[mcp]` extra; see below. Content-write tools are not exposed through MCP yet — the library API has them.
+> **Built-in MCP server** (since 0.2.0) (`csa_google_workspace.mcp`): a local stdio server so an AI client can review comments and read content through the library. Install with the `[mcp]` extra; see below. Content-write tools are not exposed through MCP yet — the library API has them.
 
 ## Install
 
@@ -110,7 +110,7 @@ The library is **document-scoped** and honest about what the Google APIs can't d
 
 This library is a building block for MCP servers / agents / automations acting **on a user's behalf** with a full-Drive token. Before deploying, read [`SECURITY.md`](./SECURITY.md) — prompt injection through document/comment content is the primary risk. In short:
 
-- **Credential seam:** `from_oauth` + local `token.json` is **PoC/CLI scaffolding** (`run_local_server()` can't run on a server). In production the host runs its own OAuth, stores per-user tokens in a secret store, and passes ready credentials via **`Workspace.from_credentials(creds)`** — the production entry point.
+- **Credential seam:** the line is *whose machine holds the token*, not CLI-vs-server. Local single-user use — a CLI, or the bundled MCP server over stdio — is fine with `from_oauth` + `token.json` (`0o600`). **Hosted, multi-user is not:** `run_local_server()` can't run headless and one file can't isolate many users. There the host runs its own OAuth, keeps per-user tokens in a secret store, and passes ready credentials via **`Workspace.from_credentials(creds)`**.
 - **Concurrency:** one `Workspace` per request/user; never share a `Workspace` (or its backend) across threads — `googleapiclient` clients aren't thread-safe. The stack is synchronous; wrap calls in `asyncio.to_thread(...)` from async code.
 - **Isolation & least authority:** a `Workspace` binds one user's credentials — never reuse it across users. Default to `read_only=True` and escalate to a write-capable `Workspace` deliberately, per operation.
 
