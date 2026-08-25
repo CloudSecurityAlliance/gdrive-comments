@@ -10,6 +10,28 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-25 — v0.13.1 (say which version you are) — not released
+
+Three small things, two of them found by running the installer on a real Windows machine.
+
+**`csa-google-workspace-mcp --version`.** The version was reachable only by starting a session
+and calling `describe_configuration`, which means the thing that installs this could not check
+what it had just installed — and a `pipx upgrade` that silently changed nothing looked
+identical to one that worked. That is not hypothetical; it is what a machine did for weeks. On
+stderr, like every other CLI output here, because stdout is the JSON-RPC channel.
+
+**The usage text is ASCII now.** Its em dashes printed as `ù` on a Windows console (cp437 /
+cp1252). Measured on real Windows PowerShell 5.1, in the help for `CSA_GW_CAPABILITIES` and
+`CSA_GW_ALLOWLIST_*` — the two entries somebody reads precisely when they are already confused
+about the policy. A test now asserts the string stays ASCII.
+
+**`scripts/check_release_history.py` fetches tags before comparing them.** Without that it
+invents discrepancies: a clone whose tags are behind — and `actions/checkout` fetches none by
+default — reports the newest release as "claims it was released, but there is no git tag",
+which reads exactly like a release that reached PyPI untagged. It cost a detour through PyPI
+and `gh release list` to establish that nothing was wrong. A fetch that fails is still not a
+discrepancy, but it now says so out loud.
+
 ## 2026-08-25 — v0.13.0 (implement everything the server advertises)
 
 `describe_configuration` advertised four capabilities with no tool behind them. Rather than

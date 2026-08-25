@@ -20,6 +20,7 @@ USAGE = """usage: csa-google-workspace-mcp [login [--force]]
   (no argument)   run the MCP server over stdio, for an MCP client to launch
   login           authorize with Google in a browser and cache the token
   login --force   authorize again even if a cached token looks usable
+  --version       print the installed version and exit
 
 Clients that support MCP URL elicitation (Claude Code) can authorize in-session via
 the `authenticate` tool instead, with no terminal step.
@@ -31,7 +32,7 @@ environment:
                          reader may change nothing; commenter may comment, reply and
                          resolve; editor adds content edits and file creation; full adds
                          rename/move, trash and share. Default: editor.
-  CSA_GW_CAPABILITIES    which mutations are permitted — the complete list, not a delta.
+  CSA_GW_CAPABILITIES    which mutations are permitted - the complete list, not a delta.
                          Unset means the safe default: comment and content writes on,
                          file rename/move, trash and share OFF. Tokens: any capability
                          name, plus `default`, `all`, `none`.
@@ -42,7 +43,7 @@ environment:
   CSA_GW_ALLOWLIST_MODIFY  which files may be CHANGED, added to, or deleted
 
                          Both FAIL CLOSED: unset means nothing is permitted. Each holds
-                         either `*` or the document URLs themselves — there is no
+                         either `*` or the document URLs themselves - there is no
                          allowlist file, and a path-shaped value is reported as a
                          mistake rather than read.
 
@@ -68,6 +69,15 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
 
     if argv and argv[0] in ("-h", "--help", "help"):
         print(USAGE, file=sys.stderr)      # stderr: stdout belongs to JSON-RPC
+        return 0
+    if argv and argv[0] in ("--version", "-V", "version"):
+        # Also on stderr, for the same reason as USAGE. The version was previously reachable
+        # only by starting a session and calling describe_configuration, which means an
+        # installer could not check what it had just installed -- and a pipx upgrade that
+        # silently changed nothing looked identical to one that worked. This is the answer to
+        # "which version is actually on this machine?" without an MCP client in the loop.
+        from .. import __version__
+        print(__version__, file=sys.stderr)
         return 0
     if argv and argv[0] == "login":
         from ._login import login  # imported here so the server path never loads it

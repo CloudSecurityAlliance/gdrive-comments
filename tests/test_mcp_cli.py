@@ -69,6 +69,29 @@ def test_help_goes_to_stderr_not_stdout(capsys):
     assert out == "" and "usage:" in err
 
 
+def test_version_prints_the_installed_version(capsys):
+    """`--version` answers "what is on this machine?" without starting a session.
+
+    On stderr like every other CLI output here: stdout is the JSON-RPC channel, and one
+    stray byte on it corrupts the session.
+    """
+    from csa_google_workspace import __version__
+
+    assert cli.main(["--version"], {}) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""                      # stdout stays clean
+    assert captured.err.strip() == __version__
+
+
+def test_usage_text_is_ascii_only() -> None:
+    """The usage text reaches Windows consoles, where cp437/cp1252 mangles anything else.
+
+    Measured: an em dash in this string printed as a u-grave on a real Windows 5.1 console.
+    """
+    offenders = sorted({c for c in cli.USAGE if ord(c) > 127})
+    assert offenders == [], f"non-ASCII in USAGE: {offenders}"
+
+
 def test_unknown_argument_is_rejected_on_stderr(capsys):
     assert cli.main(["frobnicate"], {}) == 2
     out, err = capsys.readouterr()
