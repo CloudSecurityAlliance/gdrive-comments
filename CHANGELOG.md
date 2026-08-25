@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-25 — v0.2.3 (docs patch: MCP troubleshooting)
+
+No code changes. The README is the PyPI long description and is frozen at each release, so a
+docs fix only reaches users on a version bump — the same reason 0.1.1 existed.
+
+- **Troubleshooting table** for the MCP server, covering five failure modes hit while
+  standing it up, each written from the symptom a user actually sees rather than its cause:
+  - `Error 403: org_internal` — the OAuth client is **Internal** to a Workspace organization
+    and you signed in with an account outside it. Confirmed by observation, not just docs;
+    it also settles that Internal genuinely covers **restricted** scopes. The realistic
+    victim is not an attacker but someone with several Google accounts who picks the wrong
+    one in the chooser.
+  - `SERVICE_DISABLED` on some file types but not others — a scope grant is not API
+    enablement, and it fails **per-API**, so Docs can work while Sheets 403s.
+  - `login` reporting *"Already authorized"* while nothing works — a cached token issued by a
+    different OAuth client; `login --force` is the fix.
+  - Tool errors mentioning `no cached credentials` — the server starts without a token on
+    purpose, so the remedy surfaces where it can be read.
+  - Works in Claude Code but not Claude Desktop on macOS — GUI apps inherit a minimal `PATH`
+    where `python3` is the system 3.9, below this package's 3.10 floor.
+
 ## 2026-08-25 — v0.2.2 (CSA-branded OAuth success page)
 
 - **Branded consent-complete page.** After `login`, the browser now shows a CSA-branded page
