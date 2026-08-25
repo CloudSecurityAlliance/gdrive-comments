@@ -178,16 +178,25 @@ is not a read.)
 | **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
 | **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
 
-### Two open questions that change the scope of 1.0
+### Decided 2026-08-25
 
-1. **Is 1.0 public, or CSA-internal?** A public/External OAuth client means Google app
-   verification **plus an annual CASA assessment** for the full `drive` scope — weeks of calendar
-   time and a recurring cost. With the Internal client, 1.0 ships whenever the gates close.
-   These are different releases; only one of them has CASA on the critical path.
-2. **Do `share_file` and `trash_file` ship at all?** Google exposes neither, having looked at
-   their own API and declined. Shipping them for parity's sake overrides that judgment. Options:
-   both behind #82 with an explicit opt-in; `trash_file` only (recoverable, unlike a share);
-   or neither, and declare **Google's 8 the parity target**, noting the difference.
+**1.0.0 is a public release.** Local stdio MCP server, the Google/Claude flavour switch, and
+#82 allowlisting — all three are gates, not stretch goals. **C2 (the flavour switch) is therefore
+mandatory for 1.0, not a "should".**
+
+Consequence to plan around rather than discover: public + full `drive` scope means **Google app
+verification and an annual CASA assessment**. That is weeks of calendar time and a recurring
+cost, and it is on 1.0's critical path — so start it in parallel with Gate A rather than after
+Gate D. It is the one item whose schedule is not ours.
+
+**`share_file` and `trash_file` both ship.** Built now; **#82 must land before 1.0.0.**
+
+That leaves a window where destructive and exfiltration tools exist without per-file scoping.
+Close the cheap half of it immediately: #82's requirement surface already has **two independent
+dimensions** — global capability gating and per-URL scope — so ship both tools **behind a global
+capability flag, default off**. That is #82's first dimension, not extra work, and it means no
+default install can share or trash anything before the allowlist arrives. Per-URL scoping
+follows with the rest of #82.
 
 ## Roadmap — nine subsystems, in order
 
