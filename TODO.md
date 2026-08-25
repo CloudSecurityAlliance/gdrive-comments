@@ -33,6 +33,52 @@ added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by
   + docs + a gated live smoke. This is the actual next action.
 - [ ] **Then execute it** TDD, per task, against `FakeBackend` + FastMCP's in-memory client.
 
+- [ ] **File allowlisting — scope a `Workspace` to specific files and operations.**
+  ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) Listed here
+  rather than in the library-internal section below because **it is arguably a phase-2
+  dependency, not a parallel nicety.** The locked phase-2 decision is *read + write on by
+  default*, hedged with tool annotations and `CSA_GW_READ_ONLY=1`. That hedge is all-or-nothing:
+  the only choices an operator gets are "this agent may write to everything you can reach" or
+  "nothing". An allowlist is the missing middle, and it is what makes write-on-by-default
+  defensible rather than merely convenient.
+  **Shape settled 2026-08-21**: an explicit **write-allowlist of Drive URLs** — read stays as broad
+  as the credentials allow, only mutation is gated. The goal is damage containment rather than
+  confidentiality: the agent already sees whatever the user sees, so what must be bounded is what
+  it can *break*. Keyed on URLs because that is what people paste (`parse_file_id` normalises to
+  IDs internally). And the list is **curated, not per-user** — e.g. the CSA WG document URLs —
+  which means a volunteer installs the tooling and it is physically incapable of damaging anything
+  outside the list, whether or not they understand why. That is a better story than per-user config,
+  because it does not depend on the least-equipped person making a good decision.
+  **Cheap to build**: every one of the 25 `Backend` Protocol methods takes `file_id` first, so a
+  wrapping `AllowlistBackend` enforces uniformly with no changes to existing methods, composed
+  through the documented `Workspace(backend=…)` seam. `read_only` is the precedent — the
+  allowlist is its fine-grained sibling and the two should be one mechanism, not two.
+  **The MCP server also answers the hard half.** #82 notes that session scoping only means
+  something if it is monotonically narrowing *and* set by the host rather than callable by the
+  guest — otherwise an agent just widens its own scope. **An MCP server session is exactly that
+  boundary**: the server constructs the scoped `Workspace` per session, and the client has no
+  in-band way to broaden it. So "session-level allowlisting" has a concrete home in phase 2
+  rather than being an open question.
+  **Requirement surface is captured in full on #82** so nothing is rediscovered mid-build. Summary
+  of what must be considered: **two independent dimensions** — capability gating *at all* (write /
+  create-comment / update / delete / resolve / accept-suggestion, each on-or-off globally) and
+  **per-URL scope** for each capability that is enabled — with the composition rule that **global
+  is a ceiling and per-file grants narrow, never widen**. Plus the parts that decide whether it is
+  actually usable: **obtaining the URLs** (folder enumeration as a *generator* producing a
+  reviewable committed list, never as a live rule — folder-as-rule reintroduces TOCTOU when someone
+  drops a file in), **config ergonomics** (plain-text and diffable so it reviews like code, a
+  reason field per entry so "why is this writable" is answerable in six months, URL forms accepted
+  as pasted, validation on load), **fail-closed behaviour** for every failure mode including the
+  no-policy-configured default, **operational lifecycle** (immediate revocation, optional expiry,
+  dead-entry detection, and new-file creation which probably sits outside the list since it cannot
+  damage anything existing), and **observability** — log allowed *and* denied with the matching
+  rule, since denials are the security signal, plus a dry-run mode answering "what would this run
+  touch" before it touches anything.
+  **Driver**: CSA-Plugins#27 wants agentic read/edit/comment on live Google Docs authored by
+  volunteers. The blocker there is not capability — this library already has it — it is that
+  handing volunteers unscoped write access to their own Drive is not defensible. Prevention has
+  to carry the weight, because Docs has no selective undo.
+
 Deferred out of phase 2, recorded during the 2026-08-05 auth revision (spec §11):
 
 - [ ] **Hosted / server-side login for the MCP server.** A remote, multi-user server (Streamable
