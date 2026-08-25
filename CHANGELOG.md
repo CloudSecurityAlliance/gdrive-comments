@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-25 — v0.2.5 (`login` finds the client secrets by itself)
+
+- **`login` no longer requires `CSA_GW_CLIENT_SECRETS`.** It falls back to
+  `~/.csa_google_workspace/client_secret.json`, the path the CSA setup scripts already write
+  to. Requiring an environment variable that points at a location this package itself chose
+  only made users rediscover our own convention — and in practice it did: the first real run
+  ended at `CSA_GW_CLIENT_SECRETS is not set`, with the file sitting exactly where the
+  fallback now looks. The variable still wins when set, for anyone keeping the client
+  elsewhere.
+
+- **When nothing is found, the error says where it looked** — both the unset variable and the
+  default path — rather than naming only the variable.
+
 ## 2026-08-25 — v0.2.4 (Python 3.14; install guidance)
 
 - **Python 3.14 is tested and declared.** A `pipx` install picks the newest interpreter

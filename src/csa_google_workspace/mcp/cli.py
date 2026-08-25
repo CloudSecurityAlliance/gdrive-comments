@@ -24,7 +24,8 @@ USAGE = """usage: csa-google-workspace-mcp [login [--force]]
 environment:
   CSA_GW_TOKEN           token cache path (default ~/.csa_google_workspace/token.json)
   CSA_GW_READ_ONLY=1     refuse writes
-  CSA_GW_CLIENT_SECRETS  OAuth client secrets JSON (required by `login` only)
+  CSA_GW_CLIENT_SECRETS  OAuth client secrets JSON (`login` only; defaults to
+                         ~/.csa_google_workspace/client_secret.json if that exists)
 """
 
 
