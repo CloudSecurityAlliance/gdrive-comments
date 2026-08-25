@@ -127,6 +127,24 @@ The comment is the *reason*, so a `git diff` of your config shows both what was 
 A value of just `*` means every file, and logs a warning each time it is read, because
 unrestricted access should be visible.
 
+**Formatting is yours to choose.** Indentation, tabs, alignment and blank lines are all
+insignificant, so line the reasons up into a column if that reads better. Whole-line comments
+can be indented too. The *reason* is free text — apostrophes, quotes and further `#`s are fine
+in it (whatever holds the value, JSON or a shell, has its own quoting rules to satisfy, and that
+is a separate layer). A comment starts at a `#` that begins the line or **follows whitespace**,
+which is what lets a URL keep an `#gid=0` or `#heading=h.x` fragment.
+
+One thing it will *not* do quietly: a comment runs to the end of its line, so a second URL after
+a comment — or two URLs on one line — is an **error**, not a dropped entry:
+
+```
+https://…/AAA/edit # tracker, https://…/BBB/edit # also    ← error: BBB is not being allowlisted
+https://…/AAA/edit, https://…/BBB/edit  # both             ← error: only AAA would be listed
+```
+
+A policy with fewer files than its author believes fails closed, which is safe, but silently,
+which is not good enough.
+
 **Three outcomes, and the third one is the point.** A value is either `*` (everything), a set of
 document URLs, or **unusable** — and unusable always means *nothing permitted*, never "ignore the
 setting". Because "unusable" covers a lot of ground, the server says which kind it hit rather
