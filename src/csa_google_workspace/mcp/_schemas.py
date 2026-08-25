@@ -95,11 +95,15 @@ class ConfigOut(TypedDict):
     """What this server may do. Reasons from the allowlist are deliberately absent — they are
     written for whoever reviews the configuration and may name people or unannounced work."""
     read_scope: str                    # "every file" | "no files" | "N listed file(s)"
-    readable_file_ids: list[str]       # empty when read_scope is every/none
+    read_unrestricted: bool            # true when the scope is `*` — see readable_file_ids
+    readable_file_ids: list[str]       # the listed ids; EMPTY when unrestricted, not "none"
     modify_scope: str
+    modify_unrestricted: bool
     modifiable_file_ids: list[str]
     profile: str | None                # the CSA_GW_PROFILE name, if one is set
-    capabilities_enabled: list[str]
+    capabilities_enabled: list[str]    # permitted by policy — includes the library's surface
+    capabilities_reachable: list[str]  # ...and actually usable through a tool in THIS server
+    capabilities_unreachable: list[str]  # enabled but no tool here uses them
     capabilities_disabled: list[str]
     read_only: bool
     blocked_reason: str | None         # why something permits nothing, when it does

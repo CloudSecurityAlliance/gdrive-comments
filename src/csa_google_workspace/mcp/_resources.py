@@ -25,6 +25,7 @@ from mcp.server import MCPServer
 
 from ..policy import _GATES, ALL_CAPABILITIES, DEFAULT_ENABLED, MODIFY, READ, Policy, Scope
 from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
+from ._tools._capabilities import reachable_capabilities
 
 CONFIG_URI = "csa-gw://config"
 HELP_URI = "csa-gw://help/configuration"
@@ -52,7 +53,9 @@ def _scope_lines(label: str, scope: Scope, variable: str) -> list[str]:
 def render_config(settings: Settings) -> str:
     """The effective policy, as Markdown. Computed from the same Settings the tools use."""
     policy = settings.policy or Policy.default()
-    on = sorted(policy.enabled)
+    reachable = reachable_capabilities()
+    on = sorted(policy.enabled & reachable)
+    unreachable = sorted(policy.enabled - reachable)
     off = sorted(set(ALL_CAPABILITIES) - policy.enabled)
 
     lines = [
@@ -76,10 +79,20 @@ def render_config(settings: Settings) -> str:
         "",
         *([f"Profile: **{settings.profile}** (`CSA_GW_PROFILE`).", ""]
           if settings.profile else []),
-        "Permitted: " + (", ".join(f"`{c}`" for c in on) if on else "*none*"),
+        "Available here: " + (", ".join(f"`{c}`" for c in on) if on else "*none*"),
         "",
         "Refused: " + (", ".join(f"`{c}`" for c in off) if off else "*none*"),
         "",
+        *([
+            "Permitted by policy but **not reachable through this server** — no tool here uses "
+            "them, so do not plan work around them: "
+            + ", ".join(f"`{c}`" for c in unreachable) + ".",
+            "",
+            "They are not a mistake in the policy. The policy governs the underlying library "
+            "too, where these operations do exist; this server simply does not expose a tool "
+            "for them yet.",
+            "",
+          ] if unreachable else []),
         f"Set with `CSA_GW_CAPABILITIES`. Unset means the default set "
         f"({', '.join(f'`{c}`' for c in sorted(DEFAULT_ENABLED))}), which excludes renaming, "
         f"trashing and sharing.",

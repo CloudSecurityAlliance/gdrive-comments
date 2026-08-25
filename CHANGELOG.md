@@ -6,9 +6,55 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.12.1. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.12.1, 0.12.2. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-25 — v0.12.2 (stop advertising authority the tools cannot exercise)
+
+Found the right way: a model read `describe_configuration`, planned a task on the strength of
+it, and discovered the tools did not exist.
+
+### Fixed
+
+- **`describe_configuration` and `csa-gw://config` reported capabilities no tool can use.** The
+  `editor` profile enables `content.write`, `file.create`, `comment.edit` and `comment.delete`,
+  and **no tool in this server uses any of them.** They are genuine policy — a library embedder
+  going through `Workspace.from_credentials` really can call `doc.replace_text` — but reporting
+  them to a model as "enabled" reads as "available".
+
+  The output now separates the two, and names the gap:
+
+  | field | means |
+  |---|---|
+  | `capabilities_enabled` | permitted by policy, including the library-only surface |
+  | **`capabilities_reachable`** | **…and usable through a tool in this server** |
+  | `capabilities_unreachable` | enabled, but nothing here exposes them |
+
+  The resource says it in words too, including that it is *not* a mistake in the policy — the
+  policy governs the library as well, where those operations exist.
+
+- **`modify_scope: "every file"` alongside `modifiable_file_ids: []` read as a contradiction** —
+  one reader took it for an allowlist doing no work, when it meant the opposite. Added
+  `read_unrestricted` / `modify_unrestricted` booleans so `*` and "nothing listed" cannot be
+  confused.
+
+### Added
+
+- **`_tools/_capabilities.py`** — one declaration per tool of the capability it can require.
+  `policy._GATES` answers *"what does this Backend method cost?"*; this answers *"what can this
+  server actually reach?"*. Both are needed because the MCP layer deliberately exposes only part
+  of the library.
+- **`tests/test_mcp_capabilities.py`** — fail-closed, the same shape as the `_GATES` guard: a
+  registered tool absent from the map is a failure, and a stale entry is too, since that would
+  inflate `capabilities_reachable` — the direction that misleads.
+
+### Not a bug
+
+The reporter also flagged unscoped comment-writes across the whole Drive. That is accurate and
+it is the configured interim setting for the CSA-internal rollout (`CSA_GW_ALLOWLIST_MODIFY=*`),
+chosen deliberately and documented in `CSA-Plugins/internal-setup/README.md`. Narrow it by
+replacing `*` with document URLs.
 
 ## 2026-08-25 — v0.12.1 (disable the built-in Drive connector — it bypasses the policy)
 
