@@ -158,9 +158,26 @@ hand the library a file id/URL; there is no `files.list`/search."* `search_files
 change**: it needs `Backend` methods, `FakeBackend` parity, the conformance guard, and a
 decision to widen the library's scope. Not a tool-registration exercise.
 
-It also interacts with the reason discovery was excluded: `SECURITY.md` names the
-**autonomous sweep** as the highest-risk use case precisely because it ingests comments from
-many documents. Search is what makes an autonomous sweep easy.
+**Correction to an earlier note here:** this file previously implied discovery was excluded
+for a security reason. It was not. There is **no recorded rationale anywhere** — not in the
+design spec, not in `SECURITY.md`, not in either MCP spec. The only justification on record is
+circular ("the library is document-scoped, so every tool takes a file id/URL"), and the README
+had it filed under *"what the Google APIs can't do"* next to two genuine impossibilities —
+while its own workaround calls `files.list()` successfully. A scope choice had hardened into an
+apparent constraint.
+
+The honest case *for* keeping it out of the library: Drive query syntax, pagination, shared
+drives and corpora are a sizeable surface to own forever, and this library's value is comments
+and cell mapping, not Drive browsing. The case against: the documented workaround needs a
+Drive client anyway, so the boundary saves a caller nothing but a loop — and for the MCP
+server there is no host application to hand us a file id, which makes it the difference
+between "ask about a document" and "paste a URL first". Both Google's own server and the
+claude.ai connector lead with `search_files`.
+
+Separately worth weighing, but as a *consequence* rather than the reason: `SECURITY.md` names
+the **autonomous sweep** as the highest-risk use case because it ingests comments from many
+documents, and search is what makes such a sweep easy. That argues for landing discovery
+alongside #82, not for leaving it out.
 
 ### `share_file` is an exfiltration primitive — gate it behind #82
 
