@@ -13,11 +13,16 @@ from __future__ import annotations
 from mcp.server import MCPServer
 
 from ._config import Settings
-from ._tools import register_auth_tools, register_comment_tools, register_content_tools
+from ._tools import (
+    register_auth_tools,
+    register_comment_tools,
+    register_content_tools,
+    register_file_tools,
+)
 from ._tools._base import WorkspaceProviderT
 
 __all__ = ["INSTRUCTIONS", "create_server", "register_auth_tools",
-           "register_comment_tools", "register_content_tools"]
+           "register_comment_tools", "register_content_tools", "register_file_tools"]
 
 INSTRUCTIONS = """Read and triage comments and content on Google Docs, Sheets, and Slides.
 
@@ -51,6 +56,7 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     """
     app = MCPServer(name=name, instructions=INSTRUCTIONS)
     register_content_tools(app, get_workspace)
+    register_file_tools(app, get_workspace)
     register_comment_tools(app, get_workspace)
     if settings is not None:
         register_auth_tools(app, settings)

@@ -61,6 +61,19 @@ class DownloadOut(TypedDict):
     size_bytes: int
 
 
+class FileRefOut(TypedDict):
+    id: str
+    name: str
+    type: str | None          # None for a type this library cannot open (PDF, folder, Form)
+    mime_type: str
+    url: str
+    modified_time: str | None
+
+
+class FilesOut(TypedDict):
+    files: list[FileRefOut]
+
+
 class CommentsOut(TypedDict):
     comments: list[CommentOut]
 
@@ -105,6 +118,11 @@ def document_out(doc: Any) -> DocumentOut:
 
 
 SNIPPET_CHARS = 500
+
+
+def file_ref_out(ref: Any) -> FileRefOut:
+    return {"id": ref.id, "name": ref.name, "type": ref.type, "mime_type": ref.mime_type,
+            "url": ref.url, "modified_time": _iso(ref.modified_time)}
 
 
 def file_metadata_out(doc: Any, snippet: str | None) -> FileMetadataOut:

@@ -27,6 +27,9 @@ class Backend(Protocol):
     def delete_comment(self, file_id: str, comment_id: str) -> None: ...
     def delete_reply(self, file_id: str, comment_id: str, reply_id: str) -> None: ...
     def export_file(self, file_id: str, mime_type: str) -> bytes: ...
+    # -- the account axis: no file_id, because there is no file yet ---------
+    def search_files(self, query: str, *, page_size: int = 25, order_by: str | None = None,
+                     page_token: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
     def get_spreadsheet(self, file_id: str) -> JsonDict: ...
     def get_values(self, file_id: str, a1_range: str) -> list[list[Any]]: ...
@@ -153,6 +156,39 @@ class FakeBackend:
 
     def export_file(self, file_id, mime_type):
         return self._fixture(self._exports, (file_id, mime_type), "export")
+
+    def search_files(self, query, *, page_size=25, order_by=None, page_token=None):
+        """Substring-matches `name contains '...'` / `fullText contains '...'` clauses and
+        honours `mimeType = '...'`; anything else matches everything.
+
+        Deliberately not a Drive query engine — that would be a second implementation of
+        Google's parser, and the interesting bugs live in `ApiBackend`'s wiring (which is
+        why the real query string is asserted in tests/test_apibackend_contract.py). This
+        exists so the collection's paging, ordering and wrapping are testable offline.
+        """
+        matched = [f for f in self._files.values() if self._matches(f, query)]
+        matched.sort(key=lambda f: f.get("modifiedTime", ""), reverse=True)
+        start = int(page_token) if page_token else 0
+        page = matched[start:start + page_size]
+        out: dict = {"files": [copy.deepcopy(f) for f in page]}
+        if start + page_size < len(matched):
+            out["nextPageToken"] = str(start + page_size)
+        return out
+
+    @staticmethod
+    def _matches(meta, query):
+        import re as _re
+        for term in _re.findall(r"(?:name|fullText)\s+contains\s+'([^']*)'", query):
+            if term.lower() not in meta.get("name", "").lower():
+                return False
+        for mime in _re.findall(r"mimeType\s*=\s*'([^']*)'", query):
+            if meta.get("mimeType") != mime:
+                return False
+        if "trashed = false" in query and meta.get("trashed"):
+            return False
+        if "trashed = true" in query and not meta.get("trashed"):
+            return False
+        return True
 
     def get_document(self, file_id, suggestions_view_mode=None):
         key = (file_id, suggestions_view_mode)
@@ -287,6 +323,22 @@ class ApiBackend:
     def export_file(self, file_id, mime_type):
         return _errors.call(self._services.drive.files()
                             .export(fileId=file_id, mimeType=mime_type).execute)
+
+    # Requested fields are explicit: the default response omits webViewLink, and asking for
+    # everything makes a search of 100 files needlessly large.
+    _SEARCH_FIELDS = "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime)"
+
+    def search_files(self, query, *, page_size=25, order_by=None, page_token=None):
+        kw = {"q": query, "pageSize": page_size, "fields": self._SEARCH_FIELDS,
+              # Shared drives are where collaborative review actually happens; omitting
+              # these two silently hides every file that lives in one.
+              "includeItemsFromAllDrives": True, "supportsAllDrives": True,
+              "spaces": "drive"}
+        if order_by:
+            kw["orderBy"] = order_by
+        if page_token:
+            kw["pageToken"] = page_token
+        return _errors.call(self._services.drive.files().list(**kw).execute)
 
     def get_document(self, file_id, suggestions_view_mode=None):
         kw = {"documentId": file_id}

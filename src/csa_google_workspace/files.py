@@ -1,0 +1,150 @@
+"""The account axis: finding files, rather than operating on one you already named.
+
+Everything else in this library hangs off `Workspace.open(file_id)`. Search cannot: you
+cannot open a file you are trying to find. So this is the second axis the structure review
+called for (docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md) —
+reached as `workspace.files`, a *collection*, following `CommentCollection`'s precedent
+rather than bolting methods onto the entry point.
+
+A result is a `FileRef`, not a `Document`: search returns metadata for files of any type,
+including ones this library cannot open, and materialising a `Document` per hit would mean
+a fetch per hit. `FileRef.open()` is the upgrade when you actually want one.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from . import exceptions as exc
+from .backend import Backend
+from .base import MIME_TO_TYPE
+
+if TYPE_CHECKING:                                     # pragma: no cover
+    from .base import Document
+
+# What the connector and Google's server both accept, mapped to Drive `orderBy` values.
+ORDER_BY = {
+    "recency": "recency desc",
+    "lastModified": "modifiedTime desc",
+    "lastModifiedByMe": "modifiedByMeTime desc",
+}
+
+MAX_PAGE_SIZE = 100
+
+
+def _parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:                                 # Drive sent something unexpected
+        return None
+
+
+@dataclass(repr=False)
+class FileRef:
+    """A search hit: enough to decide whether to open it, and no more.
+
+    `type` is `None` for anything this library cannot open (a PDF, a folder, a Form).
+    Search legitimately returns those; pretending otherwise would hide results.
+    """
+    id: str
+    name: str
+    mime_type: str
+    url: str
+    modified_time: datetime | None = None
+    _backend: Backend | None = None
+    _read_only: bool = False
+
+    @property
+    def type(self) -> str | None:
+        return MIME_TO_TYPE.get(self.mime_type)
+
+    @property
+    def openable(self) -> bool:
+        return self.type is not None
+
+    def open(self) -> Document:
+        """Fetch this file as a typed `Doc`/`Sheet`/`Slides`."""
+        if self._backend is None:
+            raise exc.DetachedError("this FileRef has no backend; obtain one from workspace.files")
+        from .workspace import Workspace
+        return Workspace(self._backend, read_only=self._read_only).open(self.id)
+
+    def __repr__(self) -> str:
+        # Redacted, like the comment models: a file *title* can be as sensitive as its
+        # contents ("2026 Layoff Plan"), and embedders log these objects. The name is
+        # available as an attribute; it just does not go into a log by accident.
+        return (f"FileRef(id={self.id!r}, type={self.type!r}, "
+                f"name_chars={len(self.name)})")
+
+
+class FileCollection:
+    """`workspace.files` — search and recency, paginated lazily.
+
+    Deliberately not a cache. Accessors re-fetch per call, as everywhere else here: this
+    tool is used in live multi-reviewer sessions where a self-invalidated cache goes stale
+    and reports confidently wrong answers.
+    """
+
+    def __init__(self, backend: Backend, read_only: bool = False):
+        self._backend = backend
+        self._read_only = read_only
+
+    def _wrap(self, raw: dict[str, Any]) -> FileRef:
+        return FileRef(id=raw["id"], name=raw.get("name", ""),
+                       mime_type=raw.get("mimeType", ""), url=raw.get("webViewLink", ""),
+                       modified_time=_parse_time(raw.get("modifiedTime")),
+                       _backend=self._backend, _read_only=self._read_only)
+
+    def search(self, query: str, *, limit: int = 25,
+               order_by: str | None = None) -> list[FileRef]:
+        """Find files with a Drive query string.
+
+        `query` is Drive's own `q` syntax — `name contains 'x'`, `fullText contains 'y'`,
+        `mimeType = '...'`, `modifiedTime > '2026-01-01'`, `'me' in owners`, `sharedWithMe`,
+        combined with `and` / `or` / `not`.
+
+        `trashed = false` is appended unless the query mentions `trashed`, because
+        `files.list` otherwise returns items already in the bin.
+        """
+        if not query or not query.strip():
+            raise ValueError("query must not be empty; use list_recent() for a bare listing")
+        return self._page(self._compose(query), limit, self._order(order_by))
+
+    def recent(self, *, limit: int = 10, order_by: str = "recency") -> list[FileRef]:
+        """Recently touched files. `order_by` is `recency`, `lastModified` or `lastModifiedByMe`."""
+        return self._page("trashed = false", limit, self._order(order_by) or ORDER_BY["recency"])
+
+    # -- internals ----------------------------------------------------------
+
+    @staticmethod
+    def _compose(query: str) -> str:
+        return query if "trashed" in query else f"({query}) and trashed = false"
+
+    @staticmethod
+    def _order(order_by: str | None) -> str | None:
+        """Only the three documented keys. Forwarding an arbitrary string to Drive's
+        `orderBy` just converts a typo into a 400 the caller cannot read."""
+        if order_by is None:
+            return None
+        try:
+            return ORDER_BY[order_by]
+        except KeyError:
+            raise ValueError(f"order_by must be one of {sorted(ORDER_BY)}") from None
+
+    def _page(self, query: str, limit: int, order_by: str | None) -> list[FileRef]:
+        """Walk pages until `limit` hits or Drive runs out. Drive caps a page at 100."""
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        found: list[FileRef] = []; token: str | None = None
+        while len(found) < limit:
+            page = self._backend.search_files(
+                query, page_size=min(MAX_PAGE_SIZE, limit - len(found)),
+                order_by=order_by, page_token=token)
+            found.extend(self._wrap(f) for f in page.get("files", []))
+            token = page.get("nextPageToken")
+            if not token:
+                break
+        return found[:limit]

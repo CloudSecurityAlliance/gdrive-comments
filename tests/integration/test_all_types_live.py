@@ -202,3 +202,20 @@ def test_markdown_export_keeps_structure_live():
         assert "text/markdown" in doc.export_formats
         with pytest.raises(exceptions.UnsupportedOperation):
             ws.open(fid).export("pptx")            # wrong type for a Doc, refused locally
+
+
+def test_search_and_recent_live():
+    """Discovery against a real Drive. Asserts the query reaches Google correctly and that
+    the shared-drive flags do not break an ordinary personal-drive search."""
+    ws = _ws()
+    marker = "csa-gw-search-probe"
+    with _throwaway(ws, "application/vnd.google-apps.document", f"{marker} doc") as fid:
+        hits = ws.files.search(f"name contains '{marker}'")
+        assert [h.id for h in hits] == [fid], [repr(h) for h in hits]
+        hit = hits[0]
+        assert hit.type == "document" and hit.openable
+        assert hit.modified_time is not None
+        assert hit.open().id == fid                       # upgrade to a typed Document
+
+        assert fid in [h.id for h in ws.files.recent(limit=25)]
+        assert marker not in repr(hit)                    # the redacted repr, live

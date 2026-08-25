@@ -1,5 +1,60 @@
 # Changelog
 
+## 2026-08-25 — v0.5.0 (you can find a file now)
+
+Gate **A1** of the [1.0.0 list](./TODO.md). `search_files` and `list_recent_files` — the gap
+that actually cost users something, because without them every session began with a pasted URL.
+
+### Added
+
+- **`search_files(query, limit, orderBy)`** — Drive's own `q` syntax: `name contains`,
+  `fullText contains`, `mimeType =`, `modifiedTime >`, `'me' in owners`, `sharedWithMe`,
+  `'<folderId>' in parents`, combined with `and`/`or`/`not`. Excludes trashed files unless the
+  query says otherwise (`files.list` returns binned items by default — a real footgun).
+- **`list_recent_files(limit, orderBy)`** — `recency`, `lastModified` or `lastModifiedByMe`.
+- **Library: `workspace.files`** — a `FileCollection` yielding `FileRef`s, with `.search()` and
+  `.recent()`. `FileRef.open()` upgrades a hit to a typed `Doc`/`Sheet`/`Slides`;
+  `FileRef.type` is `None` for anything the library cannot open (a PDF, a folder, a Form),
+  which search legitimately returns.
+- Shared drives are included (`includeItemsFromAllDrives`, `supportsAllDrives`) — omitting
+  those silently hides every file that lives in one, which is where collaborative review
+  actually happens.
+
+### Fixed
+
+- **A bad argument value produced an unreadable tool error.** The MCP error translator handled
+  the library's typed exceptions but not plain `ValueError`, so an unknown `orderBy` — or
+  `as_text(suggestions="maybe")` — became an `UnexpectedToolError` with the message dropped:
+  the model saw "Error executing tool X" and could not correct itself. Pre-existing; found by
+  a test on the new tools, never specific to them.
+
+### Architecture
+
+This is **the account axis**, and the first thing here not reached through `open(file_id)` —
+you cannot open a file you are trying to find. It follows the shape settled in
+[the structure review](./docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md):
+`Workspace` gains *collections*, not methods, with `CommentCollection` as the precedent. This
+is also the first `Backend` method that does **not** take `file_id` first, which is exactly the
+schema pressure #82's allowlist has to answer — and it answers it: `search_files` is a read, and
+#82 is write-narrow, so it is not gated.
+
+`FileRef.__repr__` is redacted like the comment models: a file *title* can be as sensitive as
+its contents ("2026 Layoff Plan") and embedders log these objects. The name is an attribute; it
+just does not reach a log by accident.
+
+### Recorded
+
+- **An f-string is not a string literal, so it cannot be a docstring.** Using one for a tool's
+  description leaves `__doc__` as `None`: the tool registers, the schema looks correct, and the
+  model gets *no guidance at all*. This happened to `search_files` during development. There is
+  now a test asserting every registered tool has a non-empty description.
+
+### Scorecard
+
+**5 of Google's 8 tools, 5 of Claude's 11**, plus 7 they do not have. Remaining:
+`get_file_permissions`, `create_file`, `copy_file` (ungated), and `update_file`, `share_file`,
+`trash_file` (gated on #82).
+
 ## 2026-08-25 — v0.4.0 (tool names aligned with the other Drive MCP servers; export formats)
 
 Roadmap items #1 and #6 from [`TODO.md`](./TODO.md). The content tools now carry the same

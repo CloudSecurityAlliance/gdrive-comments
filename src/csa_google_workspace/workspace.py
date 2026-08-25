@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from .backend import ApiBackend, Backend
 from .base import Document, subclass_for_mime
+from .files import FileCollection
 
 if TYPE_CHECKING:
     from google.auth.credentials import Credentials
@@ -24,6 +25,15 @@ class Workspace:
     def __init__(self, backend: Backend, read_only: bool = False):
         self._backend = backend
         self.read_only = read_only
+
+    @property
+    def files(self) -> FileCollection:
+        """The account axis: find files, rather than operate on one you already named.
+
+        A property, not a stored attribute, so a `Workspace` stays cheap to construct and
+        holds no per-axis state — the same reason `Document.comments` is a property.
+        """
+        return FileCollection(self._backend, self.read_only)
 
     def open(self, file_id_or_url: str) -> Document:
         file_id = parse_file_id(file_id_or_url)
