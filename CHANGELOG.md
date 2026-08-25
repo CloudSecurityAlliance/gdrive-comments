@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-08-24 — v0.2.0 (built-in MCP server)
+
+Phase 2: a **built-in Model Context Protocol server**, so an AI client (Claude Code, Claude
+Desktop) can read and triage comments on Google Docs/Sheets/Slides through the library. The
+server is a delivery layer only — it adds no document logic.
+
+**Install:** `pip install "csa-google-workspace[mcp]"` · **Run:** `csa-google-workspace-mcp`
+
+- **Nine tools**, all with structured output (`outputSchema`) and read-only/destructive
+  annotations: `open_document`, `read_text`, `list_comments`, `get_comment`,
+  `comments_by_cell`, `create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`.
+- **`csa-google-workspace-mcp login`** — a separate, interactive subcommand is the *only* path
+  that opens a browser. The server itself never prompts: under stdio, stdout is the JSON-RPC
+  channel, and `InstalledAppFlow.run_local_server()` both `print()`s the consent URL into it
+  and blocks on the redirect. The MCP spec agrees — stdio servers "SHOULD NOT" do protocol
+  OAuth and should "retrieve credentials from the environment".
+- **`auth.load_cached_credentials(token_path, read_only)`** (new, public) — non-interactive
+  credential load: reuse the cache, refresh if stale, raise `AuthError` rather than prompt.
+  It deliberately contains no `InstalledAppFlow` branch, so a server cannot reach interactive
+  consent even by mistake. `load_credentials()` is unchanged.
+- **Credentials resolve on first tool use, not at startup**, so a server with no token still
+  starts and reports the remedy as a tool error. An MCP client renders a startup crash as an
+  opaque "server failed to start", where nobody would read it.
+- **One `Workspace` per thread.** MCP SDK 2.x runs sync tool handlers on worker threads, so a
+  shared `Workspace` would put a `googleapiclient` client on several threads at once. The
+  provider hands each thread its own.
+- Requires **`mcp>=2.1`** and targets protocol revision **`2026-07-28`**. (`mcp.server.fastmcp`
+  was removed in SDK 2.0; `FastMCP` is now `MCPServer`.)
+- Environment: `CSA_GW_TOKEN`, `CSA_GW_READ_ONLY`, and `CSA_GW_CLIENT_SECRETS` (needed by
+  `login` only — a cached token carries its own client id/secret).
+
+Library behaviour is otherwise unchanged; the core package still has no dependency on `mcp`.
+
 ## 2026-07-23 — v0.1.2 (hardened release pipeline; no library changes)
 
 First release through the hardened supply-chain pipeline — no changes to the library code

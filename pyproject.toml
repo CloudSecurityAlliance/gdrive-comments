@@ -44,7 +44,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11"]
+# The MCP server is an optional delivery layer; the core library never imports it.
+# Floor is 2.1: `mcp.server.fastmcp` was removed in 2.0 (FastMCP -> MCPServer) and 2.x
+# is where sync tool handlers run on a worker thread. Pinning lower would be fiction.
+mcp = ["mcp>=2.1", 'typing_extensions>=4.0; python_version < "3.12"']
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "mcp>=2.1",
+       'typing_extensions>=4.0; python_version < "3.12"']
+
+[project.scripts]
+csa-google-workspace-mcp = "csa_google_workspace.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/CloudSecurityAlliance/csa-google-workspace"

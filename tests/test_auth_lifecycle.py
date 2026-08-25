@@ -158,3 +158,88 @@ def test_corrupt_token_error_does_not_leak_cause(tmp_path, monkeypatch):
         auth.load_credentials("client.json", str(token), read_only=False)
     assert "SENSITIVE token material" not in str(ei.value)   # not in the message
     assert ei.value.__cause__ is not None                    # but preserved via `from e`
+
+
+# --- load_cached_credentials: the non-interactive half (MCP server, spec §5) ---
+#
+# The MCP server runs under stdio, where stdout is the JSON-RPC channel and
+# InstalledAppFlow.run_local_server() would both print() into it and block on a
+# browser redirect. So the server must never reach the interactive branch. Rather
+# than rely on discipline, the branch is absent from the function it calls: every
+# test below patches InstalledAppFlow to _no_flow, so reaching it fails loudly.
+
+def test_cached_valid_token_is_returned(tmp_path, monkeypatch):
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    cached = FakeCreds(valid=True)
+    _patch_from_file(monkeypatch, cached)
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    assert auth.load_cached_credentials(str(token), read_only=False) is cached
+
+
+def test_cached_expired_token_is_refreshed_and_persisted(tmp_path, monkeypatch):
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    creds = FakeCreds(valid=False, expired=True, refresh_token="rt")
+    _patch_from_file(monkeypatch, creds)
+    monkeypatch.setattr(auth, "Request", lambda: None)
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    result = auth.load_cached_credentials(str(token), read_only=False)
+    assert result is creds and creds.refreshed is True
+    assert token.read_text() == '{"token": "fake"}'          # refreshed token persisted
+    assert stat.S_IMODE(os.stat(token).st_mode) == 0o600     # and still owner-only
+
+
+def test_cached_missing_token_raises_rather_than_prompting(tmp_path, monkeypatch):
+    token = tmp_path / "sub" / "token.json"                  # neither file nor dir exists
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    with pytest.raises(auth.AuthError):
+        auth.load_cached_credentials(str(token), read_only=False)
+
+
+def test_cached_insufficient_scopes_raises_rather_than_reconsenting(tmp_path, monkeypatch):
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    stale = FakeCreds(valid=True, scopes=[s for s in auth.scopes_for(False) if "presentations" not in s])
+    _patch_from_file(monkeypatch, stale)
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    with pytest.raises(auth.AuthError):
+        auth.load_cached_credentials(str(token), read_only=False)
+
+
+def test_cached_unrefreshable_token_raises(tmp_path, monkeypatch):
+    """Not valid and no refresh token: load_credentials would re-consent here; this must not."""
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    _patch_from_file(monkeypatch, FakeCreds(valid=False, expired=False, refresh_token=None))
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    with pytest.raises(auth.AuthError):
+        auth.load_cached_credentials(str(token), read_only=False)
+
+
+def test_cached_corrupt_token_error_does_not_leak_cause(tmp_path, monkeypatch):
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    _patch_from_file(monkeypatch, ValueError("SENSITIVE token material"))
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    with pytest.raises(auth.AuthError) as ei:
+        auth.load_cached_credentials(str(token), read_only=False)
+    assert "SENSITIVE token material" not in str(ei.value)
+    assert ei.value.__cause__ is not None
+
+
+def test_cached_read_write_token_satisfies_read_only_request(tmp_path, monkeypatch):
+    """#13's rule holds here too: a cached RW token serves a read_only=True load."""
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    rw = FakeCreds(valid=True, scopes=auth.scopes_for(read_only=False))
+    _patch_from_file(monkeypatch, rw)
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    assert auth.load_cached_credentials(str(token), read_only=True) is rw
