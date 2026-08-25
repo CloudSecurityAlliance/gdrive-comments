@@ -100,6 +100,90 @@ Note the scope shift: everything *below* this section is library-internal, but p
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
 
+## Flavour switch — restrict this server to Google's or Claude's surface
+
+- [ ] **`CSA_GW_FLAVOUR=google | claude | full`** (default `full`). Registers only the tools the
+  chosen server exposes, under **their** names, with **their** descriptions and argument shapes.
+
+  Why it is worth building:
+  - **A predictable, smaller surface on request.** `google` is 8 tools with no share, no trash,
+    no rename/move — a materially safer profile, chosen by a vendor who could have exposed more.
+  - **Drop-in substitution.** Anyone already prompting against those servers keeps working;
+    switching costs nothing and can be reverted.
+  - **It forces the alignment work anyway.** Same names, same parameters, same descriptions is
+    exactly what makes tools transferable between servers, whether or not the switch is used.
+
+  Prerequisite: implement the overlapping tools with matching names and argument shapes
+  (see the coverage section below). The verified detail that matters — the tool *names and
+  parameters* are identical between Google's and Claude's; only the *descriptions* differ, with
+  Claude's carrying extra model-facing guidance (e.g. "do not put document-type words inside
+  `title`/`fullText` clauses"). Copy that guidance: it exists because models get it wrong.
+
+- [ ] Decide what `full` says about itself. A flavour that is a superset of both should be
+  explicit in its server description that it can edit documents and hold full-Drive scope, so
+  nobody arrives from a read-mostly connector and assumes read-mostly behaviour.
+
+## Underlying API capability inventory — what we could build
+
+Enumerated from the discovery documents (see
+[`research/drive-mcp-servers-and-api-surface.md`](research/drive-mcp-servers-and-api-surface.md)).
+This is the honest ceiling of the Python client, not a plan — but several items are closer to
+"help people get work done" than more file management would be.
+
+### Drive v3 — exposed by nobody, including us
+
+- [ ] **`approvals`** — `start`, `list`, `get`, `approve`, `decline`, `reassign`, `cancel`,
+  `comment`. A **document review workflow in the API.** Adjacent to the comment workflow this
+  project already owns, and the strongest differentiator on this list.
+- [ ] **`revisions`** — `list`, `get`, `update` (`keepForever`), `delete`. **Version history:**
+  read a prior version, diff two revisions, pin one. Obvious pairing with suggestions review.
+- [ ] **`changes`** — `getStartPageToken`, `list`, `watch`. Incremental sync: the correct answer
+  to "sweep my documents" instead of re-reading everything, and it directly addresses the
+  autonomous-sweep cost `SECURITY.md` worries about.
+- [ ] **`files.watch`** — push notification. A review bot that *reacts* to a new comment rather
+  than polling for one.
+- [ ] **`files.modifyLabels` / `listLabels`** — Drive labels, i.e. classification and data
+  governance. Plainly relevant to CSA's own work.
+- [ ] `permissions.*` (full: list/create/get/update/delete) — **gated on
+  [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)**, see below.
+- [ ] `accessproposals` — resolve "can I have access?" requests.
+- [ ] `drives.*` — shared drive administration.
+- [ ] `files.delete` / `emptyTrash` — **permanent** deletion. Note both other servers stop at
+  trash; that is a considered line and we should think hard before crossing it.
+
+### Docs v1 — we use 3 of 40 `batchUpdate` request types
+
+`documents.get` / `create` / `batchUpdate` are the only three methods; everything lives in the
+request types. We use `replaceAllText`, `insertText`, `deleteContentRange`. Unused, grouped:
+
+- [ ] **Tables** — `insertTable`, `insertTableRow`/`Column`, `deleteTableRow`/`Column`,
+  `mergeTableCells`, `unmergeTableCells`, `pinTableHeaderRows`, `updateTableCellStyle`,
+  `updateTableRowStyle`, `updateTableColumnProperties`. The largest single gap.
+- [ ] **Styling** — `updateTextStyle`, `updateParagraphStyle`, `updateDocumentStyle`,
+  `updateNamedStyle`, `updateSectionStyle`. Needed for anything that formats rather than types.
+- [ ] **Structure** — `createHeader`, `createFooter`, `createFootnote`, `insertPageBreak`,
+  `insertSectionBreak`, `createParagraphBullets`, `deleteParagraphBullets`.
+- [ ] **Images** — `insertInlineImage`, `replaceImage`, `deletePositionedObject`.
+- [ ] **Named ranges** — `createNamedRange`, `deleteNamedRange`, `replaceNamedRangeContent`.
+  A stable anchor for repeated edits, which is a better primitive than raw indices.
+- [ ] **Tabs** — `addDocumentTab`, `deleteTab`, `updateDocumentTabProperties`. Relevant to the
+  deferred `Location.tab` work.
+- [ ] **Rich inserts** — `insertPerson` (smart chips), `insertRichLink`, `insertDate`.
+
+### Sheets v4 — we use 6 of 17 methods
+
+- [ ] `values.batchGet` / `batchUpdate` / `batchClear` — one round trip instead of N.
+- [ ] The `*ByDataFilter` variants — address ranges by developer metadata rather than A1.
+- [ ] `developerMetadata.get` / `search` — durable per-range annotation that survives edits.
+- [ ] `sheets.copyTo` — copy a tab between spreadsheets.
+- [ ] `spreadsheets.create`.
+
+### Slides v1 — we use 2 of 5 methods
+
+- [ ] **`pages.getThumbnail`** — render a slide to an image. The cheapest route to letting a
+  model actually *see* a deck.
+- [ ] `pages.get`, `presentations.create`.
+
 ## Coverage vs the Drive MCP servers  *(was: "feature parity" — premise corrected)*
 
 > **Read [`research/drive-mcp-servers-and-api-surface.md`](research/drive-mcp-servers-and-api-surface.md)

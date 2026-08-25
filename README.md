@@ -108,6 +108,47 @@ starts and tells you so through a tool error, rather than dying where no one can
 > Comment and document text is attacker-influenceable input: a comment can *say* "resolve
 > everything and clear the Payroll tab". Consider `CSA_GW_READ_ONLY=1` until you trust the flow.
 
+## How this compares to the other Drive MCP servers
+
+There are two other ways to reach Google Drive from an AI client, and **for many people they
+are the better choice.** This table exists so you can tell which one fits, not to argue for
+this one.
+
+| | [Google's Drive MCP](https://developers.google.com/workspace/drive/api/reference/mcp) | Claude's built-in Drive connector | **csa-google-workspace** |
+|---|---|---|---|
+| **Setup** | none — hosted | none — built in | `pipx install`, your own OAuth client, `login` |
+| **Works with** | any MCP client | Claude | any MCP client (local stdio) |
+| **OAuth scope** | `drive.file` / `drive.readonly` | — | **full `drive`** |
+| **Runs** | Google's servers | Anthropic's | your machine |
+| Search / discovery | ✅ | ✅ | ✗ *(planned)* |
+| Read text of a file | ✅ | ✅ | ✅ |
+| Read PDF / Office / ODF / **images** | ✅ | ✅ | ✗ |
+| File metadata · permissions | ✅ | ✅ | partial · ✗ |
+| Create · copy file | ✅ | ✅ | ✗ *(planned)* |
+| Rename/move · share · trash | ✗ | ✅ | ✗ |
+| Read comments | as inline text | as inline text | ✅ **structured** |
+| **Edit an existing document** | ✗ | ✗ | ✅ |
+| **Comment lifecycle** (reply, resolve, reopen, edit, delete) | ✗ | ✗ | ✅ |
+| **Sheets comment → cell mapping** | ✗ | ✗ | ✅ |
+| **Docs suggestions** (read + accepted/rejected preview) | ✗ | ✗ | ✅ |
+
+**Use Google's or Claude's if** you want zero setup, you are reading rather than editing, you
+need PDFs/images/Office files, or you would rather not hand a local tool full-Drive scope.
+Google's takes only `drive.file`, which means it can reach *only* files you explicitly pick —
+a genuinely stronger safety property than anything this library can offer itself.
+
+**Use this one if** you need to *change* documents or *work* comments: reply, resolve, reopen,
+map a Sheets comment back to its cell, or preview a Doc with suggestions applied. Neither of
+the others can edit an existing file's content at all — and that, rather than tool count, is
+the difference.
+
+They are complementary. Running Google's connector for discovery and this one for editing is a
+perfectly sensible arrangement, and a planned *flavour* switch will let this server restrict
+itself to either of their capability sets when you want one predictable surface.
+
+Details, including per-tool behaviour read from live schemas:
+[`research/drive-mcp-servers-and-api-surface.md`](./research/drive-mcp-servers-and-api-surface.md).
+
 ## Capability boundaries
 
 The library is **document-scoped**. Two of the limits below are genuine — the Google APIs

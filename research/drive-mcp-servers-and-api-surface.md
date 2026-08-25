@@ -45,6 +45,13 @@ exposes **8** tools, identical in name and behaviour to the connector's, omittin
 `https://drivemcp.googleapis.com/mcp/v1`), authorized with **`drive.file` /
 `drive.readonly`** — never full `drive`.
 
+**Verified: the shared tools are the same tools.** Names, parameters and — for `search_files`
+— the full list of supported query terms match exactly. The one difference is in the
+*descriptions*: the claude.ai connector's carry extra model-facing guidance that Google's
+reference does not, such as *"do not put document-type words inside `title`/`fullText` clauses;
+map them to `mimeType`"*. Same capability, wording better tuned for a model. Worth copying that
+guidance rather than reinventing it — it exists because models get this wrong.
+
 Two inferences worth holding onto:
 
 - **The three it omits are the three highest-risk ones** — the exfiltration primitive, the
@@ -80,6 +87,15 @@ So the framing "we need parity with them" was wrong in both directions.
 | **Comment lifecycle** (create/reply/resolve/reopen/edit/delete) | ❌ | ❌ | ✅ **only here** |
 | **Sheets comment → cell mapping** | ❌ | ❌ | ✅ **only here** |
 | **Docs suggestions read + accept/reject preview** | ❌ | ❌ | ✅ **only here** |
+
+### Neither of them is the wrong choice
+
+Worth stating plainly, since a table of ticks invites the opposite reading. For a lot of people
+those servers are simply **better**: Google's is hosted, so it works with any MCP client with no
+install, no OAuth client to create, and `drive.file` scope — which means it can reach only files
+the user explicitly picked, a stronger safety property than this library can offer itself. The
+claude.ai connector is built in, so setup is zero. This one asks for an install, your own OAuth
+client, and full-Drive scope.
 
 **These are complementary, not competing.** They do Drive *file management* and broad-format
 *reading*. This project does deep document *editing* and *comment workflow*. The genuine gaps
