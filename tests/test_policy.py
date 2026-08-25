@@ -307,3 +307,42 @@ def test_every_gate_declares_a_known_access_kind():
     from csa_google_workspace.policy import _GATES, MODIFY, READ
     for name, gate in _GATES.items():
         assert gate.access in (READ, MODIFY), f"{name} has access={gate.access!r}"
+
+
+# --- the three configuration outcomes --------------------------------------
+
+def test_the_three_outcomes_are_everything_a_list_or_nothing():
+    """`*`, specific files, and anything else — blank, unset, malformed — is the third case,
+    which fails closed."""
+    from csa_google_workspace.allowlist import AllowlistError
+    assert Scope.from_listing(parse_allowlist("*")).allows("anything")
+    assert ONE_FILE.allows(DOC_ID) and not ONE_FILE.allows("other")
+    assert not Scope.nothing().allows(DOC_ID)
+    for unusable in ("", "   ", "# only comments\n", "https://example.com/x"):
+        with pytest.raises((AllowlistError, ValueError)):
+            parse_allowlist(unusable)
+
+
+def test_a_denial_says_why_the_scope_is_empty_not_just_that_it_is():
+    """The reason is carried on the Scope so the message can name which variable to set and
+    why it currently yields nothing. "Denied" alone is not actionable."""
+    reason = "CSA_GW_ALLOWLIST_MODIFY is set but empty — which is not the same as unset."
+    ws = Workspace(PolicyBackend(
+        FakeBackend(dict(FILES_TWO)),
+        Policy(enabled=frozenset({policy.COMMENT_CREATE}),
+               read=Scope.everything(), modify=Scope.nothing(reason=reason))))
+    with pytest.raises(exc.ReadOnlyError) as e:
+        ws.open(DOC_ID).create_comment("x")
+    message = str(e.value)
+    assert "set but empty" in message                 # the specific diagnosis
+    assert "CSA_GW_ALLOWLIST_MODIFY" in message       # what to change
+    assert "`*`" in message                           # and the escape hatch
+
+
+def test_an_empty_scope_without_a_reason_still_produces_a_usable_message():
+    ws = Workspace(PolicyBackend(
+        FakeBackend(dict(FILES_TWO)),
+        Policy(enabled=frozenset({policy.COMMENT_CREATE}), modify=Scope.nothing())))
+    with pytest.raises(exc.ReadOnlyError) as e:
+        ws.open(DOC_ID).create_comment("x")
+    assert "no modify allowlist is configured" in str(e.value)

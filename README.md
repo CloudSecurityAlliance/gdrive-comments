@@ -64,9 +64,21 @@ claude mcp add csa-google-workspace -- csa-google-workspace-mcp
 ### Scoping what it may touch
 
 Three independent bounds, all plain environment variables, so they can be set wherever your MCP
-client declares the server — a shell, `.mcp.json`, or Claude Desktop's config. **Neither Google's
-nor Anthropic's Drive server offers anything equivalent**, which is why it is a row in the table
-above.
+client declares the server — a shell, `.mcp.json`, or Claude Desktop's config.
+
+**How the other two servers compare here is worth being precise about**, because "we have a
+feature they lack" would be the wrong summary. Google's server reaches this outcome by a
+different and arguably better route: it authorizes with **`drive.file`**, so Google itself limits
+it to files the user explicitly picked — allowlisting enforced upstream, where it cannot be
+misconfigured. And its only writes *create new files*, so there is nothing to scope. It has no
+knobs because it does not need them.
+
+The claude.ai connector is the one that differs in substance: full `drive` access, plus
+`update_file`, `trash_file` and `share_file`, with no way to narrow any of it.
+
+This library needs full `drive` scope by design — it opens arbitrary files the user names, which
+`drive.file` cannot reach (`SECURITY.md`, *Scope breadth*). Having given up Google's upstream
+enforcement, it owes you an equivalent, and these are it.
 
 | Variable | Bounds | Unset |
 |---|---|---|
@@ -120,7 +132,26 @@ https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
 A line containing just `*` means every file. It logs a warning each time it is read, because
 unrestricted access should be visible.
 
-Five things worth knowing:
+**Three outcomes, and the third one is the point.** A value is either `*` (everything), a set of
+document URLs, or **unusable** — and unusable always means *nothing permitted*, never "ignore the
+setting". Because "unusable" covers a lot of ground, the server says which kind it hit rather
+than "invalid value":
+
+| What you set | What you are told |
+|---|---|
+| nothing at all | `CSA_GW_ALLOWLIST_MODIFY is not set, and there is no file at ~/.csa_google_workspace/allowlist-modify.txt.` |
+| an empty value | `set but empty — which is not the same as unset. If it came from a config template or an unexpanded shell variable, that is the thing to fix.` |
+| `…/document/d/` | `the URL stops after '/d/', so the file id is missing.` |
+| `…/document/d/AAA…/edit` | `it contains '…', so it looks like a placeholder copied from documentation rather than a real link.` |
+| a bare file id | `that looks like a bare file id rather than a URL … a link can be opened and checked by whoever reviews it.` |
+| a folder URL | `folders are not supported in the allowlist yet. List the individual document URLs inside it instead.` |
+| `https://example.com/x` | `the host is 'example.com', which is not a Google Docs or Drive address.` |
+
+Those texts arrive on stderr at startup **and** in the error from any tool that was refused — so
+the model can relay the specific problem instead of "permission denied". The diagnosis itself is
+deterministic rather than inferred, so it cannot be wrong about what it found.
+
+Five more things worth knowing:
 
 - **Unset means nothing is permitted.** The server still starts — a startup crash reaches you as
   an opaque "server failed to start" — and tells you on stderr exactly which variable to set.
@@ -266,7 +297,9 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 | — | **Edit an existing Doc** — replace, insert, append, delete a range | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | **Edit an existing Sheet** — write, append rows, clear | `sheets…values.update` / `.append` / `.clear` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | **Edit an existing Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
-| — | **Scope what the agent may touch** — separate read and modify allowlists of specific documents, plus per-capability gating | enforced client-side over `drive` scope | ✗ | ✗ | ✅ `CSA_GW_ALLOWLIST_READ` / `_MODIFY` / `CSA_GW_CAPABILITIES` |
+| — | **Scope which files may be READ** to a named list | checked before every `files.get` / `export` / `documents.get` | ⚠️ not configurable — but bounded by the `drive.file` scope, so Google enforces the equivalent upstream | ✗ | ✅ `CSA_GW_ALLOWLIST_READ` |
+| — | **Scope which files may be CHANGED** to a named list | checked before every mutation | ⚠️ not configurable — but its only writes create *new* files, so there is nothing to scope | ✗ | ✅ `CSA_GW_ALLOWLIST_MODIFY` |
+| — | **Turn individual mutation kinds off** — comment / edit / rename / trash / share, each independently | enforced client-side | ⚠️ not configurable — enforced instead by the tools it does not ship | ✗ | ✅ `CSA_GW_CAPABILITIES` |
 | — | Browser consent from inside the MCP client | OAuth loopback + MCP URL elicitation | n/a *hosted* | n/a *built in* | ✅ `authenticate` |
 
 Two notes on the rows we now match. Our `read_file_content` reaches **Google-native types

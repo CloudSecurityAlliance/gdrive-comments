@@ -66,7 +66,9 @@ def test_a_bare_file_id_is_rejected_even_though_open_accepts_one():
     *clickable*, so whoever reviews the entry can see what they are granting."""
     with pytest.raises(AllowlistError) as e:
         parse_document_url(DOC_ID)
-    assert "full URL, not a bare file id" in str(e.value)
+    message = str(e.value)
+    assert "bare file id" in message
+    assert "can be opened and checked by whoever reviews it" in message
 
 
 def test_a_dashed_word_is_not_mistaken_for_a_file_id():
@@ -224,3 +226,64 @@ def test_an_empty_file_points_at_the_star_escape_hatch():
 def test_a_listing_repr_distinguishes_everything_from_a_set():
     assert repr(parse_allowlist("*")) == "Listing(all_files=True)"
     assert "files=1" in repr(parse_allowlist(DOC_URL))
+
+
+# --- diagnostics: a specific reason, not "invalid value" --------------------
+
+from csa_google_workspace.allowlist import diagnose_setting, diagnose_url  # noqa: E402
+
+
+def test_a_usable_url_has_no_diagnosis():
+    assert diagnose_url(DOC_URL) is None
+
+
+def test_a_real_id_containing_placeholder_letters_is_still_accepted():
+    """Load-bearing ordering: extraction runs *before* the placeholder check, because a
+    genuine 44-character Drive id is random base64url and will occasionally contain a run
+    like "AAA". Diagnosing a working URL as a placeholder is worse than any message it
+    replaces."""
+    real = "https://docs.google.com/document/d/1AAAxxx_bbbBBBcccDDDeeeFFFgggHHH123"
+    assert diagnose_url(real) is None
+    assert parse_document_url(real) == "1AAAxxx_bbbBBBcccDDDeeeFFFgggHHH123"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("", "empty"),
+    ("    ", "empty"),
+    ("https://docs.google.com/document/d/AAA…/edit", "placeholder"),
+    ("https://docs.google.com/document/d/<your-id>/edit", "placeholder"),
+    ("https://docs.google.com/document/d/", "file id is missing"),
+    ("https://docs.google.com/document/", "no '/d/<id>' segment"),
+    ("https://example.com/whatever", "not a Google Docs or Drive address"),
+    (DOC_ID, "bare file id"),
+    ("nonsense-one", "bare file id"),
+    (FOLDER_URL, "folder"),
+])
+def test_each_mistake_gets_its_own_diagnosis(value, expected):
+    """Every rung of the ladder is a mistake somebody actually makes. The difference between
+    "invalid value" and "the URL stops after /d/, so the file id is missing" is the difference
+    between a support conversation and a fix."""
+    problem = diagnose_url(value)
+    assert problem is not None
+    assert expected in problem, problem
+
+
+def test_the_diagnosis_reaches_the_raised_error():
+    with pytest.raises(AllowlistError) as e:
+        parse_document_url("https://docs.google.com/document/d/")
+    assert "file id is missing" in str(e.value)
+
+
+def test_unset_and_blank_are_diagnosed_differently():
+    """They behave identically and have completely different fixes — one means nobody
+    configured it, the other usually means a template or an unexpanded shell variable."""
+    unset = diagnose_setting("CSA_GW_ALLOWLIST_MODIFY", None, "/tmp/nope.txt")
+    blank = diagnose_setting("CSA_GW_ALLOWLIST_MODIFY", "   ", "/tmp/nope.txt")
+    assert "is not set" in unset and "/tmp/nope.txt" in unset
+    assert "set but empty" in blank and "not the same as unset" in blank
+    assert unset != blank
+
+
+def test_the_blank_diagnosis_points_at_the_likely_cause():
+    blank = diagnose_setting("X", "", "/tmp/n")
+    assert "template" in blank and "shell variable" in blank
