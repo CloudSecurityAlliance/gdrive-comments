@@ -6,9 +6,62 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1. `tests/test_release_history.py`
+> 0.11.1, 0.12.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-25 — v0.12.0 (named security profiles)
+
+`CSA_GW_PROFILE` gives the capability set a name, so "what may this install do?" has an answer
+shorter than a list — and so an installer can write one line instead of reasoning about ten
+capabilities.
+
+### Added
+
+- **`CSA_GW_PROFILE`** — `reader` · `commenter` · `editor` · `full`.
+
+  | Profile | May |
+  |---|---|
+  | `reader` | nothing — read and report only, whatever the allowlists say |
+  | `commenter` | comment, reply, resolve. **Not** edit content, delete a thread, or touch the file |
+  | `editor` | the above, plus edit content, tidy comments, create new files |
+  | `full` | everything, including rename/move, trash and share |
+
+  `editor` is exactly the historical default set, so an install that sets nothing behaves as
+  before. A test holds the two together rather than a module-level `assert`, which bandit
+  rightly flags and `python -O` strips.
+- The profile is reported in the startup warnings, in `csa-gw://config`, and in
+  `describe_configuration`'s output.
+
+### Design
+
+**Profiles cover capabilities only.** The file allowlists are deliberately not profiled, and
+will not be: which documents a deployment may touch is specific to that deployment, and a named
+default for it would be a named default for *"which of your files an agent may change"*. That is
+the one thing nobody else gets to decide.
+
+**A typo'd profile is an error**, not a fall back to the default — falling back would give a
+*wider* policy than the operator asked for. The message lists the real names with their
+capability counts.
+
+**An explicit `CSA_GW_CAPABILITIES` wins over a profile** — it is the more specific statement —
+but it logs a warning, because an operator who set both plainly believed the profile was doing
+something.
+
+**Profiles ascend**, and a test enforces it: each is a strict superset of the one before, or
+"pick the next one up" stops being sound advice.
+
+### Why now
+
+The CSA install scripts registered the server with **no environment at all**, which since 0.9.0
+meant a fresh install refused every operation, reads included — safe, but indistinguishable from
+a broken install. Fixed in `CSA-Plugins`: both Claude Code and Claude Desktop now get
+`CSA_GW_ALLOWLIST_READ=*` and `CSA_GW_PROFILE=commenter`, with `CSA_GW_ALLOWLIST_MODIFY` left
+unset so nothing can be changed until somebody lists documents. Two independent limits, so
+filling in the allowlist later does not silently grant editing too.
+
+Claude Desktop needed it most: it has no shell, so whatever is in its JSON *is* the server's
+entire environment — there is nowhere else for these to come from.
 
 ## 2026-08-25 — v0.11.1 (provenance, and a check that the changelog tells the truth)
 

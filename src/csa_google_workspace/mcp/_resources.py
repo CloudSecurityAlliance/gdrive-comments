@@ -74,6 +74,8 @@ def render_config(settings: Settings) -> str:
         "",
         "## Mutation kinds",
         "",
+        *([f"Profile: **{settings.profile}** (`CSA_GW_PROFILE`).", ""]
+          if settings.profile else []),
         "Permitted: " + (", ".join(f"`{c}`" for c in on) if on else "*none*"),
         "",
         "Refused: " + (", ".join(f"`{c}`" for c in off) if off else "*none*"),
@@ -110,8 +112,26 @@ a shell, `.mcp.json`, or Claude Desktop's config. Each is a ceiling: none can wi
 |---|---|---|
 | `{READ_ALLOWLIST_VAR}` | which files may be **read** | nothing — fail closed |
 | `{MODIFY_ALLOWLIST_VAR}` | which files may be **changed, added to or deleted** | nothing — fail closed |
-| `CSA_GW_CAPABILITIES` | **what kind** of mutation is allowed | comments and edits on; rename, trash, share off |
+| `CSA_GW_PROFILE` | a **named** capability set: `reader`, `commenter`, `editor`, `full` | `editor` |
+| `CSA_GW_CAPABILITIES` | an explicit capability list — overrides the profile | see profile |
 | `CSA_GW_READ_ONLY=1` | everything — no writes, narrower OAuth scopes | off |
+
+## Profiles
+
+`CSA_GW_PROFILE` names a capability set, so "what may this install do?" has a short answer:
+
+| Profile | May |
+|---|---|
+| `reader` | nothing — read and report only, whatever the allowlists say |
+| `commenter` | comment, reply, resolve. Not edit content, not delete a thread, not touch the file |
+| `editor` | the above, plus edit content, tidy comments, create new files |
+| `full` | everything, including rename/move, trash and share |
+
+Profiles cover **capabilities only**. The file allowlists are deliberately not profiled: which
+documents a deployment may touch is specific to that deployment, and a named default for it
+would be a named default for "which of your files an agent may change".
+
+`CSA_GW_CAPABILITIES` overrides a profile if both are set, and says so in the log.
 
 ## The usual posture
 

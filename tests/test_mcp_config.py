@@ -360,3 +360,54 @@ def test_capabilities_and_allowlists_are_independent():
     assert policy is not None
     assert policy.enabled == frozenset({COMMENT_CREATE})
     assert policy.read.all_files and policy.modify.ids == frozenset({_ALLOW_ID})
+
+
+# --- CSA_GW_PROFILE ---------------------------------------------------------
+
+def test_a_profile_sets_the_capabilities():
+    from csa_google_workspace.policy import PROFILES
+    settings = _config.settings_from_env({"CSA_GW_PROFILE": "commenter"})
+    assert settings.profile == "commenter"
+    assert settings.policy is not None
+    assert settings.policy.enabled == PROFILES["commenter"]
+
+
+@pytest.mark.parametrize("name", ["reader", "commenter", "editor", "full"])
+def test_every_profile_name_is_accepted_and_case_insensitive(name):
+    from csa_google_workspace.policy import PROFILES
+    for spelling in (name, name.upper(), f"  {name} "):
+        policy = _config.settings_from_env({"CSA_GW_PROFILE": spelling}).policy
+        assert policy is not None and policy.enabled == PROFILES[name]
+
+
+def test_an_unknown_profile_lists_the_real_ones():
+    """A typo'd profile must not silently fall back to the default — that would be a wider
+    policy than the operator asked for."""
+    with pytest.raises(ValueError) as e:
+        _config.settings_from_env({"CSA_GW_PROFILE": "admin"})
+    message = str(e.value)
+    assert "not a known profile" in message
+    for name in ("reader", "commenter", "editor", "full"):
+        assert name in message
+
+
+def test_an_explicit_capability_list_overrides_a_profile():
+    """The list is the more specific statement, so it wins — and it is logged, because the
+    operator plainly believed the profile was doing something."""
+    from csa_google_workspace.policy import COMMENT_CREATE
+    policy = _config.settings_from_env({"CSA_GW_PROFILE": "full",
+                                        "CSA_GW_CAPABILITIES": "comment.create"}).policy
+    assert policy is not None and policy.enabled == frozenset({COMMENT_CREATE})
+
+
+def test_no_profile_keeps_the_historical_default():
+    from csa_google_workspace.policy import DEFAULT_ENABLED
+    settings = _config.settings_from_env({})
+    assert settings.profile is None
+    assert settings.policy is not None and settings.policy.enabled == DEFAULT_ENABLED
+
+
+def test_the_profile_appears_in_the_startup_warnings():
+    lines = " ".join(_config.startup_warnings(
+        _config.settings_from_env({"CSA_GW_PROFILE": "reader"})))
+    assert "profile: reader" in lines and "no mutations at all" in lines
