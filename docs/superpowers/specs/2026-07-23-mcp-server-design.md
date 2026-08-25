@@ -42,8 +42,11 @@ subcommand (the only interactive code path, §5); typed-error → tool-error map
 
 **Out (v1, designed-for not built):** Streamable HTTP / remote transport; multi-user OAuth
 2.1 (resource-server model) + per-user token custody; MCP Sampling/Elicitation; a raw
-`batch_update` escape-hatch tool; document discovery (`files.list`) — the library is
-document-scoped, so every tool takes a file id/URL.
+`batch_update` escape-hatch tool; document discovery (`files.list`) — every tool takes a file
+id/URL. *[Noted 2026-08-25: that was justified here only by "the library is document-scoped",
+which restates the decision rather than supporting it. `files.list` is fully available; this is
+a scope choice, and an open one — see `TODO.md`. It bites hardest exactly here, since an MCP
+client has no host application to supply a file id.]*
 
 ## 3. Architecture
 

@@ -110,10 +110,18 @@ starts and tells you so through a tool error, rather than dying where no one can
 
 ## Capability boundaries
 
-The library is **document-scoped** and honest about what the Google APIs can't do:
+The library is **document-scoped**. Two of the limits below are genuine — the Google APIs
+cannot do those things at all, proven by enumeration and by probe. The third is a scope
+*choice* we have not revisited, and is marked as such.
 
 - **Suggestions are read/preview only.** `Doc.suggestions` reads suggesting-mode edits and `as_text(suggestions="accepted"|"rejected")` previews the outcome, but **accepting/rejecting is impossible via the API** (`UnsupportedOperation`) — Google exposes no endpoint. Reserved for a future `PlaywrightBackend`.
-- **No document discovery.** You hand the library a file id/URL (`Workspace.open(id)`); there is no `files.list`/search. A "sweep my documents" job enumerates files itself and opens each:
+- **No document discovery — *our choice, not an API limit*.** You hand the library a file
+  id/URL (`Workspace.open(id)`); there is no `files.list`/search. `files.list` works perfectly
+  well, as the workaround below demonstrates; the library simply does not wrap it, to keep its
+  surface to comments and content on documents you name. Being candid: that trade looks weaker
+  than it did. The workaround needs a Drive client anyway, so the boundary saves the caller
+  nothing but the loop — and for the MCP server there is no host application to supply a file
+  id, so every interaction has to start with a human pasting a URL. Tracked in `TODO.md`.
   ```python
   files = drive.files().list(q="mimeType='application/vnd.google-apps.document'",
                              fields="files(id)").execute()["files"]
