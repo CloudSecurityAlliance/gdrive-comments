@@ -100,6 +100,95 @@ Note the scope shift: everything *below* this section is library-internal, but p
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
 
+## What 1.0.0 is, and what it is not
+
+**1.0.0 is the local MCP server plus the library, with a stable API.** The hosted server is
+**2.x** — different transport, different auth model, different threat model (its own section
+below). Nothing about hosting belongs in a 1.0 gate.
+
+The point of a 1.0 is a *promise*: this API will not change under you without a major bump. So
+the gate list is not "everything good" — it is **everything whose absence would force a
+breaking change later**, plus the minimum that makes calling it 1.0 honest.
+
+### Gate A — parity, because a reader will check
+
+The eight tools the other two servers have and we do not. Split by the #82 correction above:
+
+- [ ] **A1** `search_files`, `list_recent_files` — the new account axis on `Workspace`. Not gated.
+      **The single biggest usability win in this list**: without it every session begins with a
+      pasted URL.
+- [ ] **A2** `get_file_permissions` — a read. Not gated.
+- [ ] **A3** `create_file`, `copy_file` — not gated (nothing existing to damage). `create_file`
+      takes `text/markdown` and lets Drive convert. → **this completes Google's 8.**
+- [ ] **A4** **#82 file allowlisting.** Not only a gate for A5 — the security control the whole
+      write-on-by-default posture rests on, and a *config shape* that must be settled before a
+      stability promise.
+- [ ] **A5** `update_file`, `trash_file`, `share_file`, behind A4. → **completes Claude's 11.**
+
+**Deliberately excluded from "parity":** their `read_file_content` covers 13 mime types
+including PDF, Office and PNG/JPEG; ours covers the three Google-native types. Closing that
+means parsing untrusted binary formats in-process, which is new attack surface and new
+dependencies on the read path SECURITY.md calls the primary risk. Document the difference
+instead. (Drive's own PDF/image → Doc conversion is not an option: it *creates a file*, so it
+is not a read.)
+
+### Gate B — the differentiator has to be reachable
+
+- [ ] **B1 Content writes through MCP.** `Doc.replace_text`, `Sheet.update`,
+      `Slides.replace_text` and the `batch_update`s are shipped, live-verified, and **not
+      exposed as tools.** "The only one of the three that can edit an existing document" is
+      currently true of the library and false of the server. A 1.0 whose headline capability is
+      invisible in the product is not a 1.0. Blocked on A4.
+- [ ] **B2 Docs suggestions through MCP** — `list_suggestions`, and `read_file_content`'s
+      accepted/rejected preview. Read-only, the library already has it, cheap.
+
+### Gate C — the part that literally *is* 1.0
+
+- [ ] **C1 A written API-stability and deprecation policy.** What is public (package `__all__`;
+      MCP tool names, parameters and result shapes), what is not (anything `_`-prefixed), and
+      what we owe people when it changes. Without this, "1.0" is just a number. Cheapest item
+      here and the only one that cannot be added afterwards without being retroactive.
+- [ ] **C2 The flavour switch.** Restrict the server to Google's or the claude.ai connector's
+      surface. It is a **config surface**, so its shape must land pre-1.0 even though the
+      feature itself is optional. Registration-time filter — see the `_tools/` split.
+- [ ] **C3 Decide the caching knob**, even if the default stays off. Caching is off *by design*
+      (live multi-reviewer sessions make a self-invalidated cache actively wrong), but adding
+      one later changes observable behaviour. Name the parameter now; leave it off.
+
+### Gate D — the unglamorous ones that will bite a colleague
+
+- [ ] **D1 Run the PowerShell scripts on real Windows.** `CSA-Plugins/internal-setup/*.ps1` and
+      the `DesktopSetup` hook have **never been executed** — written on a machine with no
+      `pwsh`. A colleague should not be the first to find out.
+- [ ] **D2 Claude Desktop on macOS.** GUI apps inherit a minimal `PATH` where `python3` is the
+      system 3.9, below our 3.10 floor, so Desktop fails where Claude Code works. Documented in
+      the README; unfixed. Half our intended clients are Desktop.
+- [ ] **D3 `Location.tab`, or an explicit limitation.** Multi-tab spreadsheets cannot
+      disambiguate a comment's cell today. Either resolve it (`workbook.xml` + rels) or say so
+      in `comments_by_cell`'s own description — a silently-wrong cell is worse than an absent one.
+
+### Explicitly not 1.0
+
+| Item | Why not |
+|---|---|
+| **Hosted server, `files.watch` push** | **2.x.** Different transport, auth model and threat model. |
+| **13-mime-type reading** | Untrusted binary parsers on the primary-risk path. Document the gap. |
+| **#7 approvals · revisions · changes** | Genuine differentiators, purely additive — 1.1, 1.2, 1.3. |
+| **#8 Docs `batchUpdate` breadth** | A programme, not a release gate. Tables first, post-1.0. |
+| **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
+| **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
+
+### Two open questions that change the scope of 1.0
+
+1. **Is 1.0 public, or CSA-internal?** A public/External OAuth client means Google app
+   verification **plus an annual CASA assessment** for the full `drive` scope — weeks of calendar
+   time and a recurring cost. With the Internal client, 1.0 ships whenever the gates close.
+   These are different releases; only one of them has CASA on the critical path.
+2. **Do `share_file` and `trash_file` ship at all?** Google exposes neither, having looked at
+   their own API and declined. Shipping them for parity's sake overrides that judgment. Options:
+   both behind #82 with an explicit opt-in; `trash_file` only (recoverable, unlike a share);
+   or neither, and declare **Google's 8 the parity target**, noting the difference.
+
 ## Roadmap — nine subsystems, in order
 
 Everything below this line was one item called "feature parity" until a code review showed it
@@ -112,15 +201,47 @@ several hundred steps and nobody executes it.
 |---|---|---|---|---|
 | ~~**1**~~ | ~~**Tool alignment**~~ — their names, argument shapes, and Claude's model-facing guidance | MCP layer only | — | ✅ **done 2026-08-25** (v0.4.0). |
 | **2** | **File allowlisting** ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) | `Backend` wrapper | — | Do it **before** 4 and 5. See below. |
-| **3** | **Discovery** — `search_files`, `list_recent_files` | library: new axis on `Workspace` | 2 | Biggest usability win. |
-| **4** | **File lifecycle** — `create_file`, `copy_file`, `update_file`, `trash_file` | library: new axis | 2, 3 | `create_file` should accept `text/markdown` and let Drive convert — that closes the document-pipeline loop. |
-| **5** | **Permissions** — `get_file_permissions`, `share_file` | library | **2** | `share_file` is an exfiltration primitive. |
+| **3** | **Discovery** — `search_files`, `list_recent_files` | library: new axis on `Workspace` | — *(**not** 2 — see below)* | Biggest usability win. Reads, so the write-narrow allowlist does not gate them. |
+| **4a** | **File creation** — `create_file`, `copy_file` | library: new axis | 3 | Neither can damage an existing file, so neither is gated. `create_file` should accept `text/markdown` and let Drive convert — that closes the document-pipeline loop. |
+| **4b** | **File mutation** — `update_file`, `trash_file` | library: new axis | **2** | Rename/move and trash an *existing* file. Gated. |
+| **5a** | **Permissions read** — `get_file_permissions` | library | — | A read. Not gated. |
+| **5b** | **Sharing** — `share_file` | library | **2** | An exfiltration primitive, and one Google's own server declines to ship. |
 | ~~**6**~~ | ~~**Format breadth**~~ — Markdown, PDF, Office, ODF, EPUB (**not** images) | `export` plumbing + a format table | — | ✅ **done 2026-08-25** (v0.4.0), with `_formats.py` and `download_file_content`. |
 | **7** | **Differentiators** — `approvals`, `revisions`, `changes`+`watch` | 3 new API surfaces | — | Own brainstorm each. `approvals` is the most on-mission thing found. |
 | **8** | **Docs `batchUpdate` breadth** — 37 unused request types | library | — | A programme, not a plan. Tables first. |
 | **9** | **Hosted server** — unlocks `files.watch` push, and removes install/OAuth-client/login for everyone | new transport + auth + custody | **2**, and a CASA decision | Largest item here, and almost all of it is security rather than features. Own section below. |
 
-### Why #2 must come before #4 and #5 — and it is not only the security argument
+### Correction (2026-08-25): #2 gates less than the table used to say
+
+The table read "#3 blocked on 2" and "#5 blocked on 2". That was written before #82's shape was
+settled, and the settled shape makes it wrong. #82 is **write-narrow**: *read stays as broad as
+the credentials allow, only mutation is gated*, because the goal is damage containment, not
+confidentiality — the agent already sees whatever the user sees.
+
+Sort the eight parity tools by *whether they can damage something that already exists* and the
+dependency falls out:
+
+| Tool | Kind | Gated by #82? |
+|---|---|---|
+| `search_files`, `list_recent_files` | read | **no** |
+| `get_file_permissions` | read | **no** |
+| `create_file` | creates a new file | **no** — nothing existing to damage |
+| `copy_file` | reads one, creates a new one | **no** |
+| `update_file` | mutates an existing file | **yes** |
+| `trash_file` | destroys | **yes** |
+| `share_file` | exposes | **yes** |
+
+**Those last three are exactly the three Google's own server omits.** So the two parity targets
+have very different costs:
+
+- **Google's 8 → five more tools, no #82 dependency.** Startable immediately.
+- **Claude's 11 → three more on top, every one gated on #82** — and every one a tool Google's
+  team looked at and chose not to ship.
+
+What #2 still gates, unchanged: **content writes through MCP** (the library has them; the server
+does not), plus `update_file` / `trash_file` / `share_file`.
+
+### Why #2 must still come before the mutating half — and it is not only the security argument
 
 **Every one of `Backend`'s 22 methods takes `file_id` as its first parameter.** That uniformity
 is precisely what makes #82's `AllowlistBackend` trivial: wrap the backend, `policy.check(file_id,
