@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-08-25 — v0.10.1 (comment parsing: keep the fragment, refuse the silent drop)
+
+Whitespace formatting and quoting in reasons already worked; two parsing bugs did not.
+
+### Fixed
+
+- **A URL fragment was eaten as a comment.** `…/edit#gid=0` and `…/edit#heading=h.x` are
+  ordinary Drive links, and `#` was splitting on its first occurrence — so the anchor became
+  the "reason" and the *real* reason was thrown away. A comment now starts at a `#` that begins
+  the line or **follows whitespace**. (The file id extracted correctly throughout, so the
+  security behaviour was never wrong; the reason field was.)
+- **A second URL after a comment was silently dropped.** `a # one, b # two` looks like two
+  entries and parsed as one, because a comment runs to the end of its line. Now an error naming
+  the problem — *"the comment contains what looks like another document URL, so that document is
+  NOT being allowlisted"* — with the workaround if the mention was deliberate.
+- **Two URLs on one line was the same bug in different clothes.** `a, b  # both` splits on
+  newlines only once any comment is present, and only the first id would have been taken. Now
+  an error saying how many it found and that only the first would be listed.
+
+Both drops fail *closed*, so nothing was over-permitted. But a policy with fewer files than its
+author believes is exactly the kind of confusion that gets worked around rather than fixed, so
+failing closed quietly is not good enough here.
+
+### Confirmed working, now with tests
+
+- **Indentation, tabs and alignment** are insignificant — reasons can be lined up into a column,
+  and whole-line comments can themselves be indented.
+- **Blank and whitespace-only lines** are ignored anywhere; CRLF line endings work.
+- **The reason is free text**: apostrophes, double quotes, further `#`s, semicolons and commas
+  all survive. Whatever holds the value — JSON, a shell — has its own quoting rules, and that is
+  a separate layer this parser has no business second-guessing.
+
 ## 2026-08-25 — v0.10.0 (the allowlist lives in the configuration, and only there)
 
 **Breaking.** `CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY` now hold the lists

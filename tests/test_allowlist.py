@@ -270,3 +270,116 @@ def test_unset_and_blank_are_diagnosed_differently():
 def test_the_blank_diagnosis_points_at_the_likely_cause():
     blank = diagnose_setting("X", "")
     assert "template" in blank and "shell variable" in blank
+
+
+# --- whitespace is for the author, not the parser --------------------------
+
+OTHER_ID = "2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+OTHER_URL = f"https://docs.google.com/document/d/{OTHER_ID}/edit"
+
+
+def test_entries_can_be_indented_and_aligned_with_spaces_or_tabs():
+    """People line these up so the reasons form a column. That has to be free."""
+    listing = parse_allowlist(
+        f"\t{DOC_URL}\t\t# CCM mapping\n"
+        f"    {OTHER_URL}     # AICM tracker\n")
+    assert [e.file_id for e in listing.entries] == [DOC_ID, OTHER_ID]
+    assert [e.reason for e in listing.entries] == ["CCM mapping", "AICM tracker"]
+
+
+def test_blank_and_whitespace_only_lines_are_ignored_anywhere():
+    listing = parse_allowlist(f"\n   \n\t\n{DOC_URL}\n  \n{OTHER_URL}\n\n")
+    assert len(listing.entries) == 2
+
+
+def test_whole_line_comments_may_themselves_be_indented():
+    listing = parse_allowlist(f"    # a heading\n\t# and another\n{DOC_URL}\n")
+    assert len(listing.entries) == 1
+
+
+def test_windows_line_endings_work():
+    assert len(parse_allowlist(f"{DOC_URL}\r\n{OTHER_URL}\r\n").entries) == 2
+
+
+# --- the comment delimiter must not eat a URL fragment ---------------------
+
+def test_a_url_fragment_stays_part_of_the_url():
+    """`#gid=0` and `#heading=h.x` are ordinary Drive links. Treating their `#` as a comment
+    delimiter turned the anchor into the "reason" and threw the real reason away."""
+    entry = parse_allowlist(f"{DOC_URL}#heading=h.abc   # the real reason").entries[0]
+    assert entry.file_id == DOC_ID
+    assert entry.reason == "the real reason"
+
+
+def test_a_sheets_gid_anchor_is_not_mistaken_for_a_comment():
+    entry = parse_allowlist(
+        f"https://docs.google.com/spreadsheets/d/{DOC_ID}/edit#gid=0").entries[0]
+    assert entry.reason is None
+
+
+def test_a_hash_needs_whitespace_before_it_to_start_a_comment():
+    assert parse_allowlist(f"{DOC_URL}#notacomment").entries[0].reason is None
+    assert parse_allowlist(f"{DOC_URL} #a comment").entries[0].reason == "a comment"
+    assert parse_allowlist(f"{DOC_URL}\t#tab first").entries[0].reason == "tab first"
+
+
+# --- a URL inside a comment is a mistake, loudly ---------------------------
+
+def test_a_url_swallowed_into_a_comment_is_an_error():
+    """`a # one, b # two` looks like two entries and parses as one. The consequence is a
+    policy with fewer files than its author believes — fail closed *and* loudly, because
+    failing closed quietly is how somebody spends an afternoon on it."""
+    with pytest.raises(AllowlistError) as e:
+        parse_allowlist(f"{DOC_URL} # first, {OTHER_URL} # second")
+    message = str(e.value)
+    assert "NOT being allowlisted" in message
+    assert "own line" in message
+
+
+def test_the_swallowed_url_error_suggests_the_workaround():
+    with pytest.raises(AllowlistError) as e:
+        parse_allowlist(f"{DOC_URL} # see also {OTHER_URL}")
+    assert "by name rather than by URL" in str(e.value)
+
+
+def test_a_reason_mentioning_a_non_document_url_is_fine():
+    """Only a *document* URL is the tell. A wiki link in a reason is just prose."""
+    entry = parse_allowlist(f"{DOC_URL}  # rationale at https://wiki.example.org/why").entries[0]
+    assert entry.reason == "rationale at https://wiki.example.org/why"
+
+
+# --- quoting is the surrounding format's problem, not ours -----------------
+
+@pytest.mark.parametrize("reason", [
+    "Kurt's draft",
+    'the "final" version',
+    "Kurt's \"final\" draft #2",
+    "50% done; see §4",
+    "reason with, commas and; semicolons",
+])
+def test_the_reason_is_free_text(reason):
+    """Apostrophes, quotes, further `#`s and separators are all fine *here* — whatever holds
+    the value, JSON or a shell, has its own quoting rules to satisfy, and that is a different
+    layer."""
+    assert parse_allowlist(f"{DOC_URL}  # {reason}").entries[0].reason == reason
+
+
+def test_two_urls_on_one_line_is_an_error_not_a_silent_drop():
+    """Same mistake as the swallowed-comment one, wearing different clothes: with a comment
+    present, entries split on newlines only, so `a, b  # both` would allowlist just `a`."""
+    with pytest.raises(AllowlistError) as e:
+        parse_allowlist(f"{DOC_URL}, {OTHER_URL}  # both trackers")
+    message = str(e.value)
+    assert "contains 2 document URLs" in message
+    assert "only the first would be allowlisted" in message
+
+
+def test_commas_still_separate_when_there_are_no_comments():
+    """The separator forms are unchanged — this only bites once a `#` forces newline-only
+    splitting, and then it says so instead of dropping one."""
+    assert len(parse_setting(f"{DOC_URL}, {OTHER_URL}", variable="V").entries) == 2
+
+
+@pytest.mark.parametrize("separator", ["\t", "\n", " ", ",", ";", ",\n\t "])
+def test_every_separator_shape_works_without_comments(separator):
+    assert len(parse_setting(f"{DOC_URL}{separator}{OTHER_URL}", variable="V").entries) == 2

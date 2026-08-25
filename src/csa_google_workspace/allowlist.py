@@ -33,6 +33,13 @@ JSON `env` block, `\n` gives you the multi-line form and keeps the reasons:
     https://docs.google.com/document/d/1oW1BM…/edit?tab=t.0   # CCM v5 mapping, per WG lead
     https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
 
+Leading, trailing and interior whitespace is insignificant, so entries can be indented and
+aligned however reads best — tabs included. Blank lines and whole-line comments are ignored
+anywhere. A comment starts at a `#` that begins the line or **follows whitespace**, which is
+what lets a URL keep an `#gid=0` or `#heading=h.x` fragment. The reason itself is free text:
+quotes, apostrophes and further `#`s in it are fine here — though whatever holds the value,
+JSON or a shell, has its own quoting rules to satisfy.
+
 Per-capability scoping — "this file may be commented on but not edited" — would need a
 structured format. That is a deliberate later decision, noted in `TODO.md`.
 """
@@ -60,6 +67,11 @@ _ID_IN_PATH = re.compile(r"/d/([a-zA-Z0-9_-]{10,})")
 _ID_IN_QUERY = re.compile(r"[?&]id=([a-zA-Z0-9_-]{10,})")
 # What we must refuse rather than misread.
 _FOLDER = re.compile(r"/drive/(?:u/\d+/)?folders/([a-zA-Z0-9_-]+)")
+# A comment starts at a `#` that begins the line or follows whitespace. The whitespace
+# requirement is what lets a URL keep its fragment: `…/edit#gid=0` and `…/edit#heading=h.x`
+# are ordinary Drive links, and treating their `#` as a comment delimiter turned the anchor
+# into the "reason" and threw the real reason away.
+_COMMENT = re.compile(r"(?:^|(?<=\s))#")
 
 
 class AllowlistError(exc.CsaWorkspaceError):
@@ -234,14 +246,41 @@ def parse_allowlist(text: str, *, source: str = "<string>") -> Listing:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        url, _, comment = line.partition("#")
-        reason = comment.strip() or None
+        marker = _COMMENT.search(line)
+        url = line[:marker.start()] if marker else line
+        reason = (line[marker.end():].strip() or None) if marker else None
+
+        # A comment runs to the end of the line, so a URL inside one is *not* being
+        # allowlisted. Almost always this is a separator mistake — `a # one, b # two` looks
+        # like two entries and parses as one — and the consequence is a policy with fewer
+        # files than its author believes. Fail closed *and* loudly; failing closed quietly is
+        # how somebody spends an afternoon wondering why their document is read-only.
+        if reason and (_ID_IN_PATH.search(reason) or _ID_IN_QUERY.search(reason)):
+            problems.append(
+                f"  {source}:{number}: the comment contains what looks like another document "
+                f"URL, so that document is NOT being allowlisted — a comment runs to the end "
+                f"of the line. Put each document on its own line (in a JSON value, separate "
+                f"them with \\n). If you genuinely meant to mention a document in a comment, "
+                f"refer to it by name rather than by URL.")
+            continue
 
         if url.strip().lower() in ALL_SYNONYMS:
             log.warning("allowlist %s:%d grants access to EVERY file the credentials can "
                         "reach (%r)%s", source, number, url.strip(),
                         f": {reason}" if reason else "")
             return Listing(all_files=True)
+
+        # More than one document on a line is the same silent-drop mistake wearing different
+        # clothes: `a, b  # both` splits on newlines once comments are in play, and
+        # `parse_document_url` would return the *first* id and discard the rest.
+        found = len(_ID_IN_PATH.findall(url)) + len(_ID_IN_QUERY.findall(url))
+        if found > 1:
+            problems.append(
+                f"  {source}:{number}: this line contains {found} document URLs, and only the "
+                f"first would be allowlisted. Once any comment is present, entries are "
+                f"separated by newlines only — put each document on its own line (in a JSON "
+                f"value, separate them with \\n).")
+            continue
 
         try:
             file_id = parse_document_url(url)
