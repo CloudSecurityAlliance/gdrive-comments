@@ -49,6 +49,22 @@ def current_version() -> str:
 
 
 def git_tags() -> set[str]:
+    """Local tags, refreshed first.
+
+    Without the fetch this check invents discrepancies. A clone whose tags are behind - and
+    `actions/checkout` fetches none by default - reports the newest release as "claims it was
+    released, but there is no git tag", which reads exactly like a release that went to PyPI
+    untagged. That happened, and cost a detour through PyPI and `gh release list` to establish
+    that nothing was wrong at all.
+
+    A failed fetch is not itself a discrepancy (offline, no remote, no credentials), but it is
+    said out loud, because from here on the comparison is against a possibly stale list.
+    """
+    fetch = subprocess.run(["git", "fetch", "--tags", "--quiet"], cwd=ROOT,
+                           capture_output=True, text=True)
+    if fetch.returncode != 0:
+        print("  ! could not fetch tags; the local list may be stale "
+              f"({fetch.stderr.strip().splitlines()[-1] if fetch.stderr.strip() else 'no detail'})")
     out = subprocess.run(["git", "tag", "--list", "v*"], cwd=ROOT,
                          capture_output=True, text=True, check=True).stdout
     return {line.strip().lstrip("v") for line in out.splitlines() if line.strip()}
