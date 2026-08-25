@@ -123,43 +123,42 @@ this one.
 | **OAuth scope** | `drive.file` / `drive.readonly` | — | **full `drive`** |
 | **Runs on** | Google's servers | Anthropic's | your machine |
 
-### Tools, by name — and the Google API behind each
+### Tool-by-tool comparison
 
-**The names are deliberately the same.** Where all three do the same thing they use the same
-tool name and the same argument shapes, so prompts and habits transfer. Verified against live
-schemas: Google's and Claude's shared tools are identical in name *and* parameters; Claude's
-descriptions carry extra model-facing guidance, which this server copies.
+Where all three do the same thing they should use the same tool name and argument shapes, so
+prompts and habits transfer. Verified against live schemas: Google's and Claude's shared tools
+are identical in name *and* parameters; Claude's descriptions add model-facing guidance.
 
-The API column is the point of the table — it shows what each tool actually is, and therefore
-what the gaps really cost.
+The last column is our current tool name — **where it differs from the shared name, that is
+work still to do**, tracked in [`TODO.md`](./TODO.md).
 
-| Tool | Google API it calls | Google | Claude | **here** |
-|---|---|---|---|---|
-| `search_files` | `drive.files.list` (`q=` query syntax) | ✅ | ✅ | ✗ |
-| `list_recent_files` | `drive.files.list` (`orderBy`) | ✅ | ✅ | ✗ |
-| `get_file_metadata` | `drive.files.get` | ✅ | ✅ | partial |
-| `get_file_permissions` | `drive.permissions.list` | ✅ | ✅ | ✗ |
-| `read_file_content` | `drive.files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get`; `drive.comments.list` when `includeComments` | ✅ | ✅ | partial |
-| `download_file_content` | `drive.files.export` / `files.get(alt=media)` | ✅ | ✅ | ✗ *(library has it)* |
-| `create_file` | `drive.files.create` (+ media upload) | ✅ | ✅ | ✗ |
-| `copy_file` | `drive.files.copy` | ✅ | ✅ | ✗ |
-| `update_file` — **metadata only** | `drive.files.update` (`name`, `parents`) | ✗ | ✅ | ✗ |
-| `share_file` | `drive.permissions.create` | ✗ | ✅ | ✗ |
-| `trash_file` | `drive.files.update` (`trashed=true`) | ✗ | ✅ | ✗ |
-| `list_comments` · `get_comment` | `drive.comments.list` · `comments.get` | ✗ | *inline text only* | ✅ **structured** |
-| `create_comment` | `drive.comments.create` | ✗ | ✗ | ✅ |
-| `reply_comment` | `drive.replies.create` | ✗ | ✗ | ✅ |
-| `resolve_comment` · `reopen_comment` | `drive.replies.create` (action reply) | ✗ | ✗ | ✅ |
-| `comments_by_cell` | `drive.files.export` (XLSX) → parse `threadedComments` → A1 | ✗ | ✗ | ✅ |
-| suggestions preview | `docs.documents.get(suggestionsViewMode=…)` | ✗ | ✗ | ✅ |
-| **edit a Doc** | `docs.documents.batchUpdate` | ✗ | ✗ | ✅ |
-| **edit a Sheet** | `sheets…values.update` / `.append` / `.clear`, `spreadsheets.batchUpdate` | ✗ | ✗ | ✅ |
-| **edit a Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ✅ |
-| `authenticate` | OAuth loopback + MCP URL elicitation | n/a *(hosted)* | n/a *(built in)* | ✅ |
+| Tool | What it does | Google API | Google | Claude | Our tool |
+|---|---|---|---|---|---|
+| `search_files` | Find files by Drive query — `title`, `fullText`, `mimeType`, `modifiedTime`, `parentId`, `owner`, `sharedWithMe` | `drive.files.list` (`q=`) | ✅ | ✅ | ✗ *planned* |
+| `list_recent_files` | Recently touched files, by `recency` / `lastModified` / `lastModifiedByMe` | `drive.files.list` (`orderBy`) | ✅ | ✅ | ✗ *planned* |
+| `get_file_metadata` | Name, type, owner, times, plus a content snippet | `drive.files.get` | ✅ | ✅ | ⚠️ `open_document` *(rename + widen)* |
+| `get_file_permissions` | Who the file is shared with, and at what role | `drive.permissions.list` | ✅ | ✅ | ✗ *planned* |
+| `read_file_content` | Natural-language text of a file; optionally comments inlined. 13 mime types incl. PDF, Office, ODF, PNG/JPEG | `files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get` (+ `drive.comments.list`) | ✅ | ✅ | ⚠️ `read_text` *(rename; Google types only; no `includeComments`)* |
+| `download_file_content` | Raw bytes as base64, with an export mime type for Google-native files | `files.export` / `files.get(alt=media)` | ✅ | ✅ | ⚠️ library only (`Document.export()`), not exposed |
+| `create_file` | Create or upload — text or base64 content, or an empty Doc/Sheet/Slides/folder | `drive.files.create` + media upload | ✅ | ✅ | ✗ *planned* |
+| `copy_file` | Duplicate, with optional new title and parent | `drive.files.copy` | ✅ | ✅ | ✗ *planned* |
+| `update_file` | **Metadata only — rename and move.** Does *not* touch content | `drive.files.update` (`name`, `parents`) | ✗ | ✅ | ✗ *planned* |
+| `share_file` | Grant an arbitrary email address `reader` / `commenter` / `writer` | `drive.permissions.create` | ✗ | ✅ | ✗ *planned, gated on #82* |
+| `trash_file` | Move to trash. Not a permanent delete | `drive.files.update` (`trashed=true`) | ✗ | ✅ | ✗ *planned* |
+| — | List comments as **structured objects**: ids, authors, resolved state, replies, cell | `drive.comments.list` / `.get` | ✗ | *inline text only* | ✅ `list_comments`, `get_comment` |
+| — | Post a comment on a file | `drive.comments.create` | ✗ | ✗ | ✅ `create_comment` |
+| — | Reply to a comment thread | `drive.replies.create` | ✗ | ✗ | ✅ `reply_comment` |
+| — | Resolve or reopen a thread (an *action reply*, not a PATCH) | `drive.replies.create` | ✗ | ✗ | ✅ `resolve_comment`, `reopen_comment` |
+| — | Map a Sheets comment back to **the cell it is about** | `files.export` (XLSX) → parse `threadedComments` → A1 | ✗ | ✗ | ✅ `comments_by_cell` |
+| — | Preview a Doc **as if suggestions were accepted or rejected** | `docs.documents.get(suggestionsViewMode=…)` | ✗ | ✗ | ✅ `read_text(suggestions=…)` |
+| — | **Edit an existing Doc** — replace, insert, append, delete a range | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
+| — | **Edit an existing Sheet** — write, append rows, clear | `sheets…values.update` / `.append` / `.clear` | ✗ | ✗ | ⚠️ library only, MCP soon |
+| — | **Edit an existing Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
+| — | Browser consent from inside the MCP client | OAuth loopback + MCP URL elicitation | n/a *hosted* | n/a *built in* | ✅ `authenticate` |
 
 **Neither of the others can edit an existing file's content.** `create_file` uploads a *new*
-file; `update_file` only renames or moves. Look down the `batchUpdate` rows — that is the
-difference, and it is not a matter of tool count.
+file; `update_file` only renames or moves. Read down the `batchUpdate` rows — that is the
+difference, and it is structural rather than a matter of tool count.
 
 ### Where all three still stop
 
