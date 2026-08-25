@@ -69,8 +69,13 @@ def _write_token(token_path: str, creds: Credentials) -> None:
         f.write(creds.to_json())
 
 
-def load_credentials(client_secrets: str, token_path: str, read_only: bool) -> Credentials:
+def load_credentials(client_secrets: str, token_path: str, read_only: bool,
+                     *, force: bool = False) -> Credentials:
     """Interactive: reuse the cache, else open a browser for consent. Terminal use only.
+
+    `force=True` ignores the cache and re-consents. It does not delete anything: the
+    existing token is replaced only once a new one is in hand, so a cancelled or failed
+    consent leaves the old credentials working.
 
     Do NOT call this from a stdio MCP server — `run_local_server()` prints the consent URL
     to stdout (the JSON-RPC channel) and blocks on the browser redirect. Servers call
@@ -78,7 +83,7 @@ def load_credentials(client_secrets: str, token_path: str, read_only: bool) -> C
     """
     required = scopes_for(read_only)
     token_path = os.path.expanduser(token_path)
-    creds = _read_cached(token_path, required)
+    creds = None if force else _read_cached(token_path, required)
     if creds and creds.valid:
         return creds
     if creds and creds.expired and creds.refresh_token:

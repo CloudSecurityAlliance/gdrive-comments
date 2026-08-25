@@ -86,7 +86,7 @@ def test_login_runs_the_interactive_flow(tmp_path, monkeypatch, capsys):
     """The mirror image: `login` *must* reach from_oauth, since that is its whole job."""
     called = {}
 
-    def fake_from_oauth(client_secrets, token_path, read_only=False):
+    def fake_from_oauth(client_secrets, token_path, read_only=False, force=False):
         called["args"] = (client_secrets, token_path, read_only)
     monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth", fake_from_oauth)
 
@@ -98,7 +98,80 @@ def test_login_runs_the_interactive_flow(tmp_path, monkeypatch, capsys):
 def test_read_only_env_reaches_login(tmp_path, monkeypatch):
     called = {}
     monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
-                        lambda cs, tp, read_only=False: called.setdefault("ro", read_only))
+                        lambda cs, tp, read_only=False, force=False: called.setdefault("ro", read_only))
     cli.main(["login"], {"CSA_GW_CLIENT_SECRETS": "/tmp/cs.json",
                          "CSA_GW_TOKEN": str(tmp_path / "t.json"), "CSA_GW_READ_ONLY": "1"})
     assert called["ro"] is True
+
+
+# --- `login --force` and cached-token reporting -------------------------------
+#
+# Real failure this addresses: a token cache can hold a perfectly valid token that was
+# minted by a DIFFERENT OAuth client (same scopes, different project). `login` then
+# reuses it and truthfully reports success, while every API call runs against the wrong
+# project's quota and consent screen. Nothing errors; it is just silently wrong.
+
+def test_login_reuses_a_usable_token_without_opening_a_browser(tmp_path, monkeypatch, capsys):
+    token = tmp_path / "token.json"
+    token.write_text('{"client_id": "111-abc.apps.googleusercontent.com"}')
+    monkeypatch.setattr("csa_google_workspace.mcp._login._client_id_of",
+                        lambda p: "111-abc.apps.googleusercontent.com")
+    monkeypatch.setattr("csa_google_workspace.mcp._login.load_cached_credentials",
+                        lambda tp, ro: object())
+    called = {}
+    monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
+                        lambda *a, **k: called.setdefault("ran", True))
+
+    env = {"CSA_GW_CLIENT_SECRETS": "/tmp/cs.json", "CSA_GW_TOKEN": str(token)}
+    assert cli.main(["login"], env) == 0
+    assert "ran" not in called                       # no browser
+    assert "already authorized" in capsys.readouterr().out.lower()
+
+
+def test_login_force_reauthorizes_even_with_a_usable_token(tmp_path, monkeypatch):
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    monkeypatch.setattr("csa_google_workspace.mcp._login.load_cached_credentials",
+                        lambda tp, ro: object())
+    called = {}
+    monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
+                        lambda cs, tp, read_only=False, force=False: called.update(force=force))
+
+    env = {"CSA_GW_CLIENT_SECRETS": "/tmp/cs.json", "CSA_GW_TOKEN": str(token)}
+    assert cli.main(["login", "--force"], env) == 0
+    assert called["force"] is True                   # cache bypassed, consent re-run
+
+
+def test_login_warns_when_the_cached_token_is_from_another_client(tmp_path, monkeypatch, capsys):
+    """The exact trap: valid token, right scopes, wrong project."""
+    token = tmp_path / "token.json"
+    token.write_text('{"client_id": "945234811286-old.apps.googleusercontent.com"}')
+    monkeypatch.setattr("csa_google_workspace.mcp._login._client_id_of",
+                        lambda p: "548573610436-new.apps.googleusercontent.com")
+    monkeypatch.setattr("csa_google_workspace.mcp._login.load_cached_credentials",
+                        lambda tp, ro: object())
+    monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
+                        lambda *a, **k: None)
+
+    env = {"CSA_GW_CLIENT_SECRETS": "/tmp/cs.json", "CSA_GW_TOKEN": str(token)}
+    assert cli.main(["login"], env) == 0
+    err = capsys.readouterr().err.lower()
+    assert "different oauth client" in err and "--force" in err
+
+
+def test_login_with_no_token_authorizes_without_needing_force(tmp_path, monkeypatch):
+    token = tmp_path / "absent.json"
+    monkeypatch.setattr("csa_google_workspace.mcp._login.load_cached_credentials",
+                        lambda tp, ro: (_ for _ in ()).throw(auth.AuthError("no cached credentials")))
+    called = {}
+    monkeypatch.setattr("csa_google_workspace.workspace.Workspace.from_oauth",
+                        lambda cs, tp, read_only=False, force=False: called.update(ran=True))
+
+    env = {"CSA_GW_CLIENT_SECRETS": "/tmp/cs.json", "CSA_GW_TOKEN": str(token)}
+    assert cli.main(["login"], env) == 0
+    assert called["ran"] is True
+
+
+def test_force_flag_is_documented_in_usage(capsys):
+    cli.main(["--help"], {})
+    assert "--force" in capsys.readouterr().err

@@ -47,7 +47,7 @@ class Workspace:
     @classmethod
     def from_oauth(cls, client_secrets: str,
                    token_path: str = "~/.csa_google_workspace/token.json",  # nosec B107 - default path, not a secret
-                   read_only: bool = False) -> Workspace:
+                   read_only: bool = False, *, force: bool = False) -> Workspace:
         from .auth import load_credentials
-        creds = load_credentials(client_secrets, token_path, read_only)
+        creds = load_credentials(client_secrets, token_path, read_only, force=force)
         return cls.from_credentials(creds, read_only=read_only)
