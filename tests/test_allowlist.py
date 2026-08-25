@@ -8,11 +8,9 @@ import pytest
 
 from csa_google_workspace.allowlist import (
     AllowlistError,
-    is_inline,
-    load_allowlist,
     parse_allowlist,
     parse_document_url,
-    parse_inline,
+    parse_setting,
 )
 
 DOC_URL = "https://docs.google.com/document/d/1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8/edit?tab=t.0"
@@ -127,66 +125,51 @@ def test_entry_repr_does_not_leak_the_reason():
     assert "Jane" not in repr(entry) and "has_reason=True" in repr(entry)
 
 
-# --- loading from disk (fail closed) ---------------------------------------
+# --- there is no file: a path-shaped value is a diagnosable mistake --------
 
-def test_a_missing_file_is_a_hard_failure_not_a_fallback():
-    """The failure being avoided: an operator who believes writes are scoped when they are
-    not, because the path had a typo."""
-    with pytest.raises(AllowlistError) as e:
-        load_allowlist("/nonexistent/path/allowlist.txt")
-    assert "hard failure" in str(e.value)
-
-
-def test_a_directory_instead_of_a_file_is_a_hard_failure(tmp_path):
-    with pytest.raises(AllowlistError):
-        load_allowlist(str(tmp_path))
-
-
-def test_a_good_file_loads(tmp_path):
-    path = tmp_path / "allow.txt"
-    path.write_text(f"# ok\n{DOC_URL}  # reason here\n", encoding="utf-8")
-    assert [e.file_id for e in load_allowlist(str(path)).entries] == [DOC_ID]
+@pytest.mark.parametrize("path_shaped", [
+    "/etc/csa/allow.txt", "~/allow.txt", "./allow.list", "../a.conf", "allowlist.yaml",
+    "C:\\Users\\kurt\\allow.txt", "allow.cfg", "/var/tmp/x.json",
+])
+def test_a_path_shaped_value_says_so(path_shaped):
+    """Reading a file would put the real policy somewhere the client config does not show,
+    behind a path whose target can change without the config changing."""
+    problem = diagnose_url(path_shaped)
+    assert problem is not None and "file path" in problem
+    assert "set in the environment, not read from a file" in problem
 
 
-def test_the_source_path_appears_in_the_error(tmp_path):
-    path = tmp_path / "allow.txt"
-    path.write_text("garbage\n", encoding="utf-8")
-    with pytest.raises(AllowlistError) as e:
-        load_allowlist(str(path))
-    assert str(path) in str(e.value)
+def test_a_url_is_never_mistaken_for_a_path():
+    """The path check runs after URL extraction, so a real URL cannot trip it — including a
+    Drive URL that happens to end in something dotted."""
+    assert diagnose_url(DOC_URL) is None
+    assert diagnose_url(f"{DOC_URL}#gid=0") is None
 
 
-# --- inline configuration ---------------------------------------------------
+# --- the environment value --------------------------------------------------
 
-def test_is_inline_discriminates_urls_from_paths():
-    assert is_inline(DOC_URL)
-    assert not is_inline("/home/kurt/.csa_google_workspace/allowlist.txt")
-    assert not is_inline("C:\\Users\\kurt\\allowlist.txt")
-    assert not is_inline("~/allow.txt")
-
-
-def test_inline_accepts_a_single_url():
-    assert [e.file_id for e in parse_inline(DOC_URL).entries] == [DOC_ID]
+def test_a_single_url_is_accepted():
+    assert [e.file_id for e in parse_setting(DOC_URL, variable="V").entries] == [DOC_ID]
 
 
 @pytest.mark.parametrize("separator", [", ", ",", " ", "  ", ";", "\n", "\t"])
-def test_inline_accepts_any_separator_when_there_are_no_comments(separator):
+def test_any_separator_works_when_there_are_no_comments(separator):
     other = "https://docs.google.com/document/d/2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/edit"
-    assert len(parse_inline(f"{DOC_URL}{separator}{other}").entries) == 2
+    assert len(parse_setting(f"{DOC_URL}{separator}{other}", variable="V").entries) == 2
 
 
-def test_inline_with_comments_splits_only_on_newlines():
+def test_with_comments_only_newlines_separate():
     """The condition that stops a separator and a comment fighting over one character: when
     `#` is present, newlines are the only separator, so the ambiguous case is unreachable."""
     other = "https://docs.google.com/document/d/2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/edit"
-    listing = parse_inline(f"{DOC_URL}  # first, with a comma\n{other}  # second")
+    listing = parse_setting(f"{DOC_URL}  # first, with a comma\n{other}  # second", variable="V")
     assert len(listing.entries) == 2
     assert listing.entries[0].reason == "first, with a comma"
 
 
-def test_inline_errors_name_the_variable_not_a_file():
+def test_errors_name_the_variable_they_came_from():
     with pytest.raises(AllowlistError) as e:
-        parse_inline("https://example.com/nope", source="CSA_GW_ALLOWLIST_MODIFY")
+        parse_setting("https://example.com/nope", variable="CSA_GW_ALLOWLIST_MODIFY")
     assert "CSA_GW_ALLOWLIST_MODIFY" in str(e.value)
 
 
@@ -277,13 +260,13 @@ def test_the_diagnosis_reaches_the_raised_error():
 def test_unset_and_blank_are_diagnosed_differently():
     """They behave identically and have completely different fixes — one means nobody
     configured it, the other usually means a template or an unexpanded shell variable."""
-    unset = diagnose_setting("CSA_GW_ALLOWLIST_MODIFY", None, "/tmp/nope.txt")
-    blank = diagnose_setting("CSA_GW_ALLOWLIST_MODIFY", "   ", "/tmp/nope.txt")
-    assert "is not set" in unset and "/tmp/nope.txt" in unset
+    unset = diagnose_setting("CSA_GW_ALLOWLIST_MODIFY", None)
+    blank = diagnose_setting("CSA_GW_ALLOWLIST_MODIFY", "   ")
+    assert "is not set" in unset and "no file to create" in unset
     assert "set but empty" in blank and "not the same as unset" in blank
     assert unset != blank
 
 
 def test_the_blank_diagnosis_points_at_the_likely_cause():
-    blank = diagnose_setting("X", "", "/tmp/n")
+    blank = diagnose_setting("X", "")
     assert "template" in blank and "shell variable" in blank

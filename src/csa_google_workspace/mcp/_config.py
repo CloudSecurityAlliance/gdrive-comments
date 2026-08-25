@@ -23,14 +23,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .. import auth
-from ..allowlist import (
-    AllowlistError,
-    Listing,
-    diagnose_setting,
-    is_inline,
-    load_allowlist,
-    parse_inline,
-)
+from ..allowlist import ALL_SYNONYMS, AllowlistError, Listing, diagnose_setting, parse_setting
 from ..exceptions import AuthError
 from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy, Scope
 from ..workspace import Workspace
@@ -39,9 +32,8 @@ DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a pat
 DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"  # nosec B105 - a path
 log = logging.getLogger(__name__)
 
-DEFAULT_READ_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist-read.txt"
-DEFAULT_MODIFY_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist-modify.txt"
-LEGACY_ALLOWLIST_PATH = "~/.csa_google_workspace/allowlist.txt"
+READ_ALLOWLIST_VAR = "CSA_GW_ALLOWLIST_READ"
+MODIFY_ALLOWLIST_VAR = "CSA_GW_ALLOWLIST_MODIFY"
 def _launcher() -> str:
     """The command a user can actually paste, absolute where we can determine it.
 
@@ -105,6 +97,8 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
       CSA_GW_ALLOWLIST_READ     *which files* may be read     — `*` for the usual posture
       CSA_GW_ALLOWLIST_MODIFY   *which files* may be changed   — a short, reviewed list
 
+    Both hold their lists directly; there is no allowlist file. See `_scope_from_env`.
+
     Each is a ceiling; none can widen another. **Both allowlists fail closed**: unset means
     nothing is permitted, and unrestricted access must be typed as `*`.
 
@@ -116,51 +110,39 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
     enabled = frozenset(capabilities.enabled if capabilities is not None else DEFAULT_ENABLED)
     return Policy(
         enabled=enabled,
-        read=_scope_from_env(env, "CSA_GW_ALLOWLIST_READ", DEFAULT_READ_ALLOWLIST_PATH),
-        modify=_scope_from_env(env, "CSA_GW_ALLOWLIST_MODIFY", DEFAULT_MODIFY_ALLOWLIST_PATH),
+        read=_scope_from_env(env, READ_ALLOWLIST_VAR),
+        modify=_scope_from_env(env, MODIFY_ALLOWLIST_VAR),
     )
 
 
-def _scope_from_env(env: Mapping[str, str], variable: str, default_path: str) -> Scope:
-    """One allowlist scope, from its variable or its default path. **Fail closed.**
+def _scope_from_env(env: Mapping[str, str], variable: str) -> Scope:
+    """One allowlist scope, from its environment variable. **Fail closed.**
 
-    Unset, with no default file, means `Scope.nothing()` — every operation of that kind is
-    refused, with a message naming the variable to set. That is the opposite of the library's
-    default, and deliberately so: `Workspace.from_credentials` is called by a developer who
+    The variable holds the list itself; **there is no file to read**. The client configuration
+    is the artifact an operator controls and can see, so the policy lives there rather than
+    behind a path whose target can change without the config changing.
+
+    Unset — or set to anything unusable — means `Scope.nothing()`: every operation of that
+    kind is refused, with a message saying which variable and why. That is the opposite of the
+    library's default, deliberately: `Workspace.from_credentials` is called by a developer who
     has made a decision, while this is configuration handed to a model.
 
-    Unrestricted access is available and must be *typed*: `*` (or a `*` line in the file).
-    It logs a warning every time it is parsed, because the point of the file is that
-    unrestricted access should be visible in review.
-
-    Sources, in order of precedence:
+    Unrestricted access is available and must be *typed* as `*`. It logs a warning every time
+    it is parsed, because the point of writing the policy down is that it can be reviewed.
 
       <VAR>=*                          every file, deliberately
-      <VAR>=https://…                  URLs inline, for a JSON `env` block
-      <VAR>=/path/to/file              an explicit path
-      (unset)                          the default path if it exists, else nothing
+      <VAR>=https://…                  the documents, newline- or comma-separated
+      (unset, blank, malformed)        nothing
     """
     raw = env.get(variable)
     value = (raw or "").strip()
-    if value:
-        listing = (parse_inline(value, source=variable) if is_inline(value)
-                   else _scope_from_value(value, variable))
-        return Scope.from_listing(listing)
-    expanded = os.path.expanduser(default_path)
-    if os.path.exists(expanded):
-        return Scope.from_listing(load_allowlist(expanded))
-    # Fail closed, and say which of the two indistinguishable cases this is.
-    return Scope.nothing(reason=diagnose_setting(variable, raw, expanded))
-
-
-def _scope_from_value(value: str, variable: str) -> Listing:
-    """A non-URL value: either the literal `*` (and its synonyms), or a path."""
-    from ..allowlist import ALL_SYNONYMS
+    if not value:
+        return Scope.nothing(reason=diagnose_setting(variable, raw))
     if value.lower() in ALL_SYNONYMS:
         log.warning("%s=%s grants access to EVERY file the credentials can reach",
                     variable, value)
-        return Listing(all_files=True)
-    return load_allowlist(value)
+        return Scope.from_listing(Listing(all_files=True))
+    return Scope.from_listing(parse_setting(value, variable=variable))
 
 
 def _reject_legacy_allowlist(env: Mapping[str, str]) -> None:
@@ -171,16 +153,10 @@ def _reject_legacy_allowlist(env: Mapping[str, str]) -> None:
     """
     if env.get("CSA_GW_ALLOWLIST"):
         raise AllowlistError(
-            "CSA_GW_ALLOWLIST has been split into CSA_GW_ALLOWLIST_READ and "
-            "CSA_GW_ALLOWLIST_MODIFY, because reads and mutations want different answers. "
-            "The usual posture is CSA_GW_ALLOWLIST_READ=* with CSA_GW_ALLOWLIST_MODIFY set to "
-            "your list of document URLs. Refusing to guess which you meant.")
-    legacy = os.path.expanduser(LEGACY_ALLOWLIST_PATH)
-    if os.path.exists(legacy):
-        raise AllowlistError(
-            f"{legacy} is no longer read: the allowlist is split into "
-            f"allowlist-read.txt and allowlist-modify.txt in the same directory. Rename it "
-            f"(most likely to allowlist-modify.txt) so it is not silently ignored.")
+            f"CSA_GW_ALLOWLIST has been split into {READ_ALLOWLIST_VAR} and "
+            f"{MODIFY_ALLOWLIST_VAR}, because reads and mutations want different answers. The "
+            f"usual posture is {READ_ALLOWLIST_VAR}=* with {MODIFY_ALLOWLIST_VAR} set to your "
+            f"list of document URLs. Refusing to guess which you meant.")
 
 
 def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:
@@ -250,8 +226,8 @@ def startup_warnings(settings: Settings) -> list[str]:
         return []
     out: list[str] = []
     for label, scope, variable in (
-            ("READ", policy.read, "CSA_GW_ALLOWLIST_READ"),
-            ("MODIFY", policy.modify, "CSA_GW_ALLOWLIST_MODIFY")):
+            ("READ", policy.read, READ_ALLOWLIST_VAR),
+            ("MODIFY", policy.modify, MODIFY_ALLOWLIST_VAR)):
         if scope.all_files:
             out.append(f"{label}: UNRESTRICTED — every file your Google account can reach. "
                        f"Set {variable} to a list of document URLs to narrow it.")

@@ -18,19 +18,11 @@ import pytest
 from csa_google_workspace import Workspace, exceptions
 from csa_google_workspace.mcp import _config
 
+# NOTE: there is deliberately no fixture neutralising an ambient allowlist file here. There
+# is no allowlist file — the lists live in the environment — so the tests cannot depend on
+# what happens to be in the developer's home directory. That whole class of failure (a test
+# passing only because CI lacked a file) is gone with the feature.
 
-@pytest.fixture(autouse=True)
-def _no_ambient_allowlist(tmp_path, monkeypatch):
-    """Point every default allowlist path at somewhere that does not exist.
-
-    Without this, assertions here would pass or fail depending on whether the developer
-    happens to have files in ~/.csa_google_workspace/ — the same machine-dependent trap that
-    once made a `login` test pass only because CI lacked a client_secret.json. Tests that
-    *want* a default path patch it themselves.
-    """
-    for attribute in ("DEFAULT_READ_ALLOWLIST_PATH", "DEFAULT_MODIFY_ALLOWLIST_PATH",
-                      "LEGACY_ALLOWLIST_PATH"):
-        monkeypatch.setattr(_config, attribute, str(tmp_path / f"absent-{attribute}.txt"))
 
 
 class FakeCreds:
@@ -296,70 +288,40 @@ def test_inline_urls_with_newlines_keep_their_reasons():
     assert sorted(e.reason for e in policy.modify.entries) == ["AICM tracker", "CCM mapping"]
 
 
-def test_an_explicit_path(tmp_path):
-    path = tmp_path / "modify.txt"
-    path.write_text(f"{_ALLOW_URL}  # the one\n", encoding="utf-8")
-    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": str(path)}).policy
+def test_a_path_value_is_diagnosed_not_loaded():
+    """There is no file to read. A path-shaped value is a mistake worth naming — silently
+    reading it would put the real policy somewhere the config does not show."""
+    from csa_google_workspace.allowlist import AllowlistError
+    with pytest.raises(AllowlistError) as e:
+        _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": "/etc/csa/wg-documents.txt"})
+    message = str(e.value)
+    assert "looks like a file path" in message
+    assert "set in the environment, not read from a file" in message
+
+
+@pytest.mark.parametrize("path_shaped", [
+    "/etc/csa/allow.txt", "~/allow.txt", "./allow.list", "../a.conf", "allowlist.yaml",
+    "C:\\Users\\kurt\\allow.txt",
+])
+def test_every_path_shape_is_diagnosed(path_shaped):
+    from csa_google_workspace.allowlist import AllowlistError
+    with pytest.raises(AllowlistError) as e:
+        _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": path_shaped})
+    assert "file path" in str(e.value)
+
+
+def test_a_url_is_never_mistaken_for_a_path():
+    """The path check runs after URL extraction, so a real URL cannot trip it."""
+    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": _ALLOW_URL}).policy
     assert policy is not None and policy.modify.ids == frozenset({_ALLOW_ID})
 
 
-def test_the_default_paths_are_used_when_they_exist(tmp_path, monkeypatch):
-    """Same pattern as client_secret.json: a curated list dropped in place by a setup script
-    needs no per-user configuration, because the people running it did not write it."""
-    read = tmp_path / "allowlist-read.txt"; read.write_text("*", encoding="utf-8")
-    modify = tmp_path / "allowlist-modify.txt"; modify.write_text(_ALLOW_URL, encoding="utf-8")
-    monkeypatch.setattr(_config, "DEFAULT_READ_ALLOWLIST_PATH", str(read))
-    monkeypatch.setattr(_config, "DEFAULT_MODIFY_ALLOWLIST_PATH", str(modify))
+def test_the_unset_diagnosis_does_not_mention_a_file_to_create():
+    """It used to name a default path. There is no such thing now, and saying otherwise would
+    send someone to create a file that would never be read."""
     policy = _config.settings_from_env({}).policy
     assert policy is not None
-    assert policy.read.all_files and policy.modify.ids == frozenset({_ALLOW_ID})
-
-
-def test_an_explicit_value_overrides_the_default_path(tmp_path, monkeypatch):
-    default = tmp_path / "allowlist-modify.txt"
-    default.write_text(_ALLOW_URL, encoding="utf-8")
-    monkeypatch.setattr(_config, "DEFAULT_MODIFY_ALLOWLIST_PATH", str(default))
-    policy = _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": _OTHER_URL}).policy
-    assert policy is not None and policy.modify.ids == frozenset({_OTHER_ID})
-
-
-def test_a_mistyped_path_is_reported_as_a_path_not_read_as_a_url(tmp_path):
-    """`://` is the discriminator. Guessing with os.path.exists would silently reinterpret a
-    typo'd path as a URL list, which is the failure this must not have."""
-    from csa_google_workspace.allowlist import AllowlistError
-    with pytest.raises(AllowlistError) as e:
-        _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": str(tmp_path / "typo.txt")})
-    assert "no allowlist file at" in str(e.value)
-
-
-def test_a_folder_url_fails_loudly(tmp_path):
-    from csa_google_workspace.allowlist import AllowlistError
-    with pytest.raises(AllowlistError) as e:
-        _config.settings_from_env({
-            "CSA_GW_ALLOWLIST_MODIFY":
-                "https://drive.google.com/drive/folders/1HXZuiBGXD263XdaEOT3siAsakQEuQzVt"})
-    assert "folder" in str(e.value)
-
-
-# --- the v0.8.x variable is refused, not reinterpreted ----------------------
-
-def test_the_legacy_variable_is_an_error_naming_both_replacements():
-    """Silently treating it as the modify list would leave read fail-closed and break reads
-    for reasons nobody could see."""
-    from csa_google_workspace.allowlist import AllowlistError
-    with pytest.raises(AllowlistError) as e:
-        _config.settings_from_env({"CSA_GW_ALLOWLIST": _ALLOW_URL})
-    message = str(e.value)
-    assert "CSA_GW_ALLOWLIST_READ" in message and "CSA_GW_ALLOWLIST_MODIFY" in message
-
-
-def test_a_leftover_legacy_file_is_an_error_rather_than_silently_ignored(tmp_path, monkeypatch):
-    legacy = tmp_path / "allowlist.txt"; legacy.write_text(_ALLOW_URL, encoding="utf-8")
-    monkeypatch.setattr(_config, "LEGACY_ALLOWLIST_PATH", str(legacy))
-    from csa_google_workspace.allowlist import AllowlistError
-    with pytest.raises(AllowlistError) as e:
-        _config.settings_from_env({})
-    assert "no longer read" in str(e.value)
+    assert "no file to create" in (policy.modify.reason or "")
 
 
 # --- what the user is told at startup --------------------------------------

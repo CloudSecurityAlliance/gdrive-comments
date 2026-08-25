@@ -82,10 +82,12 @@ What it does about it, and what it does not:
   `READ=*` — which is what Google's and Anthropic's Drive servers effectively do, and defensible
   because the agent already sees whatever the credentials see — with `MODIFY` a short, reviewed
   list. **Bounding what can be broken is the part that helps.**
-  Configurable as a **path**, the **URLs inline** (for an MCP client's JSON `env` block), or the
-  default `~/.csa_google_workspace/allowlist-{read,modify}.txt` when present — the last of these
-  so a **curated list can be distributed by a setup script with no per-user configuration**,
-  which is the case that matters when the people running it did not write it.
+  **The lists live in the environment; there is no allowlist file.** That is deliberate: the
+  client configuration is the artifact an operator controls and can *see*, so reading it tells
+  them exactly what the agent may touch. A path would add an indirection whose target can change
+  without the config changing, put the real policy somewhere nobody looks, and make the path
+  itself something that can be mistyped or redirected. A path-shaped value is diagnosed as a
+  mistake rather than read.
   Matched by **file id**, so a **copy** of an allowlisted document is not included, and entries
   survive renames and moves. `search_files` results are **filtered** to the read scope rather
   than merely unopenable — a file outside it must not be named either, or search enumerates what

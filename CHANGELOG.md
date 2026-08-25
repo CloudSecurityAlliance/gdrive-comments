@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-08-25 — v0.10.0 (the allowlist lives in the configuration, and only there)
+
+**Breaking.** `CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY` now hold the lists
+themselves. **There is no allowlist file** — no path values, no default location.
+
+### Why
+
+The client configuration is the artifact an operator controls and can *see*: reading it tells
+them exactly what the agent may touch. A path adds an indirection whose target can change
+without the config changing, puts the real policy somewhere nobody looks, and makes the path
+itself something that can be mistyped or redirected.
+
+The cost is real and accepted: a long list is less pleasant in a JSON `env` value than in a
+file. In exchange, "what may this agent change?" is answered by looking at one place.
+
+### Removed
+
+- Path values, `~/.csa_google_workspace/allowlist-{read,modify}.txt` defaults, `load_allowlist()`,
+  `is_inline()`. `parse_inline()` becomes **`parse_setting(value, variable=…)`**.
+- The check for a leftover v0.8.x `allowlist.txt` — there is no longer any file for it to be
+  confused with. `CSA_GW_ALLOWLIST` itself is still refused with a message naming both
+  replacements.
+
+### Added
+
+- **A path-shaped value is diagnosed, not read.** `/etc/csa/allow.txt`, `~/allow.txt`,
+  `./a.list`, `C:\Users\…\a.txt`, `allowlist.yaml` and friends all produce *"that looks like a
+  file path. The allowlist is set in the environment, not read from a file — put the document
+  URLs in the variable itself, separated by newlines or commas."* Silently ignoring it would be
+  worse than either reading it or failing.
+- The unset diagnosis no longer names a file to create, because creating one would do nothing.
+
+### A whole class of test fragility went with it
+
+`tests/test_mcp_config.py` had an autouse fixture pointing default paths at nonexistent
+locations, because otherwise every "nothing configured" assertion depended on what happened to
+be in the developer's home directory — the same machine-dependent trap that once let a `login`
+test pass only because CI lacked a `client_secret.json`. With no file support there is no
+ambient state to neutralise, and the fixture is gone rather than merely maintained.
+
+### Ordering fix
+
+The path check runs **after** URL extraction and **before** the bare-id check. Before that
+order was settled, `allow.cfg` was diagnosed as "a bare file id" — technically reachable, and
+useless to whoever wrote it.
+
 ## 2026-08-25 — v0.9.1 (say *which* kind of misconfiguration it is)
 
 There are exactly three outcomes for an allowlist setting: `*`, a set of document URLs, or
