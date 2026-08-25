@@ -114,9 +114,10 @@ breaking change later**, plus the minimum that makes calling it 1.0 honest.
 
 The eight tools the other two servers have and we do not. Split by the #82 correction above:
 
-- [ ] **A1** `search_files`, `list_recent_files` — the new account axis on `Workspace`. Not gated.
-      **The single biggest usability win in this list**: without it every session begins with a
-      pasted URL.
+- [x] **A1** `search_files`, `list_recent_files` — **done 2026-08-25** (v0.5.0). The account
+      axis exists: `workspace.files` is a `FileCollection` returning `FileRef`s, per the
+      structure spec. Live-verified. It was the biggest usability win here — a session no
+      longer has to begin with a pasted URL.
 - [ ] **A2** `get_file_permissions` — a read. Not gated.
 - [ ] **A3** `create_file`, `copy_file` — not gated (nothing existing to damage). `create_file`
       takes `text/markdown` and lets Drive convert. → **this completes Google's 8.**

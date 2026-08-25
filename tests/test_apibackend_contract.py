@@ -99,3 +99,57 @@ def test_all_writes_are_non_idempotent(monkeypatch):
     b.slides_batch_update("f", [])
 
     assert captured == [False] * 12    # a single True here is a silent double-apply risk
+
+
+class _FilesStub:
+    """Minimal drive.files() double. The module's other stubs are shaped for comments()."""
+
+    def __init__(self, result):
+        self.result = result
+        self.calls: dict = {}
+
+    def list(self, **kwargs):
+        self.calls.update(kwargs)
+        return _Request(self.result)
+
+
+class _DriveWithFiles:
+    def __init__(self, files):
+        self._files = files
+
+    def files(self):
+        return self._files
+
+
+class _ServicesWithFiles:
+    def __init__(self, files):
+        self.drive = _DriveWithFiles(files)
+
+
+def test_search_files_sends_the_query_and_shared_drive_flags():
+    """`ApiBackend` is the only place the real Drive query string is built, and FakeBackend
+    is deliberately not a Drive query engine — so the wiring is asserted here.
+
+    includeItemsFromAllDrives/supportsAllDrives are not optional polish: shared drives are
+    where collaborative review happens, and omitting them silently hides every file in one.
+    """
+    files = _FilesStub({"files": [{"id": "a"}], "nextPageToken": "t2"})
+    out = ApiBackend(_ServicesWithFiles(files)).search_files(
+        "name contains 'x'", page_size=7, order_by="modifiedTime desc", page_token="t1")
+
+    assert out["files"] == [{"id": "a"}]
+    assert files.calls["q"] == "name contains 'x'"
+    assert files.calls["pageSize"] == 7
+    assert files.calls["orderBy"] == "modifiedTime desc"
+    assert files.calls["pageToken"] == "t1"
+    assert files.calls["includeItemsFromAllDrives"] is True
+    assert files.calls["supportsAllDrives"] is True
+    assert "webViewLink" in files.calls["fields"]
+    assert "nextPageToken" in files.calls["fields"]
+
+
+def test_search_files_omits_order_by_and_page_token_when_unset():
+    """Sending orderBy=None is not the same as omitting it; Drive rejects the former."""
+    files = _FilesStub({"files": []})
+    ApiBackend(_ServicesWithFiles(files)).search_files("q")
+    assert "orderBy" not in files.calls and "pageToken" not in files.calls

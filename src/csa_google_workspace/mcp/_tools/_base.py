@@ -46,6 +46,13 @@ def _errors(fn):
             raise ToolError(str(e)) from e
         except exc.UnsupportedOperation as e:
             raise ToolError(str(e)) from e
+        except ValueError as e:
+            # The library raises plain ValueError for a bad argument value (an unknown
+            # `order_by`, an empty query, `as_text(suggestions="maybe")`). Without this
+            # clause every one of those became an UnexpectedToolError with the message
+            # dropped — so the model saw "Error executing tool X" and could not correct
+            # itself. Found by a test on list_recent_files; it was never search-specific.
+            raise ToolError(f"invalid argument: {e}") from e
     return wrapped
 
 
