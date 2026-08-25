@@ -73,8 +73,8 @@ These are the things no test will catch for you unless you add one.
 ```bash
 pip install -e ".[dev]"        # install (src/ layout, Python >=3.10)
 pytest -q                       # unit suite — no network, no credentials (uses FakeBackend).
-                                # Currently 269 passed, 9 skipped, ~1s. The 9 skips are the two
-                                # gated suites below (6 integration + 3 oauth) — `-rs` shows why.
+                                # Currently 318 passed, 10 skipped, ~1s. The 10 skips are the two
+                                # gated suites below (7 integration + 3 oauth) — `-rs` shows why.
                                 # A skip count of 0 means a gate leaked and they RAN for real.
 ruff check src tests && mypy    # lint + type-check (the CI `lint` job). mypy needs no args —
                                 # pyproject pins files = ["src"].

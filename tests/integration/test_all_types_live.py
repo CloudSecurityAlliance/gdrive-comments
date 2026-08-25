@@ -16,6 +16,8 @@ import os
 
 import pytest
 
+from csa_google_workspace import exceptions
+
 pytestmark = pytest.mark.skipif(
     os.environ.get("CSA_GW_INTEGRATION") != "1",
     reason="set CSA_GW_INTEGRATION=1 (and CSA_GW_CLIENT_SECRETS) to run live Google tests",
@@ -169,3 +171,34 @@ def test_suggestions_read_live():
     # accepted vs rejected previews should differ when suggestions exist
     if sugg:
         assert d.as_text(suggestions="accepted") != d.as_text(suggestions="rejected")
+
+
+def test_markdown_export_keeps_structure_live():
+    """The claim that makes format breadth worth building: Drive's Markdown conversion
+    preserves structure, unlike as_text() (text runs only). Verified, not assumed —
+    a heading must come back as `# `, not as bare text."""
+    ws = _ws()
+    with _throwaway(ws, "application/vnd.google-apps.document", "csa-gw markdown export") as fid:
+        doc = ws.open(fid)
+        doc.batch_update([
+            {"insertText": {"location": {"index": 1}, "text": "Findings\nA bullet\n"}},
+            {"updateParagraphStyle": {
+                "range": {"startIndex": 1, "endIndex": 9},
+                "paragraphStyle": {"namedStyleType": "HEADING_1"},
+                "fields": "namedStyleType"}},
+            {"createParagraphBullets": {
+                "range": {"startIndex": 10, "endIndex": 18},
+                "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"}},
+        ])
+
+        md = doc.as_markdown()
+        assert "# Findings" in md, md
+        assert "A bullet" in md and md.count("*") + md.count("-") > 0, md
+
+        # as_text() sees the same words with none of the structure — the contrast that
+        # justifies a separate accessor.
+        assert "# Findings" not in doc.as_text()
+
+        assert "text/markdown" in doc.export_formats
+        with pytest.raises(exceptions.UnsupportedOperation):
+            ws.open(fid).export("pptx")            # wrong type for a Doc, refused locally
