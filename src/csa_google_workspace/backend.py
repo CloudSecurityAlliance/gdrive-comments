@@ -45,9 +45,14 @@ class FakeBackend:
     """In-memory backend for unit tests. `files` maps file_id -> metadata dict."""
 
     def __init__(self, files, *, documents=None, spreadsheets=None,
-                 values=None, presentations=None, exports=None):
+                 values=None, presentations=None, exports=None, comments=None):
         self._files = files
-        self._comments = {}
+        # Keyed (file_id, comment_id) -> raw Drive comment dict, matching what
+        # create_comment() builds. The seed exists for fixtures needing fields
+        # create_comment() cannot produce — `quotedFileContent` above all, the only way to
+        # exercise quote anchoring.
+        self._comments = {(fid, raw["id"]): raw
+                          for fid, raws in (comments or {}).items() for raw in raws}
         self._seq = 0
         self._documents = documents or {}
         self._spreadsheets = spreadsheets or {}

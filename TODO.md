@@ -110,12 +110,12 @@ several hundred steps and nobody executes it.
 
 | # | Subsystem | Touches | Blocked on | Notes |
 |---|---|---|---|---|
-| **1** | **Tool alignment** — their names, argument shapes, and Claude's model-facing guidance | MCP layer only | — | **Start here.** No library change. |
+| ~~**1**~~ | ~~**Tool alignment**~~ — their names, argument shapes, and Claude's model-facing guidance | MCP layer only | — | ✅ **done 2026-08-25** (v0.4.0). |
 | **2** | **File allowlisting** ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) | `Backend` wrapper | — | Do it **before** 4 and 5. See below. |
 | **3** | **Discovery** — `search_files`, `list_recent_files` | library: new axis on `Workspace` | 2 | Biggest usability win. |
-| **4** | **File lifecycle** — `create_file`, `copy_file`, `update_file`, `trash_file` | library: new axis | 2, 3 | |
+| **4** | **File lifecycle** — `create_file`, `copy_file`, `update_file`, `trash_file` | library: new axis | 2, 3 | `create_file` should accept `text/markdown` and let Drive convert — that closes the document-pipeline loop. |
 | **5** | **Permissions** — `get_file_permissions`, `share_file` | library | **2** | `share_file` is an exfiltration primitive. |
-| **6** | **Format breadth** — Markdown, PDF, Office, ODF, EPUB (**not** images) | `export` plumbing + a format table | — | Nearly free; `Document.export()` exists, just unexposed. Rides with 1. |
+| ~~**6**~~ | ~~**Format breadth**~~ — Markdown, PDF, Office, ODF, EPUB (**not** images) | `export` plumbing + a format table | — | ✅ **done 2026-08-25** (v0.4.0), with `_formats.py` and `download_file_content`. |
 | **7** | **Differentiators** — `approvals`, `revisions`, `changes`+`watch` | 3 new API surfaces | — | Own brainstorm each. `approvals` is the most on-mission thing found. |
 | **8** | **Docs `batchUpdate` breadth** — 37 unused request types | library | — | A programme, not a plan. Tables first. |
 | **9** | **Hosted server** — unlocks `files.watch` push, and removes install/OAuth-client/login for everyone | new transport + auth + custody | **2**, and a CASA decision | Largest item here, and almost all of it is security rather than features. Own section below. |
@@ -138,9 +138,9 @@ So #82 is not a security chore that can be deferred; it is **a schema decision w
 deadline.** Design the policy while 22 methods are uniform and the exceptions are deliberate.
 Add discovery and creation first and the policy has to be retrofitted around them.
 
-### Recommended first step — **planned, 2026-08-25**
+### First step — **shipped 2026-08-25** (v0.4.0)
 
-**#1 + #6 together.** One coherent plan: ships the naming alignment and the transferability that
+**#1 + #6 together.** Done. It: ships the naming alignment and the transferability that
 makes the flavour switch possible, adds format breadth almost for free, and leaves `mcp/` split
 into a `_tools/` package — a shape that can absorb the rest. `server.py` is 265 lines with 10
 tools today; the next dozen tools need that split regardless.

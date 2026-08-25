@@ -49,7 +49,7 @@ def test_authenticate_without_a_client_says_how_to_use_login():
 
 
 def test_authenticate_reports_when_a_token_already_exists(tmp_path, monkeypatch):
-    monkeypatch.setattr("csa_google_workspace.mcp.server.load_cached_credentials",
+    monkeypatch.setattr("csa_google_workspace.mcp._tools.auth.load_cached_credentials",
                         lambda tp, ro: object())
     out = call(build(client_secrets=str(tmp_path / "c.json")),
                "authenticate").structured_content
@@ -59,7 +59,7 @@ def test_authenticate_reports_when_a_token_already_exists(tmp_path, monkeypatch)
 
 def test_force_skips_the_already_authorized_shortcut(tmp_path, monkeypatch):
     """With force=True it must proceed to the flow even though a token is cached."""
-    monkeypatch.setattr("csa_google_workspace.mcp.server.load_cached_credentials",
+    monkeypatch.setattr("csa_google_workspace.mcp._tools.auth.load_cached_credentials",
                         lambda tp, ro: object())
     server = build(client_secrets=None)          # no client -> fails *past* the shortcut
     with pytest.raises(ToolError) as ei:
@@ -70,11 +70,11 @@ def test_force_skips_the_already_authorized_shortcut(tmp_path, monkeypatch):
 def test_client_without_url_elicitation_gets_the_terminal_instruction(tmp_path, monkeypatch):
     """Claude Desktop today. A missing capability must not surface as a crash."""
     secrets = tmp_path / "c.json"; secrets.write_text("{}")
-    monkeypatch.setattr("csa_google_workspace.mcp.server.load_cached_credentials",
+    monkeypatch.setattr("csa_google_workspace.mcp._tools.auth.load_cached_credentials",
                         lambda tp, ro: (_ for _ in ()).throw(exceptions.AuthError("none")))
-    monkeypatch.setattr("csa_google_workspace.mcp.server.build_flow",
+    monkeypatch.setattr("csa_google_workspace.mcp._tools.auth.build_flow",
                         lambda cs, ro, uri: object())
-    monkeypatch.setattr("csa_google_workspace.mcp.server.consent_url",
+    monkeypatch.setattr("csa_google_workspace.mcp._tools.auth.consent_url",
                         lambda flow: "https://accounts.google.com/o/oauth2/auth?x=1")
 
     async def unsupported(*a, **k):

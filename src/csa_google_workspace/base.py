@@ -1,6 +1,7 @@
 """Document base + MIME→subclass mapping. Subclasses live in documents/."""
 from __future__ import annotations
 
+from . import _formats
 from . import exceptions as exc
 from .backend import Backend
 from .comments import Comment, CommentCollection
@@ -55,7 +56,15 @@ class Document(CommentsMixin):
         """Drop cached state. Subclasses (e.g. Sheet) override this to clear their own caches."""
 
     def export(self, mime_type: str) -> bytes:
-        return self._backend.export_file(self.id, mime_type)
+        """Export this file's bytes. Accepts a mime type or a short alias ("markdown",
+        "pdf", "docx"); rejects formats Drive will not produce for this type, rather than
+        letting a bad one become a 400 from Google."""
+        return self._backend.export_file(self.id, _formats.resolve(mime_type, self.type))
+
+    @property
+    def export_formats(self) -> tuple[str, ...]:
+        """The mime types this document type can be exported as."""
+        return _formats.EXPORT_FORMATS[self.type]
 
     def _require_writable(self) -> None:
         if self.read_only:

@@ -46,6 +46,21 @@ class DocumentOut(TypedDict):
     url: str
 
 
+class FileMetadataOut(TypedDict):
+    id: str
+    name: str
+    type: str
+    mime_type: str
+    url: str
+    snippet: str | None       # leading text, unless excludeContentSnippets
+
+
+class DownloadOut(TypedDict):
+    content_base64: str
+    mime_type: str
+    size_bytes: int
+
+
 class CommentsOut(TypedDict):
     comments: list[CommentOut]
 
@@ -87,3 +102,11 @@ def comment_out(comment: Any) -> CommentOut:
 
 def document_out(doc: Any) -> DocumentOut:
     return {"id": doc.id, "name": doc.name, "type": doc.type, "url": doc.url}
+
+
+SNIPPET_CHARS = 500
+
+
+def file_metadata_out(doc: Any, snippet: str | None) -> FileMetadataOut:
+    return {"id": doc.id, "name": doc.name, "type": doc.type, "mime_type": doc.mime_type,
+            "url": doc.url, "snippet": snippet}

@@ -74,9 +74,12 @@ the Drive, Docs, Sheets, and Slides APIs enabled — the same prerequisites as G
 Python quickstart. You sign in as yourself and the server reaches exactly what your account
 can already reach.
 
-**Tools:** `open_document`, `read_text`, `list_comments`, `get_comment`, `comments_by_cell`,
-`create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`, `authenticate` — each
-with structured output and read-only/destructive annotations.
+**Tools:** `get_file_metadata`, `read_file_content`, `download_file_content`, `list_comments`,
+`get_comment`, `comments_by_cell`, `create_comment`, `reply_comment`, `resolve_comment`,
+`reopen_comment`, `authenticate` — each with structured output and read-only/destructive
+annotations. The first three carry the same names and parameters as Google's Drive MCP server
+and the claude.ai Drive connector, so habits transfer; `fileId` also accepts a share URL,
+which neither of theirs does.
 
 **Authorizing without a terminal.** In a client that supports MCP URL elicitation (Claude Code
 v2.1.76+), just ask for a document: the tool reports missing credentials, the model calls
@@ -136,10 +139,10 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 |---|---|---|---|---|---|
 | `search_files` | Find files by Drive query — `title`, `fullText`, `mimeType`, `modifiedTime`, `parentId`, `owner`, `sharedWithMe` | `drive.files.list` (`q=`) | ✅ | ✅ | ✗ *planned* |
 | `list_recent_files` | Recently touched files, by `recency` / `lastModified` / `lastModifiedByMe` | `drive.files.list` (`orderBy`) | ✅ | ✅ | ✗ *planned* |
-| `get_file_metadata` | Name, type, owner, times, plus a content snippet | `drive.files.get` | ✅ | ✅ | ⚠️ `open_document` *(rename + widen)* |
+| `get_file_metadata` | Name, type, owner, times, plus a content snippet | `drive.files.get` | ✅ | ✅ | ✅ `get_file_metadata` |
 | `get_file_permissions` | Who the file is shared with, and at what role | `drive.permissions.list` | ✅ | ✅ | ✗ *planned* |
-| `read_file_content` | Natural-language text of a file; optionally comments inlined. 13 mime types incl. PDF, Office, ODF, PNG/JPEG | `files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get` (+ `drive.comments.list`) | ✅ | ✅ | ⚠️ `read_text` *(rename; Google types only; no `includeComments`)* |
-| `download_file_content` | Raw bytes as base64, with an export mime type for Google-native files | `files.export` / `files.get(alt=media)` | ✅ | ✅ | ⚠️ library only (`Document.export()`), not exposed |
+| `read_file_content` | Natural-language text of a file; optionally comments inlined. 13 mime types incl. PDF, Office, ODF, PNG/JPEG | `files.export` + `docs.documents.get` / `sheets…values.get` / `slides.presentations.get` (+ `drive.comments.list`) | ✅ | ✅ | ✅ `read_file_content` *(Google-native types only)* |
+| `download_file_content` | Raw bytes as base64, with an export mime type for Google-native files | `files.export` / `files.get(alt=media)` | ✅ | ✅ | ✅ `download_file_content` |
 | `create_file` | Create or upload — text or base64 content, or an empty Doc/Sheet/Slides/folder | `drive.files.create` + media upload | ✅ | ✅ | ✗ *planned* |
 | `copy_file` | Duplicate, with optional new title and parent | `drive.files.copy` | ✅ | ✅ | ✗ *planned* |
 | `update_file` | **Metadata only — rename and move.** Does *not* touch content | `drive.files.update` (`name`, `parents`) | ✗ | ✅ | ✗ *planned* |
@@ -150,15 +153,57 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 | — | Reply to a comment thread | `drive.replies.create` | ✗ | ✗ | ✅ `reply_comment` |
 | — | Resolve or reopen a thread (an *action reply*, not a PATCH) | `drive.replies.create` | ✗ | ✗ | ✅ `resolve_comment`, `reopen_comment` |
 | — | Map a Sheets comment back to **the cell it is about** | `files.export` (XLSX) → parse `threadedComments` → A1 | ✗ | ✗ | ✅ `comments_by_cell` |
-| — | Preview a Doc **as if suggestions were accepted or rejected** | `docs.documents.get(suggestionsViewMode=…)` | ✗ | ✗ | ✅ `read_text(suggestions=…)` |
+| — | Preview a Doc **as if suggestions were accepted or rejected** | `docs.documents.get(suggestionsViewMode=…)` | ✗ | ✗ | ⚠️ library only (`Doc.as_text(suggestions=…)`) |
+| — | Fold comment threads **into** the document text, anchored where they were left | `drive.comments.list` + unique quoted-text match | ✗ | ✅ | ✅ `read_file_content(includeComments=True)` |
 | — | **Edit an existing Doc** — replace, insert, append, delete a range | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | **Edit an existing Sheet** — write, append rows, clear | `sheets…values.update` / `.append` / `.clear` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | **Edit an existing Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | Browser consent from inside the MCP client | OAuth loopback + MCP URL elicitation | n/a *hosted* | n/a *built in* | ✅ `authenticate` |
 
+Two notes on the rows we now match. Our `read_file_content` reaches **Google-native types
+only** — Docs, Sheets, Slides — not their 13 mime types; Drive converts a PDF or a PNG into a
+Doc by OCR, but doing that *creates a file*, so it is not a read and does not belong behind a
+read-only tool. And `includeComments` anchors a thread by **unique quoted-text match**, because
+the Drive comment anchor is an opaque range id with no decodable position: a quote appearing
+twice, or not at all, is reported unanchored rather than guessed.
+
 **Neither of the others can edit an existing file's content.** `create_file` uploads a *new*
 file; `update_file` only renames or moves. Read down the `batchUpdate` rows — that is the
 difference, and it is structural rather than a matter of tool count.
+
+### Markdown out, Markdown in
+
+A Google Doc exports as `text/markdown` — `download_file_content(exportMimeType="markdown")`,
+or `Doc.as_markdown()` in the library. It is Drive's own conversion, so headings, lists, tables
+and links survive, unlike `as_text()`, which is text runs only.
+
+That turns a Doc into a usable *source* for a Markdown toolchain rather than a dead end. CSA's
+internal **`document-pipeline`** plugin already consumes exactly this: Markdown → tagged
+**PDF/UA-1**, with a design-rule preflight, composition review, citations and CSA brand styling.
+**A public version is planned.** Drive also *imports* `text/markdown` back into a Doc, so the
+loop closes:
+
+```
+Google Doc --export markdown--> document-pipeline --> branded, accessible PDF/UA-1
+     ^                                                              |
+     +------- import markdown (planned: create_file) <-- revised ---+
+```
+
+Draft and review where the comments are, typeset where the brand rules are, put the result back
+where it can be reviewed again. The export half ships today; the import half arrives with
+`create_file`.
+
+**Formats differ by file type**, and the table is probed rather than assumed
+([`experiments/export-formats/RESULTS.md`](./experiments/export-formats/RESULTS.md)):
+
+| Type | Exports as |
+|---|---|
+| **Docs** | `markdown` · `pdf` · `docx` · `odt` · `html` · `rtf` · `epub` · `txt` · `zip` |
+| **Sheets** | `csv` · `tsv` · `xlsx` · `ods` · `pdf` · `zip` |
+| **Slides** | `pdf` · `pptx` · `odp` · `txt` — **no Markdown, no HTML** |
+
+Ask for one a file cannot produce and the error names the ones it can, rather than becoming a
+400 from Google.
 
 ### Planned — capabilities no server exposes yet
 
@@ -255,7 +300,9 @@ This library is a building block for MCP servers / agents / automations acting *
 | [`research/server-landscape.md`](./research/server-landscape.md) | Source-verified survey of prior-art servers that handle Google comments. |
 | [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md) | **The MCP server spec** (phase 2). Transport, tool surface, config, error mapping, security posture. |
 | [`research/mcp-server-design.md`](./research/mcp-server-design.md) · [`research/mcp-protocol-notes.md`](./research/mcp-protocol-notes.md) | **Superseded** by the spec above — earlier MCP design + protocol notes, kept for history only. |
-| [`experiments/`](./experiments/) | Runnable **empirical probes** (with dated `RESULTS.md`): `anchor-probe`, `comment-lifecycle`, `docs-suggestions`, `sheets-cellmap`. Probe beats docs. |
+| [`docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md`](./docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md) | **Shape review before growth.** The library has one axis (per-file); the roadmap adds a second (account-scoped). Where each planned item lands, and what must not happen. |
+| [`research/drive-mcp-servers-and-api-surface.md`](./research/drive-mcp-servers-and-api-surface.md) | What Google's and the claude.ai connector's tools **actually** do, read from live schemas, plus the full Drive v3 / Docs v1 method inventory. |
+| [`experiments/`](./experiments/) | Runnable **empirical probes** (with dated `RESULTS.md`): `anchor-probe`, `comment-lifecycle`, `docs-suggestions`, `sheets-cellmap`, `export-formats`. Probe beats docs. |
 | [`CHANGELOG.md`](./CHANGELOG.md) | What changed in each refresh, and why. |
 
 ## Three things worth knowing

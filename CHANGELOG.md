@@ -1,5 +1,72 @@
 # Changelog
 
+## 2026-08-25 — v0.4.0 (tool names aligned with the other Drive MCP servers; export formats)
+
+Roadmap items #1 and #6 from [`TODO.md`](./TODO.md). The content tools now carry the same
+names and parameters as Google's Drive MCP server and the claude.ai Drive connector, so a
+user's habits transfer between them — and `Document.export()` finally reaches MCP.
+
+### Changed (breaking)
+
+- **Tools renamed:** `open_document` → **`get_file_metadata`**, `read_text` →
+  **`read_file_content`**.
+- **The `file` parameter is now `fileId`**, and `comment_id` is `commentId`, across every
+  tool. One convention for the whole server beats a split where three tools say `fileId` and
+  seven say `file`, and the convention worth converging on is the ecosystem's.
+- **No aliases were kept.** Two tools whose only job is to redirect to other tools degrade
+  exactly what this change improves — a model picking the right tool. The package is one day
+  old with a known user base who receive it through `desktopSetup`.
+- `fileId` still accepts a **share URL** as well as a bare id, which neither of the other
+  servers does. Everything their clients send works here; so does what users actually paste.
+
+### Added
+
+- **`download_file_content(fileId, exportMimeType)`** — a file's bytes, base64, converted.
+  Takes a mime type or a short alias (`markdown`, `pdf`, `docx`, `odt`, `html`, `epub`, `csv`,
+  `tsv`, `xlsx`, `pptx`, `odp`). Refuses an export the file type cannot produce **locally**,
+  naming the ones it can, and caps a single response at 10 MiB.
+- **`read_file_content(includeComments=True)`** — folds comment threads into the text with
+  `[[Cn]]` markers plus a labelled thread listing. Anchoring is by *unique quoted-text match*:
+  the Drive anchor is an opaque range id with no decodable position, so a quote occurring
+  twice or not at all is reported unanchored rather than guessed.
+- **`get_file_metadata`** returns a content snippet, suppressible with
+  `excludeContentSnippets` — matching the connector's behaviour.
+- **Library:** `Doc.as_markdown()`, `Document.export_formats`, and `EXPORT_FORMATS` at the
+  package root. `Document.export()` now validates the format instead of passing anything
+  through to Google.
+- **`FakeBackend(comments=…)`** seeds raw comment dicts, so fixtures can set fields
+  `create_comment()` cannot — `quotedFileContent` above all.
+
+### Fixed
+
+- **`Document.export()` accepted formats Drive cannot produce**, which surfaced as an opaque
+  400. It now resolves against a per-type table.
+
+### Probed, not assumed
+
+`drive.about.get(exportFormats)` — [`experiments/export-formats/RESULTS.md`](./experiments/export-formats/RESULTS.md).
+It corrected the roadmap twice: **export formats differ by document type** (a Doc exports
+Markdown; a deck exports only PDF/PPTX/ODP/text, so one shared enum would have handed most
+callers an unfixable error), and **"images" was wrong** — only *drawings* export PNG/JPEG/SVG,
+and the library cannot open a drawing.
+
+It also found the thing that makes format breadth worth more than a few mime types: **Markdown
+round-trips.** `text/markdown` exports from a Doc *and* imports back into one, so a Doc becomes
+a usable source for a Markdown toolchain — CSA's `document-pipeline` plugin takes Markdown to
+tagged PDF/UA-1, and a public version is planned.
+
+### Internal
+
+- `mcp/` split into a `_tools/` package, one module per axis (`content`, `comments`, `auth`,
+  shared `_base`). `server.py` went from 265 lines to 49 and is composition only. This is what
+  lets the planned flavour switch be a *registration-time* filter — a tool the flavour excludes
+  is simply not there, rather than existing and refusing.
+- **New SDK trap recorded:** a pydantic `Field(alias="fileId")` on a tool parameter publishes
+  the right schema and then **fails every call** — the SDK dumps the validated model by alias
+  and calls `fn(**kwargs)`, so the handler receives `fileId=`, raises `TypeError`, and surfaces
+  as a message-suppressed `UnexpectedToolError`. A camelCase wire name must be the *literal*
+  Python parameter name. (Also: `Tool.input_schema`, not `inputSchema`.)
+
 ## 2026-08-25 — v0.3.1 (the unauthorized message is now actionable)
 
 An unauthorized server starts by design, so its error text is the entire user experience.
