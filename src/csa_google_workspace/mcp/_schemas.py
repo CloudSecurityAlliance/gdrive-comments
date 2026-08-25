@@ -91,6 +91,20 @@ class PermissionsOut(TypedDict):
     writers: int
 
 
+class ConfigOut(TypedDict):
+    """What this server may do. Reasons from the allowlist are deliberately absent — they are
+    written for whoever reviews the configuration and may name people or unannounced work."""
+    read_scope: str                    # "every file" | "no files" | "N listed file(s)"
+    readable_file_ids: list[str]       # empty when read_scope is every/none
+    modify_scope: str
+    modifiable_file_ids: list[str]
+    capabilities_enabled: list[str]
+    capabilities_disabled: list[str]
+    read_only: bool
+    blocked_reason: str | None         # why something permits nothing, when it does
+    help_resource: str                 # where the full reference lives
+
+
 class CommentsOut(TypedDict):
     comments: list[CommentOut]
 

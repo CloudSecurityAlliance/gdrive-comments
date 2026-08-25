@@ -200,10 +200,22 @@ the Drive, Docs, Sheets, and Slides APIs enabled — the same prerequisites as G
 Python quickstart. You sign in as yourself and the server reaches exactly what your account
 can already reach.
 
+**The server explains its own configuration.** Two resources and a tool, so nobody has to
+guess — and so the model can explain a refusal instead of retrying it:
+
+| | |
+|---|---|
+| `csa-gw://config` | the **effective** policy right now: what may be read, what may be changed, which mutation kinds are on, and — when something permits nothing — the diagnosis of why |
+| `csa-gw://help/configuration` | the reference: every variable, the accepted forms, what each kind of mistake looks like, and the limits worth knowing before you hit them |
+| `describe_configuration` | the same facts as structured output, for clients that do not surface resources. Needs no credentials, so it answers even when nothing else does |
+
+Allowlist *reasons* are deliberately absent from all three: they are written for whoever
+reviews the configuration and may name people or unannounced work.
+
 **Tools:** `search_files`, `list_recent_files`, `get_file_metadata`, `get_file_permissions`,
 `read_file_content`, `download_file_content`, `list_comments`,
 `get_comment`, `comments_by_cell`, `create_comment`, `reply_comment`, `resolve_comment`,
-`reopen_comment`, `authenticate` — each with structured output and read-only/destructive
+`reopen_comment`, `describe_configuration`, `authenticate` — each with structured output and read-only/destructive
 annotations. The first six carry the same names and parameters as Google's Drive MCP server
 and the claude.ai Drive connector, so habits transfer; `fileId` also accepts a share URL,
 which neither of theirs does.
