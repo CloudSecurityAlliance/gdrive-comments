@@ -110,3 +110,55 @@ def test_provider_does_not_resolve_credentials_until_called(monkeypatch):
         raise AssertionError("credentials must not resolve at construction time")
     monkeypatch.setattr(_config.auth, "load_cached_credentials", explode)
     _config.WorkspaceProvider(_config.Settings(token_path="/nope", read_only=False))   # must not raise
+
+
+# --- the not-authorized message has to be actionable ------------------------
+#
+# This text is the entire user experience of an unauthorized server: it starts fine, and
+# this is what comes back from every tool. It has to be enough for the model to hand the
+# user something they can actually run.
+
+def test_unauthorized_message_offers_the_no_terminal_path_first(monkeypatch):
+    def missing(tp, ro):
+        raise exceptions.AuthError("no cached credentials")
+    monkeypatch.setattr(_config.auth, "load_cached_credentials", missing)
+    provider = _config.WorkspaceProvider(_config.Settings(token_path="/nope/token.json"))
+
+    with pytest.raises(exceptions.AuthError) as ei:
+        provider()
+    msg = str(ei.value)
+    assert "authenticate" in msg                    # the in-client path, mentioned first
+    assert msg.index("authenticate") < msg.index("login")
+
+
+def test_unauthorized_message_gives_a_runnable_command(monkeypatch):
+    monkeypatch.setattr(_config.auth, "load_cached_credentials",
+                        lambda tp, ro: (_ for _ in ()).throw(exceptions.AuthError("none")))
+    monkeypatch.setattr(_config.sys, "argv", ["/abs/path/to/csa-google-workspace-mcp"])
+    provider = _config.WorkspaceProvider(_config.Settings(token_path="/nope/token.json"))
+
+    with pytest.raises(exceptions.AuthError) as ei:
+        provider()
+    # The absolute path, not the bare name: on Windows the launcher is frequently not on
+    # PATH, so a bare command name is not something the user can paste anywhere.
+    assert "/abs/path/to/csa-google-workspace-mcp login" in str(ei.value)
+
+
+def test_unauthorized_message_says_where_it_looked(monkeypatch):
+    monkeypatch.setattr(_config.auth, "load_cached_credentials",
+                        lambda tp, ro: (_ for _ in ()).throw(exceptions.AuthError("none")))
+    provider = _config.WorkspaceProvider(_config.Settings(token_path="/some/where/token.json"))
+    with pytest.raises(exceptions.AuthError) as ei:
+        provider()
+    assert "/some/where/token.json" in str(ei.value)
+
+
+def test_unauthorized_message_tells_the_model_to_ask_the_user(monkeypatch):
+    """Otherwise a capable model tries to fix it itself — shell commands, file hunting."""
+    monkeypatch.setattr(_config.auth, "load_cached_credentials",
+                        lambda tp, ro: (_ for _ in ()).throw(exceptions.AuthError("none")))
+    provider = _config.WorkspaceProvider(_config.Settings(token_path="/nope/token.json"))
+    with pytest.raises(exceptions.AuthError) as ei:
+        provider()
+    low = str(ei.value).lower()
+    assert "ask the user" in low or "the user" in low

@@ -16,6 +16,7 @@ Two design points worth stating, because both are easy to "fix" into bugs:
 from __future__ import annotations
 
 import os
+import sys
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -26,7 +27,42 @@ from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
 DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"  # nosec B105 - a path
-LOGIN_HINT = "run `csa-google-workspace-mcp login` to authorize"
+def _launcher() -> str:
+    """The command a user can actually paste, absolute where we can determine it.
+
+    A bare `csa-google-workspace-mcp` is useless when the launcher is not on PATH — the
+    normal case on Windows, where pipx puts it somewhere PATH does not reach until a new
+    shell. argv[0] is the real path we were started from, so prefer it.
+    """
+    argv0 = (sys.argv[0] or "").strip()
+    if argv0 and (os.sep in argv0 or (os.altsep and os.altsep in argv0)):
+        return argv0
+    return "csa-google-workspace-mcp"
+
+
+def unauthorized_message(token_path: str, reason: str) -> str:
+    """What every tool returns while the server is unauthorized.
+
+    This text IS the user experience of an unauthorized server: it starts fine by design,
+    so this message is the only thing anyone sees. It has to (a) offer the no-terminal path
+    first, (b) give a command that can be pasted verbatim, (c) say where it looked, and
+    (d) tell the model to ask the user rather than trying to fix it itself — a capable model
+    given only "no credentials" will otherwise start hunting the filesystem, which is
+    exactly what happened before this message said so.
+    """
+    return (
+        f"Not authorized to reach Google yet ({reason}). "
+        f"No usable token at {token_path}.\n"
+        f"\nTwo ways to fix this, easiest first:\n"
+        f"  1. Call the `authenticate` tool. It sends the user a Google sign-in link right "
+        f"here — no terminal needed. (Requires a client that supports URL elicitation; "
+        f"Claude Code does, Claude Desktop does not yet.)\n"
+        f"  2. Or have the user run this in a terminal, once:\n"
+        f"       {_launcher()} login\n"
+        f"\nAsk the user to do one of these and wait for them. Do not retry other tools "
+        f"until authorization completes, and do not try to locate or read credential files "
+        f"yourself."
+    )
 
 _TRUE = {"1", "true", "yes", "on"}
 
@@ -78,7 +114,7 @@ class WorkspaceProvider:
         try:
             creds = auth.load_cached_credentials(self._settings.token_path, self._settings.read_only)
         except AuthError as e:
-            raise AuthError(f"{e}; {LOGIN_HINT}") from e
+            raise AuthError(unauthorized_message(self._settings.token_path, str(e))) from e
         workspace = Workspace.from_credentials(creds, read_only=self._settings.read_only)
         self._local.workspace = workspace
         return workspace
