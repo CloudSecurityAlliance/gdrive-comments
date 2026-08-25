@@ -15,6 +15,7 @@ Two design points worth stating, because both are easy to "fix" into bugs:
 """
 from __future__ import annotations
 
+import os
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from ..exceptions import AuthError
 from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
+DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"  # nosec B105 - a path
 LOGIN_HINT = "run `csa-google-workspace-mcp login` to authorize"
 
 _TRUE = {"1", "true", "yes", "on"}
@@ -31,17 +33,26 @@ _TRUE = {"1", "true", "yes", "on"}
 
 @dataclass(frozen=True)
 class Settings:
-    """Server configuration. Note there is no `client_secrets`: the server only ever reads
-    and refreshes a cached token, and a cached token carries its own client_id/secret.
-    Client secrets are a `login` concern."""
+    """Server configuration.
+
+    `client_secrets` is **optional and never needed to start**: reading and refreshing a
+    cached token requires no client file, because the token carries its own client_id and
+    secret. It is used only by the in-band `authenticate` tool, which has to construct a
+    fresh consent URL and therefore does need the client. Absent, that tool reports how to
+    run `login` instead; everything else works unchanged.
+    """
     token_path: str = DEFAULT_TOKEN_PATH
     read_only: bool = False
+    client_secrets: str | None = None
 
 
 def settings_from_env(env: Mapping[str, str]) -> Settings:
+    explicit = env.get("CSA_GW_CLIENT_SECRETS")
+    default = os.path.expanduser(DEFAULT_CLIENT_SECRETS_PATH)
     return Settings(
         token_path=env.get("CSA_GW_TOKEN") or DEFAULT_TOKEN_PATH,
         read_only=(env.get("CSA_GW_READ_ONLY") or "").strip().lower() in _TRUE,
+        client_secrets=explicit or (default if os.path.exists(default) else None),
     )
 
 

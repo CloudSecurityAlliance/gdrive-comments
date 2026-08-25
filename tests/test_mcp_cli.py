@@ -77,7 +77,12 @@ def test_unknown_argument_is_rejected_on_stderr(capsys):
 
 # --- login is the only interactive path --------------------------------------
 
-def test_login_without_client_secrets_reports_the_missing_variable(capsys):
+def test_login_without_client_secrets_reports_the_missing_variable(tmp_path, monkeypatch, capsys):
+    # Must patch the default path: otherwise this passes or fails depending on whether the
+    # developer happens to have ~/.csa_google_workspace/client_secret.json — green in CI,
+    # red on a machine that has actually used the tool.
+    monkeypatch.setattr("csa_google_workspace.mcp._login.DEFAULT_CLIENT_SECRETS_PATH",
+                        str(tmp_path / "absent.json"))
     assert cli.main(["login"], {}) == 2
     assert "CSA_GW_CLIENT_SECRETS" in capsys.readouterr().err
 

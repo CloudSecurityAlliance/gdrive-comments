@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-08-25 — v0.3.0 (authorize from inside the client)
+
+- **New `authenticate` tool — browser consent without leaving your MCP client.** When a tool
+  reports missing credentials, calling `authenticate` sends the Google consent URL to the
+  client via **URL-mode elicitation** (MCP revision `2026-07-28`); you sign in, a loopback
+  listener catches the redirect, and the token is cached. No terminal step.
+
+  URL mode exists precisely for this: the sensitive exchange happens out-of-band and never
+  passes through the model's context. Note this is *not* MCP's OAuth framework, which is
+  HTTP-only and runs the other way round (authenticating a client **to** a server); this
+  server authorizes **outbound** to Google, which for stdio the spec says to do from the
+  environment.
+
+  **Requires a client that supports URL elicitation** — Claude Code does (v2.1.76+); Claude
+  Desktop does not yet. Where it is unavailable the tool degrades to the previous behaviour:
+  a clear instruction to run `csa-google-workspace-mcp login`. And because both clients read
+  the same token file, authorizing once in Claude Code also authorizes Claude Desktop.
+
+- **`Settings.client_secrets`** (new, optional). Never needed to start the server or to
+  refresh a cached token — a token carries its own client id and secret. It is used only to
+  build a fresh consent URL for `authenticate`, and resolves from `CSA_GW_CLIENT_SECRETS` or
+  `~/.csa_google_workspace/client_secret.json`.
+
+- `create_server(get_workspace, settings=…)` — passing `settings` registers `authenticate`.
+  Omitting it yields the previous nine-tool surface, so existing embedders are unaffected.
+
+Internal: `_auth_flow.py` drives the loopback flow directly rather than through
+`InstalledAppFlow.run_local_server()`, which prints the consent URL to stdout (the JSON-RPC
+channel) and blocks the calling thread. The token exchange is given the full redirect URI so
+oauthlib validates the `state` parameter.
+
 ## 2026-08-25 — v0.2.5 (`login` finds the client secrets by itself)
 
 - **`login` no longer requires `CSA_GW_CLIENT_SECRETS`.** It falls back to
