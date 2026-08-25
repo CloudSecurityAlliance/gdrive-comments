@@ -1,6 +1,6 @@
 from . import exceptions  # noqa: F401
 from ._formats import EXPORT_FORMATS
-from .allowlist import AllowlistError, Listing, load_allowlist
+from .allowlist import AllowlistError, Listing, parse_setting
 from .backend import Backend
 from .base import Document
 from .comments import Author, Comment, CommentCollection, Location, Reply
@@ -22,6 +22,6 @@ __all__ = [
     "Backend", "Document", "CommentCollection", "DetachedError",
     "FileRef", "FileCollection", "Permission",
     # policy / allowlisting (#82)
-    "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "load_allowlist",
+    "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",
 ]
-__version__ = "0.9.1"
+__version__ = "0.10.0"

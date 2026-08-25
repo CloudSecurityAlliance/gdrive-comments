@@ -1,61 +1,46 @@
-"""The write allowlist: which files a capability may touch. #82's second dimension.
+"""The file allowlists: which documents may be read, and which may be changed.
+
+**Configured entirely through the environment. There is no file to read.**
+`CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY` hold the lists themselves, so they live
+in the same place the MCP server is declared — a shell, `.mcp.json`, Claude Desktop's config.
+
+That is a deliberate restriction rather than a missing feature. The client configuration is
+the artifact an operator controls and can *see*: reading it tells them exactly what the agent
+may touch. A path adds an indirection whose target can change without the config changing,
+puts the real policy somewhere nobody looks, and makes the path itself a thing that can be
+mistyped or redirected. The cost is that a long list is less pleasant in JSON than in a file;
+that is the trade, and it is accepted knowingly.
 
 **Deliberately the simplest thing that works: a flat list of document URLs.** No folders, no
-patterns, no wildcards. Folders are the interesting design problem and they are *not* solved
-here — see `TODO.md`, "Folders in the allowlist", for why folder-as-rule is harder and more
-dangerous than it looks. Until that is settled, a folder URL in the file is a **loud error**,
-not a silently-inert entry.
+patterns, no wildcards beyond `*`. Folders are the interesting design problem and they are
+*not* solved here — see `TODO.md`, "Folders in the allowlist", for why folder-as-rule is
+harder and more dangerous than it looks. Until that is settled, a folder URL is a **loud
+error**, not a silently-inert entry.
 
 Enforcement is by **file id**, not by URL string. Every URL form for the same document
-normalises to the same id, so a pasted `/edit?tab=t.0` link and a bare id are the same entry —
-and a *copy* of an allowlisted document has a different id and is therefore not allowlisted,
-which is the correct default.
+normalises to the same id, so a pasted `/edit?tab=t.0` link is the same entry as a
+`?usp=sharing` one — and a *copy* of an allowlisted document has a different id and is
+therefore not allowlisted, which is the correct default.
 
-Format — plain text, one URL per line, `#` starts a comment:
+**Three outcomes, and the third one is the point.** A value is either `*` (everything), a set
+of document URLs, or **unusable** — and unusable always means *nothing permitted*, never
+"ignore the setting". Because "unusable" covers a lot of ground, `diagnose_url` and
+`diagnose_setting` say which kind it is.
 
-    # CSA WG documents this agent may write to.
+Format — one URL per entry, newlines or commas separating them, `#` starting a comment. In a
+JSON `env` block, `\n` gives you the multi-line form and keeps the reasons:
+
     https://docs.google.com/document/d/1oW1BM…/edit?tab=t.0   # CCM v5 mapping, per WG lead
     https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
 
-Plain text rather than TOML/YAML for three reasons: it reviews like code in a `git diff`, the
-trailing comment gives #82's required *reason per entry* for free on the same line, and it
-needs no dependency on Python 3.10 (where `tomllib` does not exist). Per-capability scoping —
-"this file may be commented on but not edited" — will need a structured format; that is a
-deliberate later migration, noted in `TODO.md`.
-
-**Fail closed.** A configured-but-unusable allowlist (missing file, unreadable, no valid
-entries, any malformed line) raises rather than degrading to "no restrictions". The failure
-mode being avoided is an operator who believes writes are scoped when they are not.
-
-**Two scopes, configured independently** — `CSA_GW_ALLOWLIST_READ` and
-`CSA_GW_ALLOWLIST_MODIFY`. Reads and mutations are different risks and want different answers:
-the common posture is `READ=*` (matching what Google's and Anthropic's Drive servers do, since
-the agent already sees whatever the user's credentials see) with `MODIFY` a short, reviewed
-list. Splitting them is what makes that expressible.
-
-**`*` means everything, and must be typed.** An unset scope is **fail closed** in the MCP
-server: no files, so every operation of that kind is refused with a message saying what to set.
-Unrestricted access is available — as a literal `*` entry — but it is a thing somebody chose,
-and it logs a warning every time.
-
-**Three ways to configure each**, because they suit different deployments:
-
-* **The default paths** `~/.csa_google_workspace/allowlist-read.txt` and
-  `allowlist-modify.txt`, used automatically when they exist — next to
-  `client_secret.json`, and for the same reason. A curated list distributed by a
-  setup script needs no per-user configuration at all, which matters when the people
-  running it did not write it.
-* **`CSA_GW_ALLOWLIST_MODIFY=/path/to/file`** — an explicit path.
-* **`CSA_GW_ALLOWLIST_MODIFY=<urls>`** — the URLs *inline*, for an MCP client's JSON `env`
-  block where shipping a second file is awkward. Any value containing `://` is read as URLs
-  rather than a path; a filesystem path does not contain that.
+Per-capability scoping — "this file may be commented on but not edited" — would need a
+structured format. That is a deliberate later decision, noted in `TODO.md`.
 """
 from __future__ import annotations
 
 import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from urllib.parse import urlparse
 
 from . import exceptions as exc
@@ -151,6 +136,11 @@ def diagnose_url(text: str) -> str | None:
                     f"documentation rather than a real link. Open the document and copy the "
                     f"URL from your browser's address bar")
 
+    if _looks_like_a_path(candidate):
+        return ("that looks like a file path. The allowlist is set in the environment, not "
+                "read from a file — put the document URLs in the variable itself, separated "
+                "by newlines or commas")
+
     if "://" not in candidate and "/" not in candidate:
         return ("that looks like a bare file id rather than a URL. The allowlist needs the "
                 "full URL — a link can be opened and checked by whoever reviews it, and a "
@@ -170,7 +160,18 @@ def diagnose_url(text: str) -> str | None:
             "https://docs.google.com/document/d/<id>/edit")
 
 
-def diagnose_setting(variable: str, value: str | None, default_path: str) -> str:
+def _looks_like_a_path(candidate: str) -> str | bool:
+    """Path-shaped, and therefore a mistake worth naming rather than a mystery.
+
+    Checked *after* URL extraction, so a real URL is never mistaken for a path."""
+    if "://" in candidate:
+        return False
+    return (candidate.startswith(("/", "./", "../", "~"))
+            or bool(re.match(r"^[A-Za-z]:[\\/]", candidate))       # C:\... or C:/...
+            or candidate.endswith((".txt", ".list", ".conf", ".cfg", ".json", ".yaml", ".yml")))
+
+
+def diagnose_setting(variable: str, value: str | None) -> str:
     """Why a whole configuration field yields nothing — the fail-closed case.
 
     Distinguishing "unset" from "set but empty" matters: they look identical in behaviour and
@@ -178,7 +179,8 @@ def diagnose_setting(variable: str, value: str | None, default_path: str) -> str
     template was filled in with a blank, or a shell expanded an undefined variable to nothing.
     """
     if value is None:
-        return f"{variable} is not set, and there is no file at {default_path}."
+        return (f"{variable} is not set. It holds the list itself — there is no file to "
+                f"create.")
     if not value.strip():
         return (f"{variable} is set but empty — which is not the same as unset. If it came "
                 f"from a config template or an unexpanded shell variable, that is the thing "
@@ -266,40 +268,13 @@ def parse_allowlist(text: str, *, source: str = "<string>") -> Listing:
     return Listing(all_files=False, entries=tuple(entries))
 
 
-def is_inline(value: str) -> bool:
-    """Is this configuration value a list of URLs rather than a path?
+def parse_setting(value: str, *, variable: str) -> Listing:
+    """Parse one allowlist environment variable.
 
-    `://` is the discriminator: a URL always has it and a filesystem path does not. Chosen
-    over a second environment variable so there is one place to look, and over guessing by
-    `os.path.exists` — which would silently reinterpret a mistyped path as a URL list.
-    """
-    return "://" in value
-
-
-def parse_inline(value: str, *, source: str = "inline") -> Listing:
-    """Parse URLs given directly in configuration.
-
-    Newlines separate entries, so a JSON `env` value can use `\n` and keep the `# reason`
-    comments. Commas, semicolons and whitespace also separate entries **when the value has no
-    `#`** — that condition is what stops a separator and a comment fighting over the same
-    character, and it means the ambiguous case is simply not reachable.
+    Newlines separate entries and keep the `# reason` comments — a JSON `env` value writes
+    that as `\n`. Commas, semicolons and whitespace also separate entries **when the value
+    contains no `#`**; that condition is what stops a separator and a comment fighting over
+    the same character, so the ambiguous case is unreachable rather than merely unlikely.
     """
     text = value if "#" in value else re.sub(r"[,;\s]+", "\n", value.strip())
-    return parse_allowlist(text, source=source)
-
-
-def load_allowlist(path: str) -> Listing:
-    """Read and validate an allowlist file. Raises `AllowlistError` on any problem."""
-    resolved = Path(path).expanduser()
-    try:
-        text = resolved.read_text(encoding="utf-8")
-    except FileNotFoundError as e:
-        raise AllowlistError(
-            f"no allowlist file at {resolved}. It was configured, so this is a hard failure "
-            f"rather than a fallback to unrestricted writes.") from e
-    except OSError as e:
-        raise AllowlistError(f"cannot read the allowlist at {resolved}: {e}") from e
-    listing = parse_allowlist(text, source=str(resolved))
-    log.info("allowlist loaded from %s: %s", resolved,
-             "EVERY file" if listing.all_files else f"{len(listing.entries)} file(s)")
-    return listing
+    return parse_allowlist(text, source=variable)

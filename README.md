@@ -107,29 +107,24 @@ listing a file, and a file outside `MODIFY` cannot be reached by enabling a capa
 so the thing worth bounding is what it can **break**. That is also what Google's and Anthropic's
 servers do — they simply have no way to narrow it.
 
-Each variable takes any of three forms:
+**The list lives in the configuration — there is no allowlist file.** That is a deliberate
+restriction, not a missing feature: the client config is the artifact you control and can *see*,
+so reading it tells you exactly what the agent may touch. A path would add an indirection whose
+target can change without the config changing, put the real policy somewhere nobody looks, and
+make the path itself a thing that can be mistyped or redirected. The cost is that a long list is
+less pleasant in JSON than in a file. That is the trade.
+
+Each variable is either `*`, or the document URLs themselves — newlines (`\n` in JSON) or commas
+separating them, `#` starting a comment:
 
 ```bash
-CSA_GW_ALLOWLIST_MODIFY='https://docs.google.com/document/d/AAA…/edit'   # URLs inline
-CSA_GW_ALLOWLIST_MODIFY=/etc/csa/wg-documents.txt                        # a path
-CSA_GW_ALLOWLIST_MODIFY='*'                                              # everything, deliberately
+CSA_GW_ALLOWLIST_READ='*'
+CSA_GW_ALLOWLIST_MODIFY='https://docs.google.com/document/d/AAA…/edit  # CCM mapping
+https://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker'
 ```
 
-…and with nothing set, `~/.csa_google_workspace/allowlist-read.txt` and `allowlist-modify.txt`
-are used **if they exist** — next to `client_secret.json`, and for the same reason: a curated
-list distributed by a setup script should need no per-user configuration, because the people
-running it did not write it.
-
-The file format is one URL per line, `#` starts a comment, and the comment is the *reason* — so
-`git diff` shows both what was granted and why:
-
-```
-# Documents this agent may change. Everything else is read-only.
-https://docs.google.com/document/d/1oW1BM…/edit?tab=t.0   # CCM v5 mapping, per WG lead
-https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
-```
-
-A line containing just `*` means every file. It logs a warning each time it is read, because
+The comment is the *reason*, so a `git diff` of your config shows both what was granted and why.
+A value of just `*` means every file, and logs a warning each time it is read, because
 unrestricted access should be visible.
 
 **Three outcomes, and the third one is the point.** A value is either `*` (everything), a set of
@@ -139,13 +134,14 @@ than "invalid value":
 
 | What you set | What you are told |
 |---|---|
-| nothing at all | `CSA_GW_ALLOWLIST_MODIFY is not set, and there is no file at ~/.csa_google_workspace/allowlist-modify.txt.` |
+| nothing at all | `CSA_GW_ALLOWLIST_MODIFY is not set. It holds the list itself — there is no file to create.` |
 | an empty value | `set but empty — which is not the same as unset. If it came from a config template or an unexpanded shell variable, that is the thing to fix.` |
 | `…/document/d/` | `the URL stops after '/d/', so the file id is missing.` |
 | `…/document/d/AAA…/edit` | `it contains '…', so it looks like a placeholder copied from documentation rather than a real link.` |
 | a bare file id | `that looks like a bare file id rather than a URL … a link can be opened and checked by whoever reviews it.` |
 | a folder URL | `folders are not supported in the allowlist yet. List the individual document URLs inside it instead.` |
 | `https://example.com/x` | `the host is 'example.com', which is not a Google Docs or Drive address.` |
+| a file path | `that looks like a file path. The allowlist is set in the environment, not read from a file.` |
 
 Those texts arrive on stderr at startup **and** in the error from any tool that was refused — so
 the model can relay the specific problem instead of "permission denied". The diagnosis itself is
@@ -155,6 +151,8 @@ Five more things worth knowing:
 
 - **Unset means nothing is permitted.** The server still starts — a startup crash reaches you as
   an opaque "server failed to start" — and tells you on stderr exactly which variable to set.
+- **There is no file, and a path-shaped value says so** rather than being read or silently
+  ignored.
 - **Matching is by file id**, so every URL form for one document is one entry, and a **copy** of
   an allowlisted document has a different id and is *not* included. Entries survive renames and
   moves.

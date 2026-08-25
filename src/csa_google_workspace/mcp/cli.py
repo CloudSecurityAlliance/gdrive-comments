@@ -37,20 +37,21 @@ environment:
   CSA_GW_ALLOWLIST_READ    which files may be READ
   CSA_GW_ALLOWLIST_MODIFY  which files may be CHANGED, added to, or deleted
 
-                         Both FAIL CLOSED: unset means nothing is permitted. Each takes
-                         a path, the URLs inline (any value containing `://`), or `*`
-                         for unrestricted. Unset falls back to
-                         ~/.csa_google_workspace/allowlist-{read,modify}.txt if present.
+                         Both FAIL CLOSED: unset means nothing is permitted. Each holds
+                         either `*` or the document URLs themselves — there is no
+                         allowlist file, and a path-shaped value is reported as a
+                         mistake rather than read.
 
                          The usual posture:
                            CSA_GW_ALLOWLIST_READ=*
                            CSA_GW_ALLOWLIST_MODIFY=https://docs.google.com/document/d/AAA/edit
 
-                         File format: one Google document URL per line, `#` starts a
-                         comment and the comment is the reason. A line of just `*` means
-                         every file. Configured-but-unusable is a hard failure, never a
-                         fallback to unrestricted access. Folders are not supported yet
-                         and are rejected loudly.
+                         Entries are separated by newlines or commas; `#` starts a
+                         comment and the comment is the reason. A value of just `*` means
+                         every file. Anything unusable is a hard failure, never a
+                         fallback to unrestricted access, and the error says which kind
+                         of mistake it was. Folders are not supported yet and are
+                         rejected loudly.
   CSA_GW_CLIENT_SECRETS  OAuth client secrets JSON (`login` only; defaults to
                          ~/.csa_google_workspace/client_secret.json if that exists)
 """

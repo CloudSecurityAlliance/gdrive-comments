@@ -131,15 +131,18 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
             is the complete permitted list, not a delta, so it reviews like code. Default
             refuses rename/move, trash and share. Cannot be widened in-band.
       - [x] **Per-URL scope** — **done 2026-08-25** (v0.8.0, split by access kind in v0.9.0).
-            Two flat lists of document URLs, `CSA_GW_ALLOWLIST_READ` and
-            `CSA_GW_ALLOWLIST_MODIFY`, matched by file id. **Both fail closed**: unset permits
+            Two flat lists of document URLs held **in the environment** —
+            `CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY`, no file — matched by
+            file id. **Both fail closed**: unset permits
             nothing, and `*` must be typed. Folder URLs are a **loud error**, not an inert
             entry. `search_files` results are filtered to the read scope. Denials log at
             WARNING.
-      - [ ] **Still open in the basic form:** per-capability scope (a structured format — this
-            file cannot express "commentable but not editable"), optional expiry, dead-entry
-            detection (an allowlisted file that has been trashed), and a **dry-run** answering
-            "what would this run touch" before it touches anything.
+      - [ ] **Still open in the basic form:** per-capability scope ("commentable but not
+            editable" needs a structured value, which the flat list cannot express), optional
+            expiry, dead-entry detection (an allowlisted file that has been trashed), and a
+            **dry-run** answering "what would this run touch" before it touches anything.
+            Note that any structured format has to stay *environment-shaped* — the decision
+            that the policy lives in the client config, not in a file, is deliberate.
       - [x] **The no-allowlist default: decided and flipped** (v0.9.0). Unset is fail closed
             in the MCP server; `*` is the typed escape hatch. The library keeps a permissive
             default, because `from_credentials` is called by a developer who has made a
