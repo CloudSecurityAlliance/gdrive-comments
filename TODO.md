@@ -276,39 +276,40 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       `v0.4.0`–`v0.10.1` were development versions: bumped in code as each change landed, never
       tagged, never published, all shipped together as `v0.11.0`. `CHANGELOG.md` now says so at
       the top instead of implying eleven installable releases.
-- [ ] **Reconcile tags against PyPI properly.** Published: 0.1.0, 0.1.1, 0.1.2, 0.2.0–0.2.5,
-      0.3.1, 0.11.0. Tags exist for all but 0.1.0 and 0.1.1, which predate the habit. Decide
-      whether to tag those retroactively (probably yes, pointing at the right commits) and
-      whether to *not* tag the development versions (probably yes — a tag should mean released).
-- [ ] **Can a third party verify that PyPI 0.2.3 is git v0.2.3?** Releases go out via Trusted
-      Publishing, so the provenance exists in principle. Confirm PEP 740 attestations are
-      actually attached to each artifact, and write down the command to check one. "Built by
-      GitHub Actions from this tag" is only useful if someone can see it without asking us.
-- [ ] **State the authorship honestly, and pick a mechanism.** Every one of the 113 non-bot
-      commits is authored `Kurt Seifried <kurt@seifried.org>`, and a large share of the content —
-      code, tests, specs, this file — was written by an AI assistant working under his
-      direction and review. That is not a problem, but it *is* a fact about the supply chain of
-      a security library, and it should be in the repository rather than inferable from prose
-      style.
-      Options: a `PROVENANCE.md`; `Co-authored-by:` / `Assisted-by:` trailers from here on; or a
-      paragraph in `README.md` and `SECURITY.md`. Whichever it is, say who reviewed as well as
-      who wrote — review is the part that carries the weight, and the answer today is "one
-      person", which is worth knowing.
-      Relevant beyond honesty: Google app verification and the CASA assessment on 1.0's path
-      both ask who builds and maintains the thing.
-- [ ] **Reconstruct the decision timeline while it is still cheap.** Unusually, most of the
-      *why* is already written down — commit messages here record reasoning, not just changes,
-      and `docs/superpowers/specs/` and `plans/` carry the design arguments. What is missing is
-      an index: which decision was made when, what it superseded, and where the probe or
-      transcript that settled it lives. `experiments/*/RESULTS.md` are dated; the specs mostly
-      are not.
-- [ ] **Full-history secret scan.** A targeted check found none of the shapes `CLAUDE.md`
-      forbids ever committed — no `client_secret*`, `credentials.json`, `token*.json`, `.pem`,
-      no probe transcripts. Run `gitleaks`/`trufflehog` over the whole history anyway and record
-      the result, because "I grepped the filenames" is not the same claim.
-- [ ] **Decide a yank policy.** Nothing published looks harmful — 0.1.x/0.2.x are simply older
-      surfaces, and 0.3.1 works. But *when* we would yank rather than supersede is a decision
-      to make before it is urgent.
+- [x] **Reconcile tags against PyPI** — done 2026-08-25, and it corrected this entry, which
+      claimed 0.1.0 and 0.1.1 were untagged. **They were tagged**; the real discrepancy was that
+      v0.1.0's changelog heading did not use the versioned format, so it read as unpublished.
+      Now enforced rather than remembered: `tests/test_release_history.py` (offline, in CI) plus
+      `scripts/check_release_history.py` for the three-way reconcile against tags and PyPI. It
+      found the discrepancy on its first run, which is the argument for having it. Development
+      versions stay untagged — a tag should mean released.
+- [x] **PEP 740 attestations** — done 2026-08-25. They *are* attached: every artifact carries a
+      bundle naming publisher `GitHub` and repository
+      `CloudSecurityAlliance/csa-google-workspace`. The command to check one yourself, without
+      asking us, is in `PROVENANCE.md`.
+- [x] **Authorship stated** — done 2026-08-25 in [`PROVENANCE.md`](PROVENANCE.md): all non-bot
+      commits are authored by Kurt Seifried, a large share of the content was AI-drafted under
+      his direction and review, and **review is single-person** — which is the part that carries
+      the weight, so it is named rather than implied.
+- [x] **Decision index** — done 2026-08-25: [`docs/DECISIONS.md`](docs/DECISIONS.md). What was
+      settled when, what evidence settled it, and which earlier belief it replaced. Corrections
+      are rows of their own rather than edits, because being able to see that we believed
+      something wrong is more useful than a clean record.
+- [x] **Full-history secret scan** — done 2026-08-25 across 177 commits. **trufflehog: 0
+      verified, 0 unverified.** gitleaks: one hit, triaged as a false positive — the
+      `generic-api-key` rule firing on the entropy of a sentence containing
+      `CSA_GW_INTEGRATION=1` — now allowlisted in `.gitleaks.toml` *with the reasoning*, so a
+      real finding is not lost in noise. Both commands are in `RELEASING.md`'s pre-tag checklist.
+- [x] **Yank policy** — done 2026-08-25, in [`PROVENANCE.md`](PROVENANCE.md#yanking). The bar is
+      "installing this by accident is harmful", not "this is old": a leaked credential, data
+      loss or corruption, a write the configured policy should have refused (the policy failing
+      *open*), or an artifact not matching its tag. Not for an outdated surface or embarrassment.
+- [ ] **Consider `Assisted-by:` trailers going forward.** `PROVENANCE.md` states the division of
+      labour at project level; per-commit attribution would make it greppable. Deferred because
+      it is only useful if applied consistently, and retrofitting 113 commits is not worth a
+      history rewrite.
+- [ ] **Add `scripts/check_release_history.py` to CI**, guarded so an unreachable PyPI is not a
+      failure. Today it is a pre-tag manual step, which means it runs when someone remembers.
 
 This overlaps **C1** (the API-stability and deprecation policy): both are about what the project
 owes someone who depends on it. C1 says what will not change; this says what did.
