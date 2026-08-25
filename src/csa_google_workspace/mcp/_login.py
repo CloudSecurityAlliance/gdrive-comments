@@ -23,9 +23,13 @@ def login(settings: Settings, env: Mapping[str, str], *, out=None) -> int:
         print("CSA_GW_CLIENT_SECRETS is not set — point it at your OAuth client secrets JSON",
               file=sys.stderr)
         return 2
+    # Deliberately does not echo the client-secrets path. It is only a path, not the
+    # credential — but printing anything derived from a variable named `*secret*` is a trap
+    # worth not setting: if that value ever became the file's *contents*, this line would
+    # leak for real. CodeQL flags it (py/clear-text-logging-sensitive-data) and, while the
+    # literal finding is a false positive, the shape it objects to is one we can simply not have.
     print(f"Opening a browser to authorize access to your Google Workspace files.\n"
-          f"  client secrets: {client_secrets}\n"
-          f"  token cache:    {settings.token_path}", file=out)
+          f"  token cache: {settings.token_path}", file=out)
     Workspace.from_oauth(client_secrets, settings.token_path, read_only=settings.read_only)
     print("Authorized. The MCP server can now start without prompting.", file=out)
     return 0
