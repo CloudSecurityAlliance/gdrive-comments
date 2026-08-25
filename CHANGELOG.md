@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-08-25 — v0.2.2 (CSA-branded OAuth success page)
+
+- **Branded consent-complete page.** After `login`, the browser now shows a CSA-branded page
+  instead of `google_auth_oauthlib`'s plain "The authentication flow has completed." It uses
+  the General CSA palette, Azo Sans via the CSA TypeKit with a full fallback stack (it still
+  reads correctly offline), the official logo inlined verbatim, and `prefers-color-scheme`
+  dark support.
+
+  `success_message=` cannot carry markup — `_RedirectWSGIApp` hardcodes `Content-type:
+  text/plain` — so the page is delivered by swapping that class for the duration of the flow.
+  The swap changes the response body only and still records `last_request_uri`, which carries
+  the authorization code and the `state` oauthlib validates. Every failure path falls back to
+  the stock page, including a renamed upstream class: a cosmetic feature must not be able to
+  break authorization.
+
+- **Docs:** `CLAUDE.md` now states the project's **public-by-default** policy explicitly —
+  everything is developed in the open except credential-bearing material, which is exactly one
+  artifact (the CSA OAuth client) and only because Google's API ToS require it.
+
+No library behaviour changes.
+
 ## 2026-08-25 — v0.2.1 (`login --force`; wrong-client detection)
 
 Fixes a failure that is invisible by construction: a cached token can be valid, unexpired,

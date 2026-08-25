@@ -11,7 +11,11 @@ It is meant to be **embedded in AI tooling** — MCP servers, agent/LLM plugins,
 - **Shipped (all live-verified; the six phase plans are in `docs/superpowers/plans/`):** comment management (list/filter/create/reply/resolve/reopen/edit/soft-delete); content read (`as_text`/`export`, `Doc.paragraphs`, `Sheet.values`/`tabs`, `Slides.slides`/notes); content write (Docs `replace_text`/`insert_text`/`append_text`/`delete_range`; Sheets `update`/`append_rows`/`clear`; Slides `replace_text`/`insert_text` + `Slide.shape_ids`; `batch_update` on each; all `read_only`-gated); Sheets comment→cell mapping (`Comment.location`, `sheet.comments_by_cell`, `create_comment(cell=)` deep-link); Docs suggestions read (`Doc.suggestions`, `as_text(suggestions="accepted"|"rejected"|"inline")`).
 - **Deferred (tracked, not bugs):** `Location.tab` resolution (multi-tab cell disambiguation via `workbook.xml`+rels); a caching pass (accessors re-fetch per call, by design); accept/reject of suggestions & true cell-anchored comment creation — API-impossible, reserved for a future `PlaywrightBackend`.
 
-**Phase 2 is the built-in MCP server** (`csa_google_workspace.mcp`) — spec approved, **not yet implemented** (no `src/csa_google_workspace/mcp/` on disk yet). Locked decisions: local single-user **stdio** first, the official `mcp` SDK's bundled **FastMCP**, writes on by default, an `[mcp]` optional extra + console entry point. Read [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md) before touching it; its architecture deliberately **mirrors the library's own composition** (`create_server(workspace)` parallels `Workspace`; per-axis `register_*` tool producers parallel `CommentsMixin` / `documents/`).
+**Phase 2 — the built-in MCP server (`csa_google_workspace.mcp`) — shipped in v0.2.2.** A local stdio server: nine tools with structured output and read-only/destructive annotations, per-user OAuth, an `[mcp]` optional extra, and the `csa-google-workspace-mcp` console script. Spec: [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md) — read it before touching the module; its architecture deliberately **mirrors the library's own composition** (`create_server(get_workspace)` parallels `Workspace`; per-axis `register_*` tool producers parallel `CommentsMixin` / `documents/`).
+
+Four SDK facts that cost time to find, all verified against `mcp` 2.1.0 rather than docs: **`mcp.server.fastmcp` no longer exists** (`FastMCP` became `MCPServer` in SDK 2.0); **sync tool handlers run on worker threads** (`anyio.to_thread.run_sync`), which is why the `Workspace` provider is thread-local — a shared one would put a non-thread-safe `googleapiclient` client on several threads; **a plain exception becomes `UnexpectedToolError` with the message suppressed**, so user-facing text must be raised as the SDK's `ToolError`; and **a bare `dict` return is not serializable for structured output**, hence the `TypedDict`s in `_schemas.py` (which must come from `typing_extensions` below Python 3.12, or pydantic silently emits no schema).
+
+**Still not exposed through MCP:** content-write tools, Docs suggestions, the document-text Resource, and the comment-triage Prompt. **File allowlisting (#82) is a phase-2 dependency** and must land before any public/External OAuth client — see `TODO.md`.
 
 Earlier drafts called this a *TypeScript* MCP server and *comments-only* — both obsolete; ignore that framing wherever it survives in older docs.
 
@@ -94,13 +98,47 @@ Three test tiers: **unit** (`tests/`, offline, gates CI) · **integration** (`te
 real Google API, `CSA_GW_INTEGRATION=1`) · **oauth** (`tests/oauth/`, interactive browser
 login + token-file handling, `CSA_GW_OAUTH=1`). The latter two skip unless opted in.
 
+## Public by default
+
+**This project is developed in the open.** Code, specs, plans, design rationale, issues,
+CHANGELOG, and releases all live in this public repository. That is a deliberate policy, not
+an accident of where the repo happened to be created.
+
+**The only thing that goes somewhere private is credential-bearing material.** Today that is
+exactly one artifact: the CSA OAuth client, which lives in the private
+`CloudSecurityAlliance-Internal/CSA-Plugins` repo because [Google's API
+ToS](https://developers.google.com/terms) forbid embedding developer credentials in open
+source projects. Nothing else is withheld — not internal rationale, not security findings,
+not the deployment path, not the fact that CSA uses this.
+
+**The test is narrow and mechanical:** *does this artifact contain a credential?* If no, it
+is public. "It reveals how we work", "it mentions an internal repo", or "it would be
+embarrassing" are not reasons to make something private.
+
+Two things follow from that, and both have already come up:
+
+- **Obscurity is not a control.** The public `DesktopSetup` scripts name the private repo and
+  the PyPI package openly; what protects the credential is *repo access*, enforced by a `gh
+  api` probe that 404s for non-members. Renaming a file to look innocuous would conceal
+  nothing from anyone reading the public half, while training people to run vaguely-named
+  scripts that fetch credentials — a bad reflex to build anywhere, and a worse one at a
+  security organisation.
+- **Security findings get written down, publicly.** This repo's history records real ones —
+  a stdout write that would corrupt the JSON-RPC channel, a cached token silently bound to
+  the wrong OAuth client, a `TypedDict` that fails only below Python 3.12. Each is in a
+  commit message and a CHANGELOG entry because someone hitting the same thing should be able
+  to find it. `SECURITY.md` states the threat model for the same reason.
+
+If a change genuinely cannot be public, say why explicitly in the PR rather than routing
+around it quietly.
+
 ## Working in this repo
 
 - **Branch + PR for every change** (never commit to `main`); merge when CI is green. Branch names use conventional prefixes (`feat/`, `fix/`, `docs/`, `chore/`).
 - **Commits** use conventional prefixes with short imperative subjects — the set actually in use is `docs:` · `feat:` · `fix:` · `test:` · `ci:` · `chore:` · `security:` · `enh:` · `release:` (e.g. `fix: preserve deleted comment metadata`). A PR body should say what behavior changed, which tests were run, link the related plan/spec, and call out any Google API or credential implications.
 - **Public API is the package root.** Anything users are meant to touch is re-exported from `csa_google_workspace/__init__.py` and listed in `__all__` — including the types embedders need for custom backends (`Backend`, `Document`, `CommentCollection`, `DetachedError`). Adding a user-facing type means adding it there. Note that `tests/test_public_api.py` only asserts a required **subset** of `__all__` — it will not catch a new type you forgot to export, so that step is on you.
 - **CI** (`.github/workflows/tests.yml`, runs on every PR): a `lint` job (ruff + mypy), a `test` matrix (pytest + coverage, Python 3.10–3.13, `fail_under=85`), and a `security` job (`pip-audit` + `bandit`). GitHub **CodeQL** default-setup also runs. Two gotchas seen: CodeQL flags `"host" in url`-style substring checks (`py/incomplete-url-substring-sanitization`) even in test assertions; and an OAuth **scope grant ≠ API enablement** — a scoped token still 403s `SERVICE_DISABLED` until each API (Docs/Sheets/Slides) is enabled in the Cloud project.
-- **New work follows the plan-then-execute rhythm:** write a spec/plan under `docs/superpowers/`, then implement TDD (unit tests via `FakeBackend`). Keep `README.md`'s manifest and `CHANGELOG.md` in sync. (Phase 1 — the library — is complete and on PyPI; phase 2 is the built-in MCP server, spec'd but unbuilt.)
+- **New work follows the plan-then-execute rhythm:** write a spec/plan under `docs/superpowers/`, then implement TDD (unit tests via `FakeBackend`). Keep `README.md`'s manifest and `CHANGELOG.md` in sync. (Phase 1 — the library — and phase 2 — the MCP server — are both complete and on PyPI.)
 - **Style:** ruff (`E,F,W,I,B,UP`, line-length 120) and mypy both gate CI. `E702` is **deliberately ignored** — one-line `a = …; b = …` is a pervasive house style here, not a defect; match it rather than splitting lines. The google-api/auth stack ships no stubs, so those imports are `ignore_missing_imports`.
 - **Dependabot** opens `pip` + `github-actions` bumps and `dependabot-auto-merge.yml` auto-merges patch/minor once tests pass. Actions are **pinned to commit SHAs** — keep new ones pinned (`uses: owner/action@<sha>  # vX.Y.Z`).
 - `main` **is branch-protected and enforced for admins**: `lint`, `test (3.10–3.13)`, and `security` must pass; direct and force pushes are blocked. Required approving reviews are set to 0 so the solo/AI PR flow merges on green checks.
