@@ -98,6 +98,7 @@ class ConfigOut(TypedDict):
     readable_file_ids: list[str]       # empty when read_scope is every/none
     modify_scope: str
     modifiable_file_ids: list[str]
+    profile: str | None                # the CSA_GW_PROFILE name, if one is set
     capabilities_enabled: list[str]
     capabilities_disabled: list[str]
     read_only: bool

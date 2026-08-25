@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from .. import auth
 from ..allowlist import ALL_SYNONYMS, AllowlistError, Listing, diagnose_setting, parse_setting
 from ..exceptions import AuthError
-from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy, Scope
+from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, PROFILES, Policy, Scope
 from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
@@ -74,6 +74,9 @@ def unauthorized_message(token_path: str, reason: str) -> str:
 _TRUE = {"1", "true", "yes", "on"}
 
 
+PROFILE_VAR = "CSA_GW_PROFILE"
+
+
 @dataclass(frozen=True)
 class Settings:
     """Server configuration.
@@ -88,6 +91,7 @@ class Settings:
     read_only: bool = False
     client_secrets: str | None = None
     policy: Policy | None = None            # None -> Policy.default()
+    profile: str | None = None              # the CSA_GW_PROFILE name, for reporting
 
 
 def policy_from_env(env: Mapping[str, str]) -> Policy:
@@ -107,7 +111,18 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
     """
     _reject_legacy_allowlist(env)
     capabilities = _capabilities_from_env(env)
-    enabled = frozenset(capabilities.enabled if capabilities is not None else DEFAULT_ENABLED)
+    profile = _profile_from_env(env)
+    if capabilities is not None:
+        if profile is not None:
+            # Both set. Honour the explicit list — it is the more specific statement — but say
+            # so, because the operator plainly believed the profile was doing something.
+            log.warning("both %s and CSA_GW_CAPABILITIES are set; the explicit capability "
+                        "list wins and the profile is ignored", PROFILE_VAR)
+        enabled = frozenset(capabilities.enabled)
+    elif profile is not None:
+        enabled = PROFILES[profile]
+    else:
+        enabled = DEFAULT_ENABLED
     return Policy(
         enabled=enabled,
         read=_scope_from_env(env, READ_ALLOWLIST_VAR),
@@ -157,6 +172,25 @@ def _reject_legacy_allowlist(env: Mapping[str, str]) -> None:
             f"{MODIFY_ALLOWLIST_VAR}, because reads and mutations want different answers. The "
             f"usual posture is {READ_ALLOWLIST_VAR}=* with {MODIFY_ALLOWLIST_VAR} set to your "
             f"list of document URLs. Refusing to guess which you meant.")
+
+
+def _profile_from_env(env: Mapping[str, str]) -> str | None:
+    """`CSA_GW_PROFILE` — a named capability set, so "what may this install do?" has an answer
+    shorter than a list.
+
+    Profiles cover capabilities only. The file allowlists are deliberately *not* profiled:
+    which documents a deployment may touch is specific to that deployment, and a named default
+    for it would be a named default for "which of your files an agent may change".
+    """
+    name = (env.get(PROFILE_VAR) or "").strip().lower()
+    if not name:
+        return None
+    if name not in PROFILES:
+        raise ValueError(
+            f"{PROFILE_VAR}={name!r} is not a known profile. Choose one of: "
+            f"{', '.join(f'{p} ({len(c)} capabilities)' for p, c in PROFILES.items())}. "
+            f"Or set CSA_GW_CAPABILITIES to an explicit list instead.")
+    return name
 
 
 def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:
@@ -210,6 +244,7 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         read_only=(env.get("CSA_GW_READ_ONLY") or "").strip().lower() in _TRUE,
         client_secrets=explicit or (default if os.path.exists(default) else None),
         policy=policy_from_env(env),
+        profile=_profile_from_env(env),
     )
 
 
@@ -225,6 +260,9 @@ def startup_warnings(settings: Settings) -> list[str]:
     if policy is None:
         return []
     out: list[str] = []
+    if settings.profile:
+        out.append(f"profile: {settings.profile} — "
+                   f"{', '.join(sorted(PROFILES[settings.profile])) or 'no mutations at all'}")
     for label, scope, variable in (
             ("READ", policy.read, READ_ALLOWLIST_VAR),
             ("MODIFY", policy.modify, MODIFY_ALLOWLIST_VAR)):

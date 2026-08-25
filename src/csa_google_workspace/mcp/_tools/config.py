@@ -38,6 +38,7 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
             "readable_file_ids": sorted(policy.read.ids),
             "modify_scope": policy.modify.describe(),
             "modifiable_file_ids": sorted(policy.modify.ids),
+            "profile": settings.profile,
             "capabilities_enabled": sorted(policy.enabled),
             "capabilities_disabled": sorted(set(ALL_CAPABILITIES) - policy.enabled),
             "read_only": settings.read_only,

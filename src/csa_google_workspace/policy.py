@@ -66,6 +66,28 @@ DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COM
 # Google's own MCP server declines to offer at all.
 DEFAULT_DISABLED = frozenset({FILE_UPDATE, FILE_TRASH, FILE_SHARE})
 
+# Named capability sets, so "what may this install do?" has an answer shorter than a list.
+#
+# Profiles cover *capabilities only*. The file allowlists are not profiled and never will be:
+# which documents a deployment may touch is inherently specific to that deployment, and a
+# named default for it would be a named default for "which of your files an agent may change".
+# That is the one thing nobody else gets to decide.
+PROFILES: dict[str, frozenset[str]] = {
+    # Read and report. Cannot change anything, whatever the allowlists say.
+    "reader": frozenset(),
+    # Join the conversation: comment, reply, resolve. Cannot alter document *content*, cannot
+    # delete a thread, cannot touch the file itself. The useful default for review work.
+    "commenter": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE}),
+    # Also edit content, tidy comments, and create new files. Still cannot rename, move, trash
+    # or share an existing one.
+    "editor": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COMMENT_EDIT,
+                         COMMENT_DELETE, CONTENT_WRITE, FILE_CREATE}),
+    # Everything, including the three Google's own server declines to offer.
+    "full": frozenset(ALL_CAPABILITIES),
+}
+# `editor` is exactly the historical default set. `tests/test_policy.py` holds them together —
+# not an `assert` here, which bandit rightly flags and `python -O` strips.
+
 READ = "read"
 MODIFY = "modify"
 

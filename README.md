@@ -84,8 +84,22 @@ enforcement, it owes you an equivalent, and these are it.
 |---|---|---|
 | `CSA_GW_ALLOWLIST_READ` | which files may be **read** | **nothing** — fail closed |
 | `CSA_GW_ALLOWLIST_MODIFY` | which files may be **changed, added to or deleted** | **nothing** — fail closed |
-| `CSA_GW_CAPABILITIES` | **what kind** of mutation is permitted at all | the safe default: comment and content writes on; file rename/move, trash and share off |
+| `CSA_GW_PROFILE` | **what kind** of mutation, by name — `reader`, `commenter`, `editor`, `full` | `editor` |
+| `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile |
 | `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | — |
+
+**Profiles**, so "what may this install do?" has a short answer:
+
+| Profile | May |
+|---|---|
+| `reader` | nothing — read and report only, whatever the allowlists say |
+| `commenter` | comment, reply, resolve. **Not** edit content, delete a thread, or touch the file |
+| `editor` | the above, plus edit content, tidy comments, create new files |
+| `full` | everything, including rename/move, trash and share |
+
+Profiles cover **capabilities only**. The allowlists are deliberately not profiled: which
+documents a deployment may touch is specific to that deployment, and a named default for it
+would be a named default for *"which of your files an agent may change"*.
 
 Each is a ceiling and none can widen another: a capability that is off cannot be reached by
 listing a file, and a file outside `MODIFY` cannot be reached by enabling a capability.
@@ -98,7 +112,7 @@ listing a file, and a file outside `MODIFY` cannot be reached by enabling a capa
   "env": {
     "CSA_GW_ALLOWLIST_READ": "*",
     "CSA_GW_ALLOWLIST_MODIFY": "https://docs.google.com/document/d/AAA…/edit  # CCM mapping\nhttps://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker",
-    "CSA_GW_CAPABILITIES": "comment.create,comment.reply,comment.resolve"
+    "CSA_GW_PROFILE": "commenter"
   }
 } } }
 ```
@@ -182,6 +196,12 @@ Five more things worth knowing:
 - **Folders are not supported yet** and a folder URL is rejected loudly rather than silently
   matching nothing. The reasons are involved enough to be written down — see `TODO.md`,
   *"Folders in the allowlist"*.
+
+**Claude Desktop has no shell**, so whatever is in its `claude_desktop_config.json` `env` block
+*is* the server's entire environment — there is nowhere else for these to come from. Claude Code
+takes them the same way, or via `claude mcp add -e KEY=VALUE`. Either way, ask the server what
+it ended up with rather than guessing: read `csa-gw://config`, or call
+`describe_configuration`.
 
 **This is a first, deliberately simple control** — capability gating plus flat lists of
 documents. It is not the last word: a broader model is being researched. What is here is meant

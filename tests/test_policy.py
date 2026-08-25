@@ -346,3 +346,49 @@ def test_an_empty_scope_without_a_reason_still_produces_a_usable_message():
     with pytest.raises(exc.ReadOnlyError) as e:
         ws.open(DOC_ID).create_comment("x")
     assert "no modify allowlist is configured" in str(e.value)
+
+
+# --- named capability profiles ---------------------------------------------
+
+def test_the_editor_profile_is_exactly_the_historical_default():
+    """Held together here rather than by a module-level assert, which bandit flags and
+    `python -O` strips. If they drift, an install silently changes what it may do."""
+    assert policy.PROFILES["editor"] == policy.DEFAULT_ENABLED
+
+
+def test_profiles_ascend():
+    """Each profile must be a superset of the one before, or "pick the next one up" stops
+    being sound advice."""
+    from itertools import pairwise  # 3.10+, and exactly this idiom
+    names = ["reader", "commenter", "editor", "full"]
+    for narrower, wider in pairwise(names):
+        assert policy.PROFILES[narrower] < policy.PROFILES[wider], f"{narrower} ⊄ {wider}"
+
+
+def test_full_is_every_capability_and_reader_is_none():
+    assert policy.PROFILES["full"] == set(policy.ALL_CAPABILITIES)
+    assert policy.PROFILES["reader"] == frozenset()
+
+
+def test_no_profile_names_an_unknown_capability():
+    for name, capabilities in policy.PROFILES.items():
+        unknown = capabilities - set(policy.ALL_CAPABILITIES)
+        assert not unknown, f"profile {name} names {unknown}"
+
+
+def test_commenter_cannot_touch_content_or_the_file_itself():
+    """The distinction the profile exists to make: joining the conversation is not editing."""
+    commenter = policy.PROFILES["commenter"]
+    for forbidden in (policy.CONTENT_WRITE, policy.COMMENT_DELETE, policy.FILE_CREATE,
+                      policy.FILE_UPDATE, policy.FILE_TRASH, policy.FILE_SHARE):
+        assert forbidden not in commenter, forbidden
+
+
+def test_a_commenter_profile_refuses_a_content_edit_end_to_end():
+    ws = Workspace(PolicyBackend(FakeBackend(dict(FILES)),
+                                 Policy(enabled=policy.PROFILES["commenter"])))
+    doc = ws.open("f")
+    doc.create_comment("allowed")
+    with pytest.raises(exc.ReadOnlyError) as e:
+        doc.batch_update([{"insertText": {"location": {"index": 1}, "text": "x"}}])
+    assert "content.write" in str(e.value)
