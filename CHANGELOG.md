@@ -6,7 +6,7 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.12.1, 0.12.2, 0.13.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
@@ -72,7 +72,7 @@ deck's placeholders hold no literal text to match. That is precisely the case th
 description warns about, and the fix was `list_slides`, which returns the shape ids that
 `insert_slide_text` needs. Slides content is shape-addressed, not linear like a Doc's.
 
-## 2026-08-25 — v0.12.2 (stop advertising authority the tools cannot exercise)
+## 2026-08-25 — v0.12.2 (stop advertising authority the tools cannot exercise) — not released; shipped in v0.13.0
 
 Found the right way: a model read `describe_configuration`, planned a task on the strength of
 it, and discovered the tools did not exist.
@@ -118,7 +118,7 @@ it is the configured interim setting for the CSA-internal rollout (`CSA_GW_ALLOW
 chosen deliberately and documented in `CSA-Plugins/internal-setup/README.md`. Narrow it by
 replacing `*` with document URLs.
 
-## 2026-08-25 — v0.12.1 (disable the built-in Drive connector — it bypasses the policy)
+## 2026-08-25 — v0.12.1 (disable the built-in Drive connector — it bypasses the policy) — not released; shipped in v0.13.0
 
 Documentation, plus two lines of model-facing guidance. No behaviour change.
 
