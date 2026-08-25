@@ -160,23 +160,37 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 file; `update_file` only renames or moves. Read down the `batchUpdate` rows — that is the
 difference, and it is structural rather than a matter of tool count.
 
-### Where all three still stop
+### Planned — capabilities no server exposes yet
 
-These exist in the API and no server exposes them. Listed because the same table that shows a
-gap in our column should be honest about the gaps in everyone's.
+The Google APIs reach considerably further than any of the three servers currently do. These
+are the ones worth building, in the same format, with the tool names they would ship under.
+Sequencing is in [`TODO.md`](./TODO.md); the two tables together are the roadmap.
 
-| Capability | Google API | Why it is interesting |
-|---|---|---|
-| **Approval workflow** | `drive.approvals.start` / `approve` / `decline` / `reassign` / `cancel` / `comment` | A document review workflow, already in the API, next to the comment workflow this library owns |
-| **Version history** | `drive.revisions.list` / `get` / `update` / `delete` | Read a prior version, diff two, pin one |
-| **Change feed** | `drive.changes.list` / `watch` | Incremental sweep instead of re-reading everything |
-| **Push notification** | `drive.files.watch` | React to a new comment instead of polling |
-| **Labels / classification** | `drive.files.modifyLabels` / `listLabels` | Data governance |
-| **Slide thumbnails** | `slides.presentations.pages.getThumbnail` | Let a model actually *see* a deck |
-| **Durable range annotation** | `sheets…developerMetadata.search` | Survives edits, unlike A1 ranges |
-| **Docs structure & styling** | `docs.documents.batchUpdate` — **37 of 40 request types unused** by anyone: tables, styles, headers, images, named ranges, tabs, smart chips | The largest single gap in the whole comparison |
+| Tool | What it does | Google API | Google | Claude | Our tool |
+|---|---|---|---|---|---|
+| `list_approvals` | Approvals open on a file, with reviewers and state | `drive.approvals.list` / `.get` | ✗ | ✗ | ✗ *planned* |
+| `start_approval` | Ask named reviewers to approve a document, with a due date | `drive.approvals.start` | ✗ | ✗ | ✗ *planned* |
+| `respond_to_approval` | Approve, decline, or comment on an approval as a reviewer | `drive.approvals.approve` / `.decline` / `.comment` | ✗ | ✗ | ✗ *planned* |
+| `reassign_approval` | Hand a review to someone else; cancel one you started | `drive.approvals.reassign` / `.cancel` | ✗ | ✗ | ✗ *planned* |
+| `list_revisions` | Version history — who changed what, when | `drive.revisions.list` / `.get` | ✗ | ✗ | ✗ *planned* |
+| `read_revision` | The text of an earlier version, so two can be compared | `drive.revisions.get` (+ export) | ✗ | ✗ | ✗ *planned* |
+| `pin_revision` | Mark a version `keepForever` so autocleanup cannot drop it | `drive.revisions.update` | ✗ | ✗ | ✗ *planned* |
+| `list_changes` | What changed across a Drive since a token — a sweep that reads only the delta | `drive.changes.list` + `getStartPageToken` | ✗ | ✗ | ✗ *planned* |
+| `list_file_labels` · `set_file_labels` | Read and apply Drive labels — classification and data governance | `drive.files.listLabels` / `.modifyLabels` | ✗ | ✗ | ✗ *planned* |
+| `get_slide_image` | Render a slide to a PNG, so a model can actually *see* a deck | `slides…pages.getThumbnail` | ✗ | ✗ | ✗ *planned* |
+| `find_named_range` · `annotate_range` | Durable anchors that survive edits, instead of fragile A1 ranges and character offsets | `docs` named ranges · `sheets…developerMetadata` | ✗ | ✗ | ✗ *planned* |
+| **Docs structure & formatting** | Tables, styles, headers/footers, footnotes, bullets, images, page breaks, tabs, smart chips — **37 of `batchUpdate`'s 40 request types are unused by anybody** | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ 3 of 40 |
 
-Roadmap and sequencing for all of the above: [`TODO.md`](./TODO.md).
+That last row is the largest gap in the whole comparison, and the most direct answer to "help
+me get work done": today no MCP server can add a table to a document.
+
+**Deliberately not planned.** `drive.files.watch` and `changes.watch` deliver *push*
+notifications, which require a publicly reachable HTTPS endpoint on a verified domain — a local
+stdio server cannot receive them. `list_changes` polling gets the same result without the
+infrastructure, so push waits for a hosted variant, if ever. Also out: shared-drive
+administration (`drives.*`), permanent deletion (`files.delete`, `emptyTrash` — both other
+servers stop at trash, and that is a considered line), and client-side-encryption tokens. None
+of them help anyone review a document.
 
 **Use Google's or Claude's if** you want zero setup, you are reading rather than editing, you
 need PDFs/images/Office files, or you would rather not hand a local tool full-Drive scope.

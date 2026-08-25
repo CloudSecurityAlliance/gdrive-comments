@@ -177,24 +177,33 @@ This is the honest ceiling of the Python client, not a plan — but several item
 
 ### Drive v3 — exposed by nobody, including us
 
-- [ ] **`approvals`** — `start`, `list`, `get`, `approve`, `decline`, `reassign`, `cancel`,
-  `comment`. A **document review workflow in the API.** Adjacent to the comment workflow this
-  project already owns, and the strongest differentiator on this list.
+- [ ] **`approvals`** — a **document review workflow already in the API**, adjacent to the
+  comment workflow this project owns. The strongest item on this list. Ships as four tools:
+  `list_approvals` (`approvals.list`/`get`), `start_approval` (`approvals.start`),
+  `respond_to_approval` (`approve`/`decline`/`comment`), `reassign_approval`
+  (`reassign`/`cancel`). Worth its own brainstorm: an approval is a *state machine*, unlike
+  every tool shipped so far, and the library has no precedent for modelling one.
 - [ ] **`revisions`** — `list`, `get`, `update` (`keepForever`), `delete`. **Version history:**
   read a prior version, diff two revisions, pin one. Obvious pairing with suggestions review.
 - [ ] **`changes`** — `getStartPageToken`, `list`, `watch`. Incremental sync: the correct answer
   to "sweep my documents" instead of re-reading everything, and it directly addresses the
   autonomous-sweep cost `SECURITY.md` worries about.
-- [ ] **`files.watch`** — push notification. A review bot that *reacts* to a new comment rather
-  than polling for one.
+- [ ] ~~**`files.watch`** — push notification.~~ **Not viable for a local server.** Drive push
+  requires a publicly reachable HTTPS endpoint on a *verified domain*; a stdio process behind
+  NAT cannot receive the callback. `changes.list` polling reaches the same outcome without the
+  infrastructure. Revisit only if a hosted variant ever exists.
 - [ ] **`files.modifyLabels` / `listLabels`** — Drive labels, i.e. classification and data
   governance. Plainly relevant to CSA's own work.
 - [ ] `permissions.*` (full: list/create/get/update/delete) — **gated on
   [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)**, see below.
 - [ ] `accessproposals` — resolve "can I have access?" requests.
-- [ ] `drives.*` — shared drive administration.
-- [ ] `files.delete` / `emptyTrash` — **permanent** deletion. Note both other servers stop at
-  trash; that is a considered line and we should think hard before crossing it.
+- [ ] ~~`drives.*` — shared drive administration.~~ Out of scope: it does not help anyone
+  review a document.
+- [ ] ~~`files.delete` / `emptyTrash` — **permanent** deletion.~~ Out of scope for now. Both
+  other servers stop at trash. That is a considered line, and an agent holding full-Drive scope
+  with attacker-influenceable input in front of it is the worst possible holder of an
+  irreversible delete.
+- [ ] ~~`files.generateCseToken`~~ — client-side encryption tokens; no reviewer workflow needs it.
 
 ### Docs v1 — we use 3 of 40 `batchUpdate` request types
 
