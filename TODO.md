@@ -118,7 +118,10 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
       axis exists: `workspace.files` is a `FileCollection` returning `FileRef`s, per the
       structure spec. Live-verified. It was the biggest usability win here — a session no
       longer has to begin with a pasted URL.
-- [ ] **A2** `get_file_permissions` — a read. Not gated.
+- [x] **A2** `get_file_permissions` — **done 2026-08-25** (v0.6.0). A `PermissionsMixin`
+      beside `CommentsMixin`, since permissions are the same shape as comments: one Drive API,
+      identical across all three types. Adds `public` / `writers` roll-ups so the model does
+      not have to derive them. Live-verified.
 - [ ] **A3** `create_file`, `copy_file` — not gated (nothing existing to damage). `create_file`
       takes `text/markdown` and lets Drive convert. → **this completes Google's 8.**
 - [ ] **A4** **#82 file allowlisting.** Not only a gate for A5 — the security control the whole

@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-08-25 — v0.6.0 (who else is in this document?)
+
+Gate **A2** of the [1.0.0 list](./TODO.md).
+
+### Added
+
+- **`get_file_permissions(fileId)`** — every grant on a file: the person, group, domain or
+  `anyone`, and their role. Plus two roll-ups the model would otherwise have to derive and
+  could get wrong: **`public`** (anyone with the link can open it) and **`writers`** (how many
+  grants can change the document).
+- **Library: `doc.permissions`** — a list of `Permission`, with `can_write` (writer and above,
+  not commenter) and `is_public`. Exported from the package root.
+
+### Architecture
+
+Permissions are a **per-file, uniform Drive concern** — one API, identical across
+Docs/Sheets/Slides — so they arrive exactly as comments did: a mixin composed into `Document`,
+with the model beside it. This is the second use of the pattern the
+[structure review](./docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md)
+settled on, and revisions and approvals will be the third and fourth.
+
+**Read only, deliberately.** `share_file` — *creating* a permission — is a separate and gated
+thing: granting an arbitrary address access to a document is an exfiltration primitive, and one
+Google's own MCP server declines to expose. Listing who already has access is not.
+
+`Permission.__repr__` is redacted like `Author`: the email is PII and embedders log these
+objects. It is still on the attribute and still returned by the tool — the tool is *about* who
+has access, so the email is the answer, not a leak. Same rule as comment content.
+
+### Two things the default API response hides
+
+- **`emailAddress` and `displayName` are omitted** from `permissions.list` unless requested,
+  and they are the entire point of the call.
+- **`supportsAllDrives`** — without it, a file on a shared drive reports *no permissions at
+  all*. Both are asserted in `tests/test_apibackend_contract.py`, since `FakeBackend` has no
+  `fields` and no pages.
+
+### Caught by the type checker, not the tests
+
+A stray copy of `list_permissions` landed in `ApiBackend`, shadowing the real one. The suite
+stayed green — it runs entirely on `FakeBackend`, which is precisely the blind spot
+`CLAUDE.md` invariant 4 describes. ruff (`F811`) and mypy (`no-redef`) both caught it. Worth
+recording as evidence that the lint job is not decoration.
+
+### Scorecard
+
+**6 of Google's 8, 6 of Claude's 11**, plus 7 they do not have. Remaining: `create_file`,
+`copy_file` (ungated), and `update_file`, `share_file`, `trash_file` (gated on #82).
+
 ## 2026-08-25 — v0.5.0 (you can find a file now)
 
 Gate **A1** of the [1.0.0 list](./TODO.md). `search_files` and `list_recent_files` — the gap

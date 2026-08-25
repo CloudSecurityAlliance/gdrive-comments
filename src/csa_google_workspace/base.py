@@ -5,6 +5,7 @@ from . import _formats
 from . import exceptions as exc
 from .backend import Backend
 from .comments import Comment, CommentCollection
+from .permissions import PermissionsMixin
 
 MIME_TO_TYPE = {
     "application/vnd.google-apps.document": "document",
@@ -40,8 +41,14 @@ class CommentsMixin:
         return self.comments._wrap(d)
 
 
-class Document(CommentsMixin):
-    """Abstract base. Never instantiated directly — use Workspace.open()."""
+class Document(CommentsMixin, PermissionsMixin):
+    """Abstract base. Never instantiated directly — use Workspace.open().
+
+    Uniform Drive concerns arrive as mixins, one per concern — `CommentsMixin`,
+    `PermissionsMixin`, and later revisions/approvals. They are all the same shape: one
+    Drive API, identical across Docs/Sheets/Slides. The per-type *content* axis is the
+    subclasses in `documents/`.
+    """
 
     def __init__(self, backend: Backend, metadata: dict, read_only: bool):
         self._backend = backend

@@ -219,3 +219,17 @@ def test_search_and_recent_live():
 
         assert fid in [h.id for h in ws.files.recent(limit=25)]
         assert marker not in repr(hit)                    # the redacted repr, live
+
+
+def test_permissions_read_live():
+    """A freshly created file has exactly one permission — its owner, us. Anything else
+    means the fields/supportsAllDrives wiring is wrong."""
+    ws = _ws()
+    with _throwaway(ws, "application/vnd.google-apps.document", "csa-gw perms probe") as fid:
+        perms = ws.open(fid).permissions
+        assert len(perms) == 1, [repr(p) for p in perms]
+        owner = perms[0]
+        assert owner.role == "owner" and owner.type == "user"
+        assert owner.can_write and not owner.is_public
+        assert owner.email and "@" in owner.email      # the field Drive omits by default
+        assert owner.email not in repr(owner)          # redacted repr, live
