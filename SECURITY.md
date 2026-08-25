@@ -45,13 +45,51 @@ What the library does to help: it steers you toward the surgical `replace_text(f
 over raw index / `batch_update` edits, and its redacted `__repr__` keeps document text and
 author emails out of your logs by default.
 
+### The bundled MCP server is this risk, made concrete
+
+Since v0.2.0 the package ships `csa_google_workspace.mcp` — an MCP server that hands document
+and comment text directly to a model with write tools live. That is precisely the read→act path
+described above, so the containment is not theoretical advice for someone else; it applies to
+the thing in this repo.
+
+What it does about it, and what it does not:
+
+- **Tool annotations** — reads carry `readOnlyHint`, writes do not. Clients can use these to
+  prompt before acting. Note the MCP specification itself warns annotations are *untrusted*
+  unless the server is trusted.
+- **Framing** — the server's instructions state that document and comment content is untrusted
+  data and must never be treated as instructions. This is a hedge, not a control: it depends on
+  the model behaving.
+- **`CSA_GW_READ_ONLY=1`** — the one real switch today. A read-only server cannot be talked into
+  writing anything.
+- **No allowlist yet.** The server can reach every file the user's credentials can reach. File
+  allowlisting ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82))
+  is the control that does not depend on the model behaving well, and it is tracked as a
+  dependency before any public/External OAuth client. Until it lands, prefer read-only for
+  unattended use.
+
 ### 2. Token custody
 
 The persisted **full-Drive refresh token is the crown jewel** — possession is read/write/delete
-on the user's entire Drive. In production the embedder owns OAuth acquisition, refresh, and
-storage (via `Workspace.from_credentials(creds)`): hold it in a real secret store, encrypted
-at rest, **isolated per user**. The library's `from_oauth` + local `token.json` (mode `0o600`)
-is **PoC/CLI scaffolding** — not for server use.
+on the user's entire Drive.
+
+The line that matters is **whose machine holds the token**, not whether the process is called a
+CLI or a server:
+
+- **Local, single-user** (a CLI, or the bundled MCP server over stdio) — `from_oauth` +
+  `token.json` at mode `0o600` is appropriate. The token belongs to the person at the keyboard
+  and never leaves their machine; this is the same trust domain as any other credential in their
+  home directory. Written with `O_NOFOLLOW` and `fchmod` against symlink/TOCTOU.
+- **Hosted, multi-user** — `from_oauth` is **not** appropriate, and neither is a token file.
+  `run_local_server()` cannot run on a headless host, and one file cannot isolate many users.
+  The embedder owns OAuth acquisition, refresh, and storage via
+  `Workspace.from_credentials(creds)`: a real secret store, encrypted at rest, **isolated per
+  user**.
+
+Earlier revisions of this document said `from_oauth` was "PoC/CLI scaffolding — not for server
+use". That was written before the bundled MCP server existed and read as broader than intended:
+the objection is to *hosted, multi-tenant* use, not to a local process that happens to speak a
+protocol.
 
 ## Read-only by default
 

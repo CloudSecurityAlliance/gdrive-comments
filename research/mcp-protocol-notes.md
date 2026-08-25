@@ -1,11 +1,25 @@
 # MCP Protocol Notes (for this project)
 
-> **Refreshed July 2026.** Replaces the scraped `llms-full.md`, which documented spec revision `2025-06-18` and the since-removed HTTP+SSE transport. This is a concise, current orientation — the [official spec](https://modelcontextprotocol.io/specification) is authoritative; check it before implementing.
+> **Refreshed August 2026.** Replaces the scraped `llms-full.md`, which documented spec revision `2025-06-18` and the since-removed HTTP+SSE transport. This is a concise orientation — the [official spec](https://modelcontextprotocol.io/specification) is authoritative; check it before implementing.
+>
+> **The July 2026 revision of this file is now wrong in its central advice.** It said to target `2025-11-25` and "do not build against" the `2026-07-28` release candidate. That RC was ratified: **`2026-07-28` is the current revision**, and this project's MCP server (v0.2.0) is built on it. Kept as a worked example of why *"probe beats docs"* extends to our own notes — a research file with a date on it ages, and this one aged in under a month.
 
 ## Current spec status
-- **Stable / ratified: `2025-11-25`.** Target this.
-- **Release candidate `2026-07-28`** is landing at end of July 2026 — it introduces breaking changes (see "Coming soon"). Do not build against it yet, but be aware.
-- Superseded: `2025-06-18` (what the old doc referenced), `2025-03-26`, `2024-11-05`.
+- **Current: `2026-07-28`.** Ratified late July 2026 — target this. `mcp` (Python SDK) **2.x** implements it and serves every earlier revision from the same server.
+- Superseded: `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`.
+
+### What `2026-07-28` changed (all of it breaking)
+- **Stateless protocol core** — the `initialize`/`initialized` handshake and `Mcp-Session-Id` are **gone**. Every request is self-describing: protocol version, client info and capabilities travel in `_meta` on each request.
+- **`server/discover`** — a mandatory RPC returning supported versions, capabilities and identity in one call. Optional for a client to use.
+- **Roots, Sampling and Logging are deprecated**, under a new formal deprecation policy (≥12 months, or ≥90 days under expedited removal).
+- Extensions framework, Tasks, MCP Apps, authorization hardening.
+
+### Python SDK notes (verified against `mcp` 2.1.0, not documentation)
+- **`mcp.server.fastmcp` no longer exists.** `FastMCP` became **`MCPServer`** (`from mcp.server import MCPServer`) in SDK 2.0. The decorator API is otherwise familiar.
+- **Sync tool handlers run on a worker thread** (`anyio.to_thread.run_sync`). In 1.x they ran inline on the event loop — the opposite. Anything not thread-safe behind a tool must account for it.
+- **Raising a plain exception yields `UnexpectedToolError` with the message suppressed.** User-facing text must be raised as the SDK's `ToolError`.
+- **A bare `dict` return is not serializable for structured output** — use a `TypedDict` or model. Below Python 3.12 it must come from `typing_extensions`, or pydantic silently emits no schema.
+- **v1.x is maintenance-only** (security fixes).
 
 ## Message layer
 - **JSON-RPC 2.0** over stateful connections with capability negotiation via `initialize` / `initialized`. Unchanged.
@@ -29,6 +43,7 @@
 Flagged so the design isn't blindsided: removal of protocol-level sessions (`Mcp-Session-Id`), a move toward stateless operation, required `Mcp-Method`/`Mcp-Name` routing headers, `InputRequiredResult` replacing persistent SSE, and deprecation of Roots/Sampling/Logging with replacements. Treat as future.
 
 ## Sources
-- <https://modelcontextprotocol.io/specification> (current `2025-11-25`)
-- <https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/> (upcoming RC)
+- <https://modelcontextprotocol.io/specification> (current `2026-07-28`)
+- <https://blog.modelcontextprotocol.io/posts/2026-07-28/> (the ratified revision)
+- <https://github.com/modelcontextprotocol/python-sdk/releases> (SDK 2.0 breaking changes)
 - TypeScript SDK: <https://github.com/modelcontextprotocol/typescript-sdk>

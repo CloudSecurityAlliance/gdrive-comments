@@ -11,27 +11,31 @@ when picked up, follows the plan-then-execute rhythm (spec/plan under
 `docs/superpowers/`, then TDD via `FakeBackend`). `CHANGELOG.md` is the shipped-work
 ledger; the phase plans in `docs/superpowers/plans/` are the per-phase detail.
 
-## Near-term objective: phase 2 — the built-in MCP server
+## Phase 2 — the built-in MCP server — ✅ SHIPPED (v0.2.0–v0.2.3, 2026-08-24/25)
 
-The **audit → cleanup → PyPI** milestone that used to head this file is **done** (Tiers 0–2
-below, plus the release-process hardening — all ✅). The library is published and the
-pipeline is hardened, so the next milestone is the **delivery layer**:
+`csa_google_workspace.mcp` is on PyPI: a local stdio server on MCP revision `2026-07-28`
+(SDK `mcp>=2.1`), with **nine tools** carrying structured output and read-only/destructive
+annotations, per-user OAuth via a separate `login` subcommand, and a CSA-branded consent page.
+Spec: [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md).
 
-**Ship `csa_google_workspace.mcp`** — a built-in MCP server so an AI client can review
-comments, read content, and edit Docs/Sheets/Slides through the library. The spec is
-**approved for planning**:
-[`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md).
+Built directly from the spec without a separate plan file — the spec's §10 phasing served as
+the task list.
 
-Locked decisions: local single-user **stdio** first (structured so Streamable HTTP can be
-added later), the official `mcp` SDK's bundled **FastMCP**, **read + write on by default**
-(hedged with tool annotations + a `CSA_GW_READ_ONLY=1` flag, not gated), and v1 primitives
-= tools + one Resource (document text) + one Prompt (comment triage).
+**Deferred from v1, deliberately:**
 
-- [ ] **Write the implementation plan** (via writing-plans) — the spec's §10 phasing is the
-  outline: (a) `[mcp]` extra + package skeleton + `create_server` + config; (b) read tools +
-  structured schemas; (c) write tools + annotations; (d) Resource + Prompt; (e) entry point
-  + docs + a gated live smoke. This is the actual next action.
-- [ ] **Then execute it** TDD, per task, against `FakeBackend` + FastMCP's in-memory client.
+- [ ] **Content-write tools through MCP** — Docs `replace_text`/`insert_text`/`append_text`/
+  `delete_range`, Sheets `update`/`append_rows`/`clear`, Slides `insert_text`. The library API
+  has them; the MCP layer exposes comment writes only. **Blocked on file allowlisting below** —
+  exposing document mutation to a model over a full-Drive token, with no per-file scope, is the
+  confused-deputy scenario #82 describes.
+- [ ] **Docs suggestions** (`list_suggestions`) and the `as_text(suggestions=…)` preview.
+- [ ] **The document-text Resource and comment-triage Prompt** — both in the spec, neither built.
+- [ ] **A launcher shim for Claude Desktop on macOS.** GUI apps inherit a minimal `PATH` where
+  `python3` is the system 3.9, below the 3.10 floor — so Desktop fails where Claude Code works.
+  Documented in the README's troubleshooting table; no fix yet.
+- [ ] **Verify the PowerShell setup scripts.** `CSA-Plugins/internal-setup/*.ps1` and the
+  `DesktopSetup` Windows hook have never been executed — they were written on a machine with no
+  `pwsh`. A Windows colleague should not be the first to find out.
 
 - [ ] **File allowlisting — scope a `Workspace` to specific files and operations.**
   ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) Listed here
@@ -103,7 +107,8 @@ onto the existing `Workspace` API.
 - [x] **Published to PyPI** — `0.1.0`, `0.1.1` (docs patch), and `0.1.2` (first release
   through the hardened pipeline — attestations + env gate) all cut via `gh release create`
   → CI-built, tagged, GitHub-Released, uploaded over OIDC. Page:
-  <https://pypi.org/project/csa-google-workspace/>. Current `__version__`: **0.1.2**.
+  <https://pypi.org/project/csa-google-workspace/>. Since then: `0.2.0`–`0.2.3` (the MCP
+  server and its follow-ups). Current `__version__`: **0.2.3**.
 
 ## Release-process / supply-chain hardening — ✅ DONE
 
