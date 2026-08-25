@@ -19,7 +19,7 @@ per-file allowlist exists.
   wrapper that refuses what the policy does not permit. Both exported from the package root.
 - **`CSA_GW_CAPABILITIES`** — the **complete** list of permitted mutations, not a delta,
   because #82 asks for config that *reviews like code*: the line should tell you everything
-  allowed without also knowing what the defaults were the day it was written. The token
+  allowed without also knowing what the defaults were the day it was written. The entry
   `default` expands to the built-in set, so a delta stays expressible and self-describing —
   `default,file.trash`. Also `all` and `none`. An unknown name **fails loudly**, because a
   typo that reads as "configured" and behaves as "off" is the worst outcome here.
