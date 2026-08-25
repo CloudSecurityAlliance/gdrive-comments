@@ -118,8 +118,18 @@ settings, worst-first:
 - [x] **🔧 Actions pinned to commit SHAs** (PR #69) — `checkout` v4, `setup-python` v5,
   `gh-action-pypi-publish` v1.14.1, across `tests.yml` + `release.yml`; Dependabot keeps them current.
 - [x] **🔧+⚙️ Environment gate on publish** — protected `pypi` GitHub Environment (required
-  reviewer: repo owner) + `environment: pypi` on the publish job (PR #69). *Residual (optional):*
-  tighten the PyPI trusted-publisher binding to require environment `pypi` (works without today).
+  reviewer: repo owner) + `environment: pypi` on the publish job (PR #69). **Residual now closed
+  (2026-08-25):** the PyPI Trusted Publisher is constrained to environment `pypi` (was `(Any)`).
+
+  Worth recording *why* this mattered rather than just that it is done. While the publisher
+  accepted any environment, the approval gate was enforced only by a line of YAML **in the repo
+  being published** — anyone able to edit `.github/workflows/release.yml` could drop
+  `environment: pypi` and PyPI would still accept the upload. The control guarding releases was
+  itself guarded by the thing it protects. Constrained at the registry, removing that line now
+  *breaks* publishing instead of bypassing review: a convention became an invariant. Same move as
+  `auth.load_cached_credentials` simply not containing the interactive branch.
+
+  PyPI had been emailing this recommendation after every publish since 0.1.2 (five times).
 - [x] **🔧 PEP 740 attestations** — `attestations: true` on the pinned publisher (PR #69),
   **✅ verified** against PyPI's **Integrity API**: `0.1.0`, `0.1.1`, and `0.1.2` all return
   `200` on `/integrity/csa-google-workspace/<ver>/<file>/provenance` — every release is

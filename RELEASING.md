@@ -18,12 +18,24 @@ need not exist yet.
    - **Owner:** `CloudSecurityAlliance`
    - **Repository name:** `csa-google-workspace`
    - **Workflow name:** `release.yml`
-   - **Environment name:** *(leave blank)*
-3. That's it — no token, no GitHub secret. GitHub Actions authenticates to PyPI over OIDC.
+   - **Environment name:** **`pypi`** — *not blank, and not the `release` placeholder the form
+     shows in grey.* It must match `environment:` on the `publish` job in
+     `.github/workflows/release.yml`.
+3. Create the matching GitHub Environment: repo **Settings → Environments → `pypi`**, with
+   **required reviewers** set to the repo owner. This is what makes each publish stop for a
+   human.
+4. That's it — no token, no GitHub secret. GitHub Actions authenticates to PyPI over OIDC.
 
-*(Optional hardening for later: add a GitHub Environment named e.g. `pypi` with required
-reviewers, set `environment: pypi` on the `publish` job, and put the same name in the PyPI
-publisher config — this gates each publish behind a manual approval.)*
+**Why the environment name is not optional.** An unconstrained publisher (`Environment name:
+(Any)`, which is what PyPI defaults to) accepts a publish from *any* environment — so the
+approval gate would be enforced only by a line of YAML **inside the repo being published**.
+Anyone able to edit the workflow could delete `environment: pypi` and PyPI would still accept
+the upload; the control guarding releases would be guarded by the thing it protects. With the
+publisher constrained, removing that line *breaks* publishing rather than bypassing review.
+
+If you ever see PyPI email *"Trusted Publisher … can be made more secure"*, the binding has come
+unconstrained — fix it by adding the constrained publisher first, confirming it appears, then
+removing the unconstrained one, so the project is never left without a working publisher.
 
 ## Cut a release
 
