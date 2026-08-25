@@ -126,6 +126,32 @@ this one.
 | **OAuth scope** | `drive.file` / `drive.readonly` | — | **full `drive`** |
 | **Runs on** | Google's servers | Anthropic's | your machine |
 
+### Where this actually stands
+
+Counting rather than claiming, because the table below is long enough to be miscounted:
+
+| | Google's server | Claude's connector | **csa-google-workspace** |
+|---|---|---|---|
+| MCP tools | 8 | 11 | 10 (+ `authenticate`) |
+| **Of their tools, we have** | **3 of 8** | **3 of 11** | — |
+| Tools they do not have | — | — | **7** — every one a comment tool |
+
+**This is not parity, and the gap is in one place: discovery and file lifecycle.** The eight of
+theirs we lack are `search_files`, `list_recent_files`, `get_file_permissions`, `create_file`,
+`copy_file`, `update_file`, `share_file`, `trash_file`. Five of those would match Google, which
+deliberately omits the last three — the mutating, exfiltration and destructive ones.
+
+`search_files` is the one that costs users something today: without it, every session starts
+with someone pasting a URL.
+
+**What is genuinely further here** is depth on one axis rather than breadth. Neither of the
+others can create, reply to, resolve or reopen a comment — Claude's connector can *inline*
+comments into text it reads, which is a read, not a write. Ours are structured objects with
+ids, authors, resolved state, replies, and the Sheets cell a comment is about. And this is the
+only one of the three that can **edit an existing document's content** — though see the
+`library only` rows below: that is true of the Python library today and not yet of the MCP
+server.
+
 ### Tool-by-tool comparison
 
 Where all three do the same thing they should use the same tool name and argument shapes, so
