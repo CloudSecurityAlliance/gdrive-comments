@@ -141,7 +141,7 @@ around it quietly.
 - **New work follows the plan-then-execute rhythm:** write a spec/plan under `docs/superpowers/`, then implement TDD (unit tests via `FakeBackend`). Keep `README.md`'s manifest and `CHANGELOG.md` in sync. (Phase 1 — the library — and phase 2 — the MCP server — are both complete and on PyPI.)
 - **Style:** ruff (`E,F,W,I,B,UP`, line-length 120) and mypy both gate CI. `E702` is **deliberately ignored** — one-line `a = …; b = …` is a pervasive house style here, not a defect; match it rather than splitting lines. The google-api/auth stack ships no stubs, so those imports are `ignore_missing_imports`.
 - **Dependabot** opens `pip` + `github-actions` bumps and `dependabot-auto-merge.yml` auto-merges patch/minor once tests pass. Actions are **pinned to commit SHAs** — keep new ones pinned (`uses: owner/action@<sha>  # vX.Y.Z`).
-- `main` **is branch-protected and enforced for admins**: `lint`, `test (3.10–3.13)`, and `security` must pass; direct and force pushes are blocked. Required approving reviews are set to 0 so the solo/AI PR flow merges on green checks.
+- `main` **is branch-protected and enforced for admins**: `lint`, `test (3.10–3.14)`, and `security` must pass; direct and force pushes are blocked. Required approving reviews are set to 0 so the solo/AI PR flow merges on green checks.
 - **Never commit** OAuth secrets (`credentials.json`, `token*.json`), probe transcripts, or **extracted document data** — real comment/document content pulled from Drive during probes or live runs. `.gitignore` already covers the known shapes; the last category is a judgement call, so watch for it in probe output. The client secret must be an **installed/desktop-app** OAuth client.
 
 ### Cutting a release
