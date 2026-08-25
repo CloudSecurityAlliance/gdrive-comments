@@ -1,5 +1,69 @@
 # Changelog
 
+## 2026-08-25 — v0.7.0 (capability gating: #82, first dimension)
+
+Gate **A4**, half of it. #82's settled requirement surface separates two independent things —
+*may this deployment do X at all*, and *to which files* — with the composition rule that
+**global is a ceiling and per-file grants narrow, never widen**. This ships the first, which
+means the second can only ever subtract from it.
+
+Why that order: it lets the destructive tools land *off*. `update_file`, `trash_file` and
+`share_file` are next, and a default install will not be able to reach any of them before the
+per-file allowlist exists.
+
+### Added
+
+- **`policy.py`** — ten named capabilities (`comment.create`, `comment.reply`,
+  `comment.resolve`, `comment.edit`, `comment.delete`, `content.write`, `file.create`,
+  `file.update`, `file.trash`, `file.share`), a `Policy`, and **`PolicyBackend`**: a `Backend`
+  wrapper that refuses what the policy does not permit. Both exported from the package root.
+- **`CSA_GW_CAPABILITIES`** — the **complete** list of permitted mutations, not a delta,
+  because #82 asks for config that *reviews like code*: the line should tell you everything
+  allowed without also knowing what the defaults were the day it was written. The token
+  `default` expands to the built-in set, so a delta stays expressible and self-describing —
+  `default,file.trash`. Also `all` and `none`. An unknown name **fails loudly**, because a
+  typo that reads as "configured" and behaves as "off" is the worst outcome here.
+- **`Workspace.from_credentials(..., policy=…)`** and `from_oauth(..., policy=…)`.
+
+### Changed
+
+- **`from_credentials` and `from_oauth` are now safe by default**: the `ApiBackend` arrives
+  wrapped in a `PolicyBackend` carrying `Policy.default()`. That permits exactly what this
+  library has always permitted — so no behaviour changes today — and refuses the three
+  operations that alter or expose an existing file. `read_only=True` collapses the policy to
+  permitting nothing.
+- **The raw seam stays raw.** `Workspace(backend=…)` is unwrapped and unguarded, as documented.
+  An embedder supplying their own backend has already made the decision.
+
+### Design notes
+
+**Enforcement is a `Backend` wrapper, not a check in the tool layer.** Every `Backend` method
+takes `file_id` first (or, on the account axis, nothing), which is what makes a uniform wrapper
+possible at all — and it means a library embedder gets the same guarantee as an MCP client,
+with one place to audit.
+
+**It fails closed.** `_GATES` must name every `Backend` method; an unlisted name is *refused*
+rather than delegated, so adding a protocol method without deciding its gate turns the method
+off instead of leaving it unguarded. `tests/test_policy.py` asserts the coverage both ways —
+missing entries and stale ones — so it fails in CI rather than at a user.
+
+**It cannot be widened in-band.** No tool changes the policy; only whoever starts the server
+does. #82 notes that session scoping means nothing unless it is set by the host rather than
+callable by the guest, and an MCP server session is exactly that boundary.
+
+**One method, two capabilities.** `create_reply` carries both replies *and* resolve/reopen,
+because resolve is an **action-reply**, never a PATCH (probe-verified). A gate keyed only on
+the method name would let anyone who may reply also close a thread, so the gate is consulted
+with the call's arguments. Live-verified against real Google: reply allowed, resolve refused,
+from the same backend method.
+
+### Reads are deliberately not gated
+
+#82 is **damage containment, not confidentiality** — the agent already sees whatever the
+user's credentials see, so bounding what it can *break* is the thing that helps. This is why
+`search_files`, `list_recent_files` and `get_file_permissions` needed no gate, and why the
+roadmap's "discovery is blocked on #82" was wrong.
+
 ## 2026-08-25 — v0.6.0 (who else is in this document?)
 
 Gate **A2** of the [1.0.0 list](./TODO.md).

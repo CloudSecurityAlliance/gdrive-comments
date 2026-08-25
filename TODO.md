@@ -124,9 +124,19 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
       not have to derive them. Live-verified.
 - [ ] **A3** `create_file`, `copy_file` — not gated (nothing existing to damage). `create_file`
       takes `text/markdown` and lets Drive convert. → **this completes Google's 8.**
-- [ ] **A4** **#82 file allowlisting.** Not only a gate for A5 — the security control the whole
-      write-on-by-default posture rests on, and a *config shape* that must be settled before a
-      stability promise.
+- [~] **A4** **#82 allowlisting** — **dimension 1 done 2026-08-25** (v0.7.0), dimension 2 open.
+      - [x] **Capability gating.** `policy.py`: named capabilities, a `Policy`, and a
+            `PolicyBackend` wrapper that **fails closed** — a `Backend` method with no declared
+            gate is refused, not delegated, so a new method arrives *off*. `CSA_GW_CAPABILITIES`
+            is the complete permitted list, not a delta, so it reviews like code. Default
+            refuses rename/move, trash and share. Cannot be widened in-band.
+      - [ ] **Per-URL scope.** The remaining half: *which files* each enabled capability may
+            touch. Composition rule already settled — global is a ceiling, per-file grants
+            narrow, never widen — so this can only subtract from dimension 1. Still needs the
+            usability half from #82's requirement surface: obtaining URLs (folder enumeration
+            as a reviewable *generator*, never a live rule — folder-as-rule reintroduces TOCTOU),
+            a `reason` per entry, fail-closed on every failure mode, revocation and dead-entry
+            detection, allowed/denied logging, and a dry-run answering "what would this touch".
 - [ ] **A5** `update_file`, `trash_file`, `share_file`, behind A4. → **completes Claude's 11.**
 
 **Deliberately excluded from "parity":** their `read_file_content` covers 13 mime types

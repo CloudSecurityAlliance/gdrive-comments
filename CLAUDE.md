@@ -41,6 +41,7 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
 - `_services.py` — lazy Google API client registry. `_errors.py` — `HttpError`→typed translator + retry.
 - `base.py` — `Document` base + `CommentsMixin`. `documents/` — `Doc`/`Sheet`/`Slides` (per-type content read/write).
 - `comments.py` — `Author`/`Reply`/`Comment`/`Location`/`CommentCollection` + in-place mutation.
+- `policy.py` — **#82 dimension 1**: capability names, `Policy`, and `PolicyBackend` (a `Backend` wrapper). `_GATES` must name every `Backend` method — an unlisted one is *refused*, not delegated, and `tests/test_policy.py` fails in CI if the protocol grows past it.
 - `permissions.py` — `Permission` + `PermissionsMixin` (`doc.permissions`). A uniform Drive concern, so a mixin — the same shape as `CommentsMixin`.
 - `files.py` — **the account axis**: `FileCollection` (`workspace.files`) + `FileRef`. The one place that is *not* reached through `open(file_id)`, because you cannot open a file you are searching for.
 - `suggestions.py` — `Suggestion` + read-only suggestion extraction (grouped by suggestion id).
@@ -68,7 +69,8 @@ These are the things no test will catch for you unless you add one.
 4. **Behavior only `ApiBackend` has needs a stub-service test, not a `FakeBackend` test** — see `tests/test_apibackend_contract.py` / `test_apibackend_errors.py` (pagination, non-idempotent wiring, `HttpError` translation). This is the one blind spot of the fake/real seam, and it is exactly how `Workspace.open()` once leaked a raw `HttpError` past a fully green suite.
 5. **Dispatch on type happens in exactly one place:** `MIME_TO_TYPE` / `subclass_for_mime` (`base.py`). To let a document type enrich comments, define the optional `_locate_comment(raw)` hook (as `Sheet` does) — `CommentsMixin.comments` picks it up via `getattr`. Don't add `if doc.type == …` ladders; the MCP spec forbids them in the delivery layer too.
 6. **Writes are guarded in two layers:** `CommentsMixin.create_comment` and `Document._require_writable()` raise `ReadOnlyError` *before* the backend call. Every new mutating method must call the guard itself — nothing enforces it centrally.
-7. **A `Comment`/`Reply` built via `from_api()` is detached** and raises `DetachedError` on mutation. Models obtained through a `Workspace` carry the backend; hand-built ones don't.
+7. **A new `Backend` method needs a `policy._GATES` entry.** `PolicyBackend` fails *closed* — an unlisted method raises rather than delegating — so forgetting one turns the method off rather than leaving it unguarded. `tests/test_policy.py::test_every_backend_method_has_a_declared_gate` catches it, but the decision (which capability? or `None` for a read?) is yours.
+8. **A `Comment`/`Reply` built via `from_api()` is detached** and raises `DetachedError` on mutation. Models obtained through a `Workspace` carry the backend; hand-built ones don't.
 
 ## Commands
 

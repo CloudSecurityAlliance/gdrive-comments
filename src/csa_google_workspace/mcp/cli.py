@@ -26,7 +26,14 @@ the `authenticate` tool instead, with no terminal step.
 
 environment:
   CSA_GW_TOKEN           token cache path (default ~/.csa_google_workspace/token.json)
-  CSA_GW_READ_ONLY=1     refuse writes
+  CSA_GW_READ_ONLY=1     refuse writes (also narrows the OAuth scopes)
+  CSA_GW_CAPABILITIES    which mutations are permitted — the complete list, not a delta.
+                         Unset means the safe default: comment and content writes on,
+                         file rename/move, trash and share OFF. Tokens: any capability
+                         name, plus `default`, `all`, `none`.
+                           default,file.trash          the usual set, plus trashing
+                           comment.create,comment.reply  exactly these two
+                           none                        no mutation at all
   CSA_GW_CLIENT_SECRETS  OAuth client secrets JSON (`login` only; defaults to
                          ~/.csa_google_workspace/client_secret.json if that exists)
 """

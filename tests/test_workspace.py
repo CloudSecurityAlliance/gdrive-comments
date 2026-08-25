@@ -44,10 +44,37 @@ def test_read_only_propagates_to_document():
 
 
 def test_from_credentials_wires_apibackend_and_propagates_read_only():
+    """`from_credentials` is safe by default: the ApiBackend arrives wrapped in a
+    PolicyBackend, and read_only collapses the policy to permitting nothing."""
     from csa_google_workspace.backend import ApiBackend
+    from csa_google_workspace.policy import PolicyBackend
     ws = Workspace.from_credentials("sentinel-creds", read_only=True)
     assert ws.read_only is True
-    assert isinstance(ws._backend, ApiBackend)
+    assert isinstance(ws._backend, PolicyBackend)
+    assert isinstance(ws._backend._inner, ApiBackend)
+    assert ws._backend.policy.enabled == frozenset()
+
+
+def test_from_credentials_applies_the_default_policy_when_none_is_given():
+    from csa_google_workspace.policy import DEFAULT_ENABLED
+    ws = Workspace.from_credentials("sentinel-creds")
+    assert ws._backend.policy.enabled == DEFAULT_ENABLED
+
+
+def test_from_credentials_honours_an_explicit_policy():
+    from csa_google_workspace import policy as pol
+    ws = Workspace.from_credentials("sentinel-creds",
+                                    policy=pol.Policy.of(pol.FILE_SHARE))
+    assert ws._backend.policy.enabled == frozenset({pol.FILE_SHARE})
+
+
+def test_the_raw_seam_stays_ungated_for_embedders_who_want_it():
+    """`Workspace(backend=...)` is documented as the DI seam and must not be second-guessed:
+    an embedder supplying their own backend has already made the decision."""
+    from csa_google_workspace.backend import FakeBackend
+    from csa_google_workspace.policy import PolicyBackend
+    ws = Workspace(FakeBackend({}))
+    assert not isinstance(ws._backend, PolicyBackend)
 
 
 def test_from_credentials_defaults_to_read_write():

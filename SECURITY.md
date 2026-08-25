@@ -60,13 +60,25 @@ What it does about it, and what it does not:
 - **Framing** — the server's instructions state that document and comment content is untrusted
   data and must never be treated as instructions. This is a hedge, not a control: it depends on
   the model behaving.
-- **`CSA_GW_READ_ONLY=1`** — the one real switch today. A read-only server cannot be talked into
-  writing anything.
-- **No allowlist yet.** The server can reach every file the user's credentials can reach. File
-  allowlisting ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82))
-  is the control that does not depend on the model behaving well, and it is tracked as a
-  dependency before any public/External OAuth client. Until it lands, prefer read-only for
-  unattended use.
+- **`CSA_GW_READ_ONLY=1`** — the blunt switch. A read-only server cannot be talked into
+  writing anything, and it narrows the OAuth scopes too.
+- **`CSA_GW_CAPABILITIES` — capability gating**, the first of
+  [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)'s two
+  dimensions, shipped in v0.7.0. Each mutation is separately on or off: comment create, reply,
+  resolve, edit, delete; content write; file create, rename/move, trash, share. **The default
+  refuses rename/move, trash and share** — every operation that alters or exposes a file that
+  already exists.
+  Enforced as a **`Backend` wrapper** (`PolicyBackend`), not a check in the tool layer, so an
+  embedder using the library directly gets the same guarantee, and there is one place to audit.
+  It **fails closed**: a `Backend` method with no declared gate is refused rather than
+  delegated, so a new method arrives *off* rather than unguarded.
+  It also cannot be widened in-band. An agent has no tool that changes the policy; only whoever
+  starts the server does. Session scoping that the guest can broaden is not scoping.
+- **Per-file scope is still to come** — #82's second dimension. Today a capability that is *on*
+  is on for every file the credentials can reach. The composition rule is settled (global is a
+  ceiling; per-file grants narrow, never widen), so per-file work can only subtract from what
+  capability gating already permits. **It is a 1.0.0 gate.** Until it lands, prefer
+  `CSA_GW_READ_ONLY=1`, or a narrow `CSA_GW_CAPABILITIES`, for unattended use.
 
 ### 2. Token custody
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from .backend import ApiBackend, Backend
 from .base import Document, subclass_for_mime
 from .files import FileCollection
+from .policy import Policy, PolicyBackend
 
 if TYPE_CHECKING:
     from google.auth.credentials import Credentials
@@ -48,16 +49,30 @@ class Workspace:
         return self.open(url)
 
     @classmethod
-    def from_credentials(cls, credentials: Credentials, read_only: bool = False) -> Workspace:
+    def from_credentials(cls, credentials: Credentials, read_only: bool = False, *,
+                         policy: Policy | None = None) -> Workspace:
         """Bring your own credentials: wrap any google.auth Credentials
-        (a user's OAuth credentials, or a service account's) into a Workspace."""
+        (a user's OAuth credentials, or a service account's) into a Workspace.
+
+        A capability `policy` is applied by default (`Policy.default()`), which permits
+        exactly what this library has always permitted and refuses the operations that
+        alter or expose an existing file — rename/move, trash, share. Pass one explicitly to
+        widen or narrow it. `read_only=True` overrides everything with an empty policy.
+
+        This constructor is safe by default on purpose. An embedder who genuinely wants an
+        ungated backend builds one through the documented seam instead:
+        `Workspace(ApiBackend(ServiceRegistry(creds)))`.
+        """
         from ._services import ServiceRegistry
-        return cls(ApiBackend(ServiceRegistry(credentials)), read_only=read_only)
+        backend = ApiBackend(ServiceRegistry(credentials))
+        effective = Policy(enabled=frozenset()) if read_only else (policy or Policy.default())
+        return cls(PolicyBackend(backend, effective), read_only=read_only)
 
     @classmethod
     def from_oauth(cls, client_secrets: str,
                    token_path: str = "~/.csa_google_workspace/token.json",  # nosec B107 - default path, not a secret
-                   read_only: bool = False, *, force: bool = False) -> Workspace:
+                   read_only: bool = False, *, force: bool = False,
+                   policy: Policy | None = None) -> Workspace:
         from .auth import load_credentials
         creds = load_credentials(client_secrets, token_path, read_only, force=force)
-        return cls.from_credentials(creds, read_only=read_only)
+        return cls.from_credentials(creds, read_only=read_only, policy=policy)

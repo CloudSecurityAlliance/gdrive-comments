@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from .. import auth
 from ..exceptions import AuthError
+from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy
 from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
@@ -80,6 +81,48 @@ class Settings:
     token_path: str = DEFAULT_TOKEN_PATH
     read_only: bool = False
     client_secrets: str | None = None
+    policy: Policy | None = None            # None -> Policy.default()
+
+
+def policy_from_env(env: Mapping[str, str]) -> Policy | None:
+    """`CSA_GW_CAPABILITIES` — the complete list of mutations this server may perform.
+
+    Absolute, not a delta, because #82 asks for config that *reviews like code*: reading the
+    line should tell you everything that is permitted, without also knowing what the
+    defaults were on the day it was written. The token `default` expands to the built-in
+    set, so a delta is still expressible and still self-describing:
+
+        CSA_GW_CAPABILITIES=default,file.trash        # the usual set, plus trashing
+        CSA_GW_CAPABILITIES=comment.create,comment.reply   # exactly these two
+        CSA_GW_CAPABILITIES=none                      # read-only, reached from this side
+
+    Unset returns `None`, which the `Workspace` constructors read as `Policy.default()`.
+    """
+    raw = (env.get("CSA_GW_CAPABILITIES") or "").strip()
+    if not raw:
+        return None
+    tokens = [t.strip() for t in raw.replace(";", ",").split(",") if t.strip()]
+    if tokens == ["none"]:
+        return Policy(enabled=frozenset())
+    enabled: set[str] = set()
+    unknown: list[str] = []
+    for token in tokens:
+        if token == "default":
+            enabled |= DEFAULT_ENABLED
+        elif token == "all":
+            enabled |= set(ALL_CAPABILITIES)
+        elif token in ALL_CAPABILITIES:
+            enabled.add(token)
+        else:
+            unknown.append(token)
+    if unknown:
+        # Fail loudly rather than silently running with a smaller policy than intended: a
+        # typo'd capability name would otherwise read as "configured" and behave as "off".
+        raise ValueError(
+            f"CSA_GW_CAPABILITIES contains unknown value(s): {', '.join(unknown)}. "
+            f"Known capabilities: {', '.join(ALL_CAPABILITIES)}. "
+            f"Also accepted: 'default', 'all', 'none'.")
+    return Policy(enabled=frozenset(enabled))
 
 
 def settings_from_env(env: Mapping[str, str]) -> Settings:
@@ -89,6 +132,7 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         token_path=env.get("CSA_GW_TOKEN") or DEFAULT_TOKEN_PATH,
         read_only=(env.get("CSA_GW_READ_ONLY") or "").strip().lower() in _TRUE,
         client_secrets=explicit or (default if os.path.exists(default) else None),
+        policy=policy_from_env(env),
     )
 
 
@@ -115,6 +159,7 @@ class WorkspaceProvider:
             creds = auth.load_cached_credentials(self._settings.token_path, self._settings.read_only)
         except AuthError as e:
             raise AuthError(unauthorized_message(self._settings.token_path, str(e))) from e
-        workspace = Workspace.from_credentials(creds, read_only=self._settings.read_only)
+        workspace = Workspace.from_credentials(
+            creds, read_only=self._settings.read_only, policy=self._settings.policy)
         self._local.workspace = workspace
         return workspace
