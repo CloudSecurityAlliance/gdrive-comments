@@ -74,11 +74,28 @@ What it does about it, and what it does not:
   delegated, so a new method arrives *off* rather than unguarded.
   It also cannot be widened in-band. An agent has no tool that changes the policy; only whoever
   starts the server does. Session scoping that the guest can broaden is not scoping.
-- **Per-file scope is still to come** — #82's second dimension. Today a capability that is *on*
-  is on for every file the credentials can reach. The composition rule is settled (global is a
-  ceiling; per-file grants narrow, never widen), so per-file work can only subtract from what
-  capability gating already permits. **It is a 1.0.0 gate.** Until it lands, prefer
-  `CSA_GW_READ_ONLY=1`, or a narrow `CSA_GW_CAPABILITIES`, for unattended use.
+- **`CSA_GW_ALLOWLIST` — the write allowlist**, #82's second dimension, shipped in v0.8.0. A
+  plain-text file, one Google document URL per line, `#` for comments. **Writes are refused for
+  any file not listed; reads are unaffected**, because #82 is damage containment rather than
+  confidentiality — the agent already sees whatever the credentials see, so what must be bounded
+  is what it can *break*.
+  Matched by **file id**, so every URL form for one document is one entry — and a **copy** of an
+  allowlisted document has a different id and is therefore not writable, which is the correct
+  default.
+  **Fails closed on every failure mode**: a missing file, an unreadable one, no usable entries,
+  or any malformed line raises rather than degrading to unrestricted writes. The failure being
+  avoided is an operator who believes writes are scoped because they set the variable, and
+  mistyped the path.
+  **Folders are not supported and are rejected loudly.** A folder URL cannot be treated as an
+  opaque id — it would match nothing, so the entry would protect nothing while looking like
+  protection. Folder support needs the ancestor-traversal, shortcut-aliasing and
+  add-to-folder-is-a-grant questions settled first; they are written out in `TODO.md`.
+  Denials log at WARNING with the file id, because denials are the security signal.
+- **The remaining decision, before 1.0.0:** an *unset* `CSA_GW_ALLOWLIST` still means no file
+  restriction, because that is what this library has always done and flipping it silently would
+  break existing users. #82 asks for fail-closed including the no-policy default, and the
+  recommendation is to flip it at 1.0.0 with an explicit opt-out. Until then, an unattended
+  deployment should set an allowlist, or `CSA_GW_READ_ONLY=1`.
 
 ### 2. Token custody
 

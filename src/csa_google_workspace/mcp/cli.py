@@ -34,6 +34,11 @@ environment:
                            default,file.trash          the usual set, plus trashing
                            comment.create,comment.reply  exactly these two
                            none                        no mutation at all
+  CSA_GW_ALLOWLIST       path to a write allowlist: one Google document URL per line,
+                         `#` starts a comment. Writes are refused for any file not
+                         listed; reads are unaffected. Configured-but-unusable is a hard
+                         failure, never a fallback to unrestricted writes. Folders are
+                         not supported yet and are rejected loudly.
   CSA_GW_CLIENT_SECRETS  OAuth client secrets JSON (`login` only; defaults to
                          ~/.csa_google_workspace/client_secret.json if that exists)
 """

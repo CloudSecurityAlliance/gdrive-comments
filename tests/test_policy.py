@@ -141,3 +141,94 @@ def test_with_enabled_widens_and_without_narrows():
 def test_repr_names_the_enabled_set_and_the_wrapped_backend():
     text = repr(PolicyBackend(FakeBackend({}), Policy.of(policy.FILE_TRASH)))
     assert "FakeBackend" in text and "file.trash" in text
+
+
+# --- dimension 2: the file allowlist ---------------------------------------
+
+from csa_google_workspace.allowlist import parse_allowlist  # noqa: E402
+
+DOC_URL = "https://docs.google.com/document/d/1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8/edit"
+DOC_ID = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
+FILES_TWO = {
+    DOC_ID: {"id": DOC_ID, "name": "Allowed", "mimeType": DOC, "webViewLink": "https://x"},
+    "other": {"id": "other", "name": "Not allowed", "mimeType": DOC, "webViewLink": "https://x"},
+}
+
+
+def _scoped(*capabilities):
+    entries = parse_allowlist(DOC_URL)
+    return Workspace(PolicyBackend(FakeBackend(dict(FILES_TWO)),
+                                   Policy.from_entries(frozenset(capabilities), entries)))
+
+
+def test_a_listed_file_may_be_written():
+    doc = _scoped(policy.COMMENT_CREATE).open(DOC_ID)
+    assert doc.create_comment("allowed").content == "allowed"
+
+
+def test_an_unlisted_file_may_not_be_written():
+    doc = _scoped(policy.COMMENT_CREATE).open("other")
+    with pytest.raises(exc.ReadOnlyError) as e:
+        doc.create_comment("nope")
+    message = str(e.value)
+    assert "not in the write allowlist" in message
+    assert "1 file(s) listed" in message
+    assert "cannot be added from here" in message      # not widenable in-band
+
+
+def test_an_unlisted_file_may_still_be_read():
+    """#82 is damage containment, not confidentiality."""
+    ws = _scoped(policy.COMMENT_CREATE)
+    doc = ws.open("other")
+    assert doc.name == "Not allowed"
+    assert doc.comments.all() == []
+
+
+def test_the_two_dimensions_compose_as_a_ceiling_and_a_narrowing():
+    """A capability absent from `enabled` cannot be reached by listing the file, and a file
+    absent from the list cannot be reached by enabling the capability."""
+    listed = _scoped().open(DOC_ID)                     # listed, but no capabilities
+    with pytest.raises(exc.ReadOnlyError) as e:
+        listed.create_comment("no")
+    assert "capability is disabled" in str(e.value)
+
+    unlisted = _scoped(policy.COMMENT_CREATE).open("other")
+    with pytest.raises(exc.ReadOnlyError) as e:
+        unlisted.create_comment("no")
+    assert "not in the write allowlist" in str(e.value)
+
+
+def test_content_writes_are_file_scoped_too():
+    edit = [{"insertText": {"location": {"index": 1}, "text": "x"}}]
+    _scoped(policy.CONTENT_WRITE).open(DOC_ID).batch_update(edit)   # allowed
+    with pytest.raises(exc.ReadOnlyError):
+        _scoped(policy.CONTENT_WRITE).open("other").batch_update(edit)
+
+
+def test_no_allowlist_means_no_file_restriction():
+    """The default, because it is what this library has always done. Flipping it to
+    fail-closed is a recorded 1.0.0 decision, not a silent change."""
+    ws = Workspace(PolicyBackend(FakeBackend(dict(FILES_TWO)),
+                                 Policy.of(policy.COMMENT_CREATE)))
+    assert ws.open("other").create_comment("fine").content == "fine"
+
+
+def test_repr_says_how_many_files_are_in_scope():
+    scoped = PolicyBackend(FakeBackend({}), Policy.from_entries(
+        frozenset({policy.COMMENT_CREATE}), parse_allowlist(DOC_URL)))
+    assert "1 file(s)" in repr(scoped)
+    assert "unrestricted" in repr(PolicyBackend(FakeBackend({}), Policy.default()))
+
+
+def test_every_file_scoped_gate_receives_a_file_id():
+    """`Gate.file_scoped` is a claim about the method's first argument. If a gated method
+    ever stops taking one, the wrapper fails closed — this asserts the claim is true today
+    for every entry, so that failure never reaches a user."""
+    import inspect
+
+    from csa_google_workspace.policy import _GATES
+    for name, gate in _GATES.items():
+        if gate.capability is None or not gate.file_scoped:
+            continue
+        first = list(inspect.signature(getattr(Backend, name)).parameters)[1]
+        assert first == "file_id", f"{name} is file_scoped but its first parameter is {first!r}"

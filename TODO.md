@@ -130,13 +130,87 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
             gate is refused, not delegated, so a new method arrives *off*. `CSA_GW_CAPABILITIES`
             is the complete permitted list, not a delta, so it reviews like code. Default
             refuses rename/move, trash and share. Cannot be widened in-band.
-      - [ ] **Per-URL scope.** The remaining half: *which files* each enabled capability may
-            touch. Composition rule already settled — global is a ceiling, per-file grants
-            narrow, never widen — so this can only subtract from dimension 1. Still needs the
-            usability half from #82's requirement surface: obtaining URLs (folder enumeration
-            as a reviewable *generator*, never a live rule — folder-as-rule reintroduces TOCTOU),
-            a `reason` per entry, fail-closed on every failure mode, revocation and dead-entry
-            detection, allowed/denied logging, and a dry-run answering "what would this touch".
+      - [x] **Per-URL scope, basic form** — **done 2026-08-25** (v0.8.0). A flat list of
+            document URLs in a plain-text file (`CSA_GW_ALLOWLIST`), matched by file id.
+            Fails closed on every failure mode: missing file, unreadable, no usable entries,
+            any malformed line. Folder URLs are a **loud error**, not an inert entry. Denials
+            log at WARNING with the file id.
+      - [ ] **Still open in the basic form:** per-capability scope (a structured format — this
+            file cannot express "commentable but not editable"), optional expiry, dead-entry
+            detection (an allowlisted file that has been trashed), and a **dry-run** answering
+            "what would this run touch" before it touches anything.
+      - [ ] **Decide the no-allowlist default before 1.0.0.** Today an unset `CSA_GW_ALLOWLIST`
+            means no file restriction, because that is what this library has always done and
+            flipping it silently would break every existing user. #82's requirement surface
+            asks for fail-closed *including the no-policy-configured default*. **Recommendation:
+            flip it at 1.0.0** — a public release whose selling point is scoped write access
+            should not default to unscoped — and make the blunt escape hatch explicit
+            (`CSA_GW_ALLOWLIST=any`) so that choosing unrestricted writes is a thing someone
+            typed, not a thing they never thought about.
+      - [ ] **Folders** — see the next section. Deliberately not attempted yet.
+
+### Folders in the allowlist — the design questions, unanswered
+
+A folder URL looks like the obvious convenience: allowlist
+`https://drive.google.com/drive/folders/1HXZ…` and let everything inside be writable. The
+obvious implementation is *ancestor traversal*: on each access, `files.get(fileId,
+fields="parents")` and walk up until an allowlisted folder appears or the root is reached.
+
+**That works, and it is not safe, and the unsafety is not fixable by writing it more
+carefully.** Recording why, plus everything else it drags in, so none of it is rediscovered
+mid-build.
+
+**1. Anyone who can add to the folder can grant write access.** This is the killer, and it is
+why #82 already settled on *folder-as-generator, not folder-as-rule*. A WG folder may have
+dozens of contributors. Any of them dropping a file in — or moving one in — silently extends
+the agent's write scope to it. Worse, it works in reverse: someone copies a sensitive document
+into the folder for convenience and it becomes agent-writable. The allowlist stops describing a
+decision anybody made.
+
+**2. Shortcuts break the traversal outright.** `application/vnd.google-apps.shortcut` is a file
+whose parent is the allowlisted folder and whose `shortcutDetails.targetId` is a document
+somewhere else entirely. Traversing the *shortcut's* parents answers "allowed"; the thing that
+gets written is the target. Any traversal must resolve shortcuts and check the **target's**
+ancestry, and must decide what to do when the target is unreachable. This is classic alias
+confusion, and it is easy to implement without noticing.
+
+**3. Multiple parents.** Drive has mostly moved to single-parent, but the API still returns
+`parents` as a *list*, and older files can have several. If a file sits in folder A (allowed)
+and folder B (not), "any allowed ancestor wins" makes the most permissive path the rule.
+"All ancestors must be allowed" is defensible but surprising, and unenumerable in practice.
+
+**4. Cost, and the cache that must not exist.** Traversal is an extra `files.get` per level per
+access — for a document four folders deep, five calls before the write. The obvious fix is a
+cache; but this project deliberately runs uncached (live multi-reviewer sessions), and a *security*
+cache going stale is strictly worse than a data cache going stale: it means a revoked grant
+still works for the cache's lifetime. Any caching here needs an explicit revocation story.
+
+**5. Copies and shares.** A copy of an allowlisted document has a **new file id**, so under the
+current flat list it is *not* writable. That is the right default and it should survive any
+folder design. Note the asymmetry: id-based entries are immune to renames and moves (an entry
+keeps pointing at the same document), whereas folder rules make a *move* into a silent grant and
+a move out into a silent revocation — with no diff anywhere to review.
+
+**6. Shared drives.** A file's ancestry terminates at a shared drive, not at "My Drive", and
+`driveId` is a separate field. Traversal has to stop somewhere sensible, and "allowlist a whole
+shared drive" is a much bigger grant than it reads as.
+
+**7. Where does a newly created file sit?** `create_file` produces an id nobody listed. Today
+`file.create` is `file_scoped=False`, because a new file cannot damage an existing one. With
+folders in play the question sharpens: is a file the agent created inside an allowlisted folder
+then writable? Saying yes lets the agent widen its own scope, one file at a time — which is
+exactly the in-band widening the whole design forbids.
+
+**The likely resolution, consistent with what #82 already settled:** keep the **flat id list as
+the only enforcement primitive**, forever. Add folders as a **generator** — a command that
+enumerates a folder *once*, emits the URLs it found with a comment saying where they came from,
+and expects a human to commit the result. Then the TOCTOU disappears (the list is what was
+reviewed, not what the folder currently holds), review remains possible (a `git diff` shows
+exactly which documents were added), and enforcement stays O(1) with no extra API calls. The
+cost moves to a process problem — the list must be regenerated when the folder changes — which
+is a much better problem than a silent grant.
+
+None of that is built. The questions above are the work.
 - [ ] **A5** `update_file`, `trash_file`, `share_file`, behind A4. → **completes Claude's 11.**
 
 **Deliberately excluded from "parity":** their `read_file_content` covers 13 mime types

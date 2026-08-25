@@ -22,6 +22,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .. import auth
+from ..allowlist import load_allowlist
 from ..exceptions import AuthError
 from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, Policy
 from ..workspace import Workspace
@@ -85,6 +86,30 @@ class Settings:
 
 
 def policy_from_env(env: Mapping[str, str]) -> Policy | None:
+    """Build the mutation policy from the environment, or `None` for the built-in default.
+
+    Two variables, one per dimension of #82:
+
+      CSA_GW_CAPABILITIES   *what* may be mutated  (see `_capabilities_from_env`)
+      CSA_GW_ALLOWLIST      *which files*          — path to a plain-text list of URLs
+
+    They compose one way only: capabilities are a ceiling, the allowlist narrows. An
+    unset allowlist means no file restriction, which is what this library has always done;
+    making that fail-closed is a 1.0.0 decision recorded in TODO.md, not a silent change.
+    """
+    capabilities = _capabilities_from_env(env)
+    path = (env.get("CSA_GW_ALLOWLIST") or "").strip()
+    if capabilities is None and not path:
+        return None
+    enabled = capabilities.enabled if capabilities is not None else DEFAULT_ENABLED
+    if not path:
+        return Policy(enabled=frozenset(enabled))
+    # Any problem here raises: a configured-but-unusable allowlist must never degrade into
+    # unrestricted writes.
+    return Policy.from_entries(frozenset(enabled), load_allowlist(path))
+
+
+def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:
     """`CSA_GW_CAPABILITIES` — the complete list of mutations this server may perform.
 
     Absolute, not a delta, because #82 asks for config that *reviews like code*: reading the

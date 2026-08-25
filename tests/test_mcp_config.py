@@ -219,3 +219,70 @@ def test_read_only_overrides_a_permissive_capability_list():
     assert settings.read_only is True
     # The provider builds the Workspace, which is where read_only wins.
     assert WorkspaceProvider(settings).settings.read_only is True
+
+
+# --- CSA_GW_ALLOWLIST -------------------------------------------------------
+
+_ALLOW_URL = "https://docs.google.com/document/d/1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8/edit"
+_ALLOW_ID = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
+
+
+def test_an_allowlist_path_narrows_the_policy_to_those_files(tmp_path):
+    from csa_google_workspace.mcp._config import settings_from_env
+    path = tmp_path / "allow.txt"
+    path.write_text(f"{_ALLOW_URL}  # the one document\n", encoding="utf-8")
+    policy = settings_from_env({"CSA_GW_ALLOWLIST": str(path)}).policy
+    assert policy is not None
+    assert policy.allowed_files == frozenset({_ALLOW_ID})
+
+
+def test_an_allowlist_alone_keeps_the_default_capabilities(tmp_path):
+    """The two variables are independent dimensions; setting one must not blank the other."""
+    from csa_google_workspace.mcp._config import settings_from_env
+    from csa_google_workspace.policy import DEFAULT_ENABLED
+    path = tmp_path / "allow.txt"
+    path.write_text(_ALLOW_URL, encoding="utf-8")
+    policy = settings_from_env({"CSA_GW_ALLOWLIST": str(path)}).policy
+    assert policy is not None and policy.enabled == DEFAULT_ENABLED
+
+
+def test_capabilities_and_allowlist_compose(tmp_path):
+    from csa_google_workspace.mcp._config import settings_from_env
+    from csa_google_workspace.policy import COMMENT_CREATE
+    path = tmp_path / "allow.txt"
+    path.write_text(_ALLOW_URL, encoding="utf-8")
+    policy = settings_from_env({"CSA_GW_CAPABILITIES": "comment.create",
+                                "CSA_GW_ALLOWLIST": str(path)}).policy
+    assert policy is not None
+    assert policy.enabled == frozenset({COMMENT_CREATE})
+    assert policy.allowed_files == frozenset({_ALLOW_ID})
+
+
+def test_a_configured_but_missing_allowlist_is_a_hard_failure(tmp_path):
+    """Never degrade to unrestricted writes: the failure being avoided is an operator who
+    believes writes are scoped because they set the variable, and mistyped the path."""
+    import pytest
+
+    from csa_google_workspace.allowlist import AllowlistError
+    from csa_google_workspace.mcp._config import settings_from_env
+    with pytest.raises(AllowlistError):
+        settings_from_env({"CSA_GW_ALLOWLIST": str(tmp_path / "nope.txt")})
+
+
+def test_a_folder_url_in_the_allowlist_fails_loudly(tmp_path):
+    import pytest
+
+    from csa_google_workspace.allowlist import AllowlistError
+    from csa_google_workspace.mcp._config import settings_from_env
+    path = tmp_path / "allow.txt"
+    path.write_text("https://drive.google.com/drive/folders/1HXZuiBGXD263XdaEOT3siAsakQEuQzVt\n",
+                    encoding="utf-8")
+    with pytest.raises(AllowlistError) as e:
+        settings_from_env({"CSA_GW_ALLOWLIST": str(path)})
+    assert "folder" in str(e.value)
+
+
+def test_no_allowlist_variable_leaves_files_unrestricted():
+    from csa_google_workspace.mcp._config import settings_from_env
+    policy = settings_from_env({"CSA_GW_CAPABILITIES": "comment.create"}).policy
+    assert policy is not None and policy.allowed_files is None

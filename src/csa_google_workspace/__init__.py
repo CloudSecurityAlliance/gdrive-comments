@@ -1,5 +1,6 @@
 from . import exceptions  # noqa: F401
 from ._formats import EXPORT_FORMATS
+from .allowlist import AllowlistError, load_allowlist
 from .backend import Backend
 from .base import Document
 from .comments import Author, Comment, CommentCollection, Location, Reply
@@ -19,6 +20,6 @@ __all__ = [
     "Suggestion", "Slide", "EXPORT_FORMATS",
     # load-bearing types for embedders / custom backends (audit #26)
     "Backend", "Document", "CommentCollection", "DetachedError",
-    "FileRef", "FileCollection", "Permission", "Policy", "PolicyBackend",
+    "FileRef", "FileCollection", "Permission", "Policy", "PolicyBackend", "AllowlistError", "load_allowlist",
 ]
-__version__ = "0.7.0"
+__version__ = "0.8.0"
