@@ -1,16 +1,62 @@
 # Changelog
 
-> **Not every version below was published.** `v0.3.0` and `v0.4.0` through `v0.10.1` were
-> development versions: the code and this changelog were bumped as each change landed, but no
-> git tag was cut and nothing reached PyPI. They all shipped together as **v0.11.0**, so
-> `pip install csa-google-workspace==0.9.0` will not find anything. The entries are kept
-> because they are an accurate record of *what changed and why*; they are just not a record of
-> what was released.
+> **Headings marked "not released" were never published.** Those versions were bumped in code
+> as each change landed, but no tag was cut and nothing reached PyPI — they shipped together as
+> `v0.11.0`. The entries are kept because they accurately record *what changed and why*; they
+> are not a record of what was released.
 >
-> **Published to PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0–0.2.5, 0.3.1, 0.11.0.
-> Git tags exist for exactly those (except 0.1.0/0.1.1, predating the tagging habit).
-> Reconciling all three properly is a tracked item — see `TODO.md`, *Release history and
-> provenance*.
+> **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
+> 0.11.1. `tests/test_release_history.py`
+> keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
+> PyPI itself.
+
+## 2026-08-25 — v0.11.1 (provenance, and a check that the changelog tells the truth)
+
+No library changes. Release hygiene, prompted by asking whether there was a plan for auditing
+past versions — there was not, and looking turned up a documentation error.
+
+### Fixed
+
+- **The changelog claimed versions nobody could install.** Eleven entries — `v0.3.0` and
+  `v0.4.0`–`v0.10.1` — were development versions: bumped in code as work landed, never tagged,
+  never published, all shipped together in `v0.11.0`. Each heading now says so.
+- **`v0.1.0`'s heading did not use the versioned format**, so it read as unpublished when it is
+  on PyPI. Found by the new script on its first run.
+
+### Added
+
+- **`PROVENANCE.md`** — who built this, how to verify a release's PEP 740 attestation *yourself*,
+  the yank policy, and what the secret scanners say about the history.
+  The authorship section says the unusual thing plainly: every non-bot commit is authored by Kurt
+  Seifried, a large share of the content was drafted by an AI assistant under his direction and
+  review, and **review is single-person**. That last part is the one that carries weight, so it is
+  named rather than implied. If it disqualifies the library for someone's purposes, that is a
+  legitimate call and this document exists so they can make it early.
+- **`docs/DECISIONS.md`** — an index of decisions: when each was settled, what evidence settled
+  it, and which earlier belief it replaced. Corrections are rows of their own rather than edits,
+  because being able to see that we believed something wrong is more useful than a clean record.
+  Five rows are corrections to documented or widely-believed Google behaviour.
+- **`tests/test_release_history.py`** — offline, runs in CI: every version heading is marked
+  released or not, `__version__` has an entry and is the newest one, versions and dates descend.
+- **`scripts/check_release_history.py`** — the three-way reconcile against git tags and PyPI,
+  needing network and a full clone. Now in `RELEASING.md`'s pre-tag checklist, alongside both
+  secret scanners.
+- **`.gitleaks.toml`** — one allowlist entry for one triaged false positive, *with the
+  reasoning*. A scanner that reports a known non-finding trains people to skim its output, which
+  is how a real finding gets missed.
+
+### Verified
+
+Across 177 commits: **trufflehog reports 0 verified and 0 unverified secrets**, gitleaks reports
+none after the documented allowlist, and no `client_secret*`, `credentials.json`, `token*.json`,
+`.pem` or transcript path has ever been committed. Attestations confirmed present on published
+artifacts, naming publisher `GitHub` and this repository.
+
+### The general point
+
+A file that records *intent* and a registry that records *fact* will drift, and the file is the
+one people read. The fix is not discipline, it is a check — which is why this ships as a test and
+a script rather than as a resolution to be careful.
 
 ## 2026-08-25 — v0.11.0 (the server explains itself)
 
@@ -66,7 +112,7 @@ arguments rather than its name.
   sentence straddles a newline and a naive substring search fails against text that is
   perfectly correct. Flattening tests the wording rather than the line breaks.
 
-## 2026-08-25 — v0.10.1 (comment parsing: keep the fragment, refuse the silent drop)
+## 2026-08-25 — v0.10.1 (comment parsing: keep the fragment, refuse the silent drop) — not released; shipped in v0.11.0
 
 Whitespace formatting and quoting in reasons already worked; two parsing bugs did not.
 
@@ -98,7 +144,7 @@ failing closed quietly is not good enough here.
   all survive. Whatever holds the value — JSON, a shell — has its own quoting rules, and that is
   a separate layer this parser has no business second-guessing.
 
-## 2026-08-25 — v0.10.0 (the allowlist lives in the configuration, and only there)
+## 2026-08-25 — v0.10.0 (the allowlist lives in the configuration, and only there) — not released; shipped in v0.11.0
 
 **Breaking.** `CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY` now hold the lists
 themselves. **There is no allowlist file** — no path values, no default location.
@@ -144,7 +190,7 @@ The path check runs **after** URL extraction and **before** the bare-id check. B
 order was settled, `allow.cfg` was diagnosed as "a bare file id" — technically reachable, and
 useless to whoever wrote it.
 
-## 2026-08-25 — v0.9.1 (say *which* kind of misconfiguration it is)
+## 2026-08-25 — v0.9.1 (say *which* kind of misconfiguration it is) — not released; shipped in v0.11.0
 
 There are exactly three outcomes for an allowlist setting: `*`, a set of document URLs, or
 **unusable** — and unusable always means *nothing permitted*. "Unusable" covers a lot of ground,
@@ -197,7 +243,7 @@ gating — and the other two servers' columns say what is actually true rather t
   names and `drive.file` cannot reach those. Having given up Google's upstream enforcement, it
   owes an equivalent — and these controls are it.
 
-## 2026-08-25 — v0.9.0 (read and modify allowlists, and unset now means nothing)
+## 2026-08-25 — v0.9.0 (read and modify allowlists, and unset now means nothing) — not released; shipped in v0.11.0
 
 **Breaking.** The single `CSA_GW_ALLOWLIST` becomes two — `CSA_GW_ALLOWLIST_READ` and
 `CSA_GW_ALLOWLIST_MODIFY` — and both **fail closed**: unset permits nothing, and unrestricted
@@ -268,7 +314,7 @@ Against real Google, with two throwaway Docs: `READ=*` reads both, `MODIFY` perm
 the listed one and refuses it on the other, and narrowing `READ` makes the second file vanish
 from `search_files` as well as becoming unreadable.
 
-## 2026-08-25 — v0.8.1 (the allowlist, configurable where you actually configure things)
+## 2026-08-25 — v0.8.1 (the allowlist, configurable where you actually configure things) — not released; shipped in v0.11.0
 
 `CSA_GW_ALLOWLIST` was a path to a file, which meant distributing a second artifact. It now
 takes whichever of three forms suits the deployment, all through the same plain environment
@@ -310,7 +356,7 @@ machine-dependent failure that once let a `login` test pass only because CI lack
 `client_secret.json`. `tests/test_mcp_config.py` now has an autouse fixture pointing the
 default at a nonexistent path, and the tests that *want* the default patch it themselves.
 
-## 2026-08-25 — v0.8.0 (the write allowlist: #82, second dimension)
+## 2026-08-25 — v0.8.0 (the write allowlist: #82, second dimension) — not released; shipped in v0.11.0
 
 Gate **A4** completed in its basic form. `CSA_GW_ALLOWLIST` points at a plain-text list of
 Google document URLs; **writes are refused for any file not listed, and reads are unaffected**.
@@ -378,7 +424,7 @@ flip it at 1.0.0 with an explicit opt-out, so that choosing unrestricted writes 
 somebody typed. Also open: per-capability scope (needs a structured format — plain text cannot
 say "commentable but not editable"), expiry, dead-entry detection, and a dry-run.
 
-## 2026-08-25 — v0.7.0 (capability gating: #82, first dimension)
+## 2026-08-25 — v0.7.0 (capability gating: #82, first dimension) — not released; shipped in v0.11.0
 
 Gate **A4**, half of it. #82's settled requirement surface separates two independent things —
 *may this deployment do X at all*, and *to which files* — with the composition rule that
@@ -442,7 +488,7 @@ user's credentials see, so bounding what it can *break* is the thing that helps.
 `search_files`, `list_recent_files` and `get_file_permissions` needed no gate, and why the
 roadmap's "discovery is blocked on #82" was wrong.
 
-## 2026-08-25 — v0.6.0 (who else is in this document?)
+## 2026-08-25 — v0.6.0 (who else is in this document?) — not released; shipped in v0.11.0
 
 Gate **A2** of the [1.0.0 list](./TODO.md).
 
@@ -491,7 +537,7 @@ recording as evidence that the lint job is not decoration.
 **6 of Google's 8, 6 of Claude's 11**, plus 7 they do not have. Remaining: `create_file`,
 `copy_file` (ungated), and `update_file`, `share_file`, `trash_file` (gated on #82).
 
-## 2026-08-25 — v0.5.0 (you can find a file now)
+## 2026-08-25 — v0.5.0 (you can find a file now) — not released; shipped in v0.11.0
 
 Gate **A1** of the [1.0.0 list](./TODO.md). `search_files` and `list_recent_files` — the gap
 that actually cost users something, because without them every session began with a pasted URL.
@@ -546,7 +592,7 @@ just does not reach a log by accident.
 `get_file_permissions`, `create_file`, `copy_file` (ungated), and `update_file`, `share_file`,
 `trash_file` (gated on #82).
 
-## 2026-08-25 — v0.4.0 (tool names aligned with the other Drive MCP servers; export formats)
+## 2026-08-25 — v0.4.0 (tool names aligned with the other Drive MCP servers; export formats) — not released; shipped in v0.11.0
 
 Roadmap items #1 and #6 from [`TODO.md`](./TODO.md). The content tools now carry the same
 names and parameters as Google's Drive MCP server and the claude.ai Drive connector, so a
@@ -631,7 +677,7 @@ That text now carries everything needed to act on it:
 The server's `instructions` now state the same protocol up front, so the model knows it
 before the first failure rather than inferring it from an error.
 
-## 2026-08-25 — v0.3.0 (authorize from inside the client)
+## 2026-08-25 — v0.3.0 (authorize from inside the client) — not released; shipped in v0.11.0
 
 - **New `authenticate` tool — browser consent without leaving your MCP client.** When a tool
   reports missing credentials, calling `authenticate` sends the Google consent URL to the
@@ -885,7 +931,7 @@ Formalized the quality bar as enforced CI gates (no runtime/API change):
   ~87%; the gap is the integration-only `ApiBackend` calls + interactive OAuth flow).
 - CI now has a dedicated `lint` job (ruff + mypy) alongside the 3.10–3.13 `test` matrix.
 
-## 2026-07-21 — Packaged for PyPI (v0.1.0)
+## 2026-07-21 — v0.1.0 (packaged for PyPI)
 
 First release-ready packaging pass, alongside the correctness fixes from an external audit.
 

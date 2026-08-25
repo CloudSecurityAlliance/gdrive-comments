@@ -1,0 +1,26 @@
+# gitleaks configuration.
+#
+# One allowlist entry, for one triaged false positive. Recorded here rather than re-triaged
+# every scan: a scanner that reports a known non-finding trains people to skim its output,
+# which is how a real finding gets missed.
+#
+#   gitleaks git --no-banner --redact -v .        # full history
+#   gitleaks dir --no-banner --redact -v .        # working tree only
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+[rules.allowlist]
+description = """
+`CSA_GW_INTEGRATION=1` and its siblings in prose. The generic-api-key rule fires on the
+entropy of the surrounding sentence, not on a credential — these are documented environment
+variable names whose values are the literal `1`. Every real credential this project touches is
+a Google OAuth client or token, and none has ever been committed: `git log --all --name-only`
+shows no `client_secret*`, `credentials.json`, `token*.json` or `.pem` path in 177 commits,
+and trufflehog reports 0 verified and 0 unverified secrets across the same history.
+"""
+regexes = ['''CSA_GW_[A-Z_]+=[01]''']
+paths = ['''CLAUDE\.md''', '''README\.md''', '''SECURITY\.md''', '''RELEASING\.md''',
+         '''PROVENANCE\.md''', '''TODO\.md''', '''CHANGELOG\.md''']

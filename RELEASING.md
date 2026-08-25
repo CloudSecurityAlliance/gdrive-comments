@@ -64,3 +64,26 @@ removing the unconstrained one, so the project is never left without a working p
   version right before publishing.
 - `requires-python` is `>=3.10`; the wheel is pure-Python (`py3-none-any`).
 - The package ships `py.typed`, so downstream `mypy`/`pyright` consume its type hints.
+
+## Before you tag
+
+```bash
+python scripts/check_release_history.py     # CHANGELOG vs git tags vs PyPI
+gitleaks git --no-banner --redact -v .      # full history
+trufflehog git file://. --results=verified,unknown
+```
+
+The first of those exists because the changelog once claimed eleven versions nobody could
+install: bumping `__version__` is free, publishing is a separate gated act, and the two drift.
+`tests/test_release_history.py` catches part of it offline in CI; the script does the three-way
+reconcile that needs network and tags.
+
+Note the ordering constraint: **the README is frozen on PyPI at publish time.** A documentation
+fix reaches PyPI only on the next version bump, so land README changes *before* cutting the tag,
+not after.
+
+## Yanking
+
+The policy — when we would yank rather than supersede, and what gets announced where — is in
+[`PROVENANCE.md`](./PROVENANCE.md#yanking). Short version: the bar is "installing this by
+accident is harmful", not "this is old".

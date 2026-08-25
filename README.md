@@ -517,7 +517,9 @@ This library is a building block for MCP servers / agents / automations acting *
 | [`docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md`](./docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md) | **Shape review before growth.** The library has one axis (per-file); the roadmap adds a second (account-scoped). Where each planned item lands, and what must not happen. |
 | [`research/drive-mcp-servers-and-api-surface.md`](./research/drive-mcp-servers-and-api-surface.md) | What Google's and the claude.ai connector's tools **actually** do, read from live schemas, plus the full Drive v3 / Docs v1 method inventory. |
 | [`experiments/`](./experiments/) | Runnable **empirical probes** (with dated `RESULTS.md`): `anchor-probe`, `comment-lifecycle`, `docs-suggestions`, `sheets-cellmap`, `export-formats`. Probe beats docs. |
-| [`CHANGELOG.md`](./CHANGELOG.md) | What changed in each refresh, and why. |
+| [`CHANGELOG.md`](./CHANGELOG.md) | What changed in each refresh, and why. Headings say which versions were actually published. |
+| [`PROVENANCE.md`](./PROVENANCE.md) | Who built this and how, how to verify a release's attestation yourself, the yank policy, and what the secret scanners say about the history. |
+| [`docs/DECISIONS.md`](./docs/DECISIONS.md) | An index of decisions — when each was settled, what evidence settled it, and which earlier belief it replaced. |
 
 ## Three things worth knowing
 
