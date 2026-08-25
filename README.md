@@ -114,23 +114,50 @@ There are two other ways to reach Google Drive from an AI client, and **for many
 are the better choice.** This table exists so you can tell which one fits, not to argue for
 this one.
 
+### Environment
+
 | | [Google's Drive MCP](https://developers.google.com/workspace/drive/api/reference/mcp) | Claude's built-in Drive connector | **csa-google-workspace** |
 |---|---|---|---|
 | **Setup** | none — hosted | none — built in | `pipx install`, your own OAuth client, `login` |
 | **Works with** | any MCP client | Claude | any MCP client (local stdio) |
 | **OAuth scope** | `drive.file` / `drive.readonly` | — | **full `drive`** |
-| **Runs** | Google's servers | Anthropic's | your machine |
-| Search / discovery | ✅ | ✅ | ✗ *(planned)* |
-| Read text of a file | ✅ | ✅ | ✅ |
-| Read PDF / Office / ODF / **images** | ✅ | ✅ | ✗ |
-| File metadata · permissions | ✅ | ✅ | partial · ✗ |
-| Create · copy file | ✅ | ✅ | ✗ *(planned)* |
-| Rename/move · share · trash | ✗ | ✅ | ✗ |
-| Read comments | as inline text | as inline text | ✅ **structured** |
-| **Edit an existing document** | ✗ | ✗ | ✅ |
-| **Comment lifecycle** (reply, resolve, reopen, edit, delete) | ✗ | ✗ | ✅ |
-| **Sheets comment → cell mapping** | ✗ | ✗ | ✅ |
-| **Docs suggestions** (read + accepted/rejected preview) | ✗ | ✗ | ✅ |
+| **Runs on** | Google's servers | Anthropic's | your machine |
+
+### Tools, by name
+
+**The names are deliberately the same.** Where all three do the same thing, they use the same
+tool name and the same argument shapes, so prompts and habits transfer between them. Verified
+against live schemas — Google's and Claude's shared tools are identical in name and parameters;
+Claude's descriptions carry extra model-facing guidance, which this server copies.
+
+| Tool | Google | Claude | this server |
+|---|---|---|---|
+| `search_files` | ✅ | ✅ | *planned* |
+| `list_recent_files` | ✅ | ✅ | *planned* |
+| `get_file_metadata` | ✅ | ✅ | *planned* |
+| `get_file_permissions` | ✅ | ✅ | *planned* |
+| `read_file_content` | ✅ | ✅ | *planned* |
+| `download_file_content` | ✅ | ✅ | *planned* |
+| `create_file` | ✅ | ✅ | *planned* |
+| `copy_file` | ✅ | ✅ | *planned* |
+| `update_file` *(metadata: rename/move only)* | ✗ | ✅ | *planned* |
+| `share_file` | ✗ | ✅ | *planned, gated* |
+| `trash_file` | ✗ | ✅ | *planned* |
+
+Only in this server — no equivalent exists in either of the others:
+
+| Tool | What it does |
+|---|---|
+| `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies — not text inlined into a document dump |
+| `create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment` | The **comment lifecycle**. Triage a review thread, not just read it |
+| `comments_by_cell` | A Sheets comment mapped back to **the cell it is about** (best-effort; requires an XLSX-export detour) |
+| `read_text(suggestions=…)` | Preview a Doc **as if suggestions were accepted or rejected** |
+| *(library today, MCP soon)* content editing | `replace_text`, `insert_text`, `append_text`, `delete_range`, Sheets `update`/`append_rows`/`clear`, Slides `insert_text` |
+| `authenticate` | Browser consent from inside the client. The hosted servers do not need this; a local one does |
+
+**Neither of the others can edit an existing file's content at all** — `create_file` uploads a
+new file and `update_file` only renames or moves. That, rather than tool count, is the
+difference between them and this.
 
 **Use Google's or Claude's if** you want zero setup, you are reading rather than editing, you
 need PDFs/images/Office files, or you would rather not hand a local tool full-Drive scope.

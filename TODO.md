@@ -100,6 +100,51 @@ Note the scope shift: everything *below* this section is library-internal, but p
 **delivery layer over** the library — it adds no document logic, only maps MCP primitives
 onto the existing `Workspace` API.
 
+## Roadmap — eight subsystems, in order
+
+Everything below this line was one item called "feature parity" until a code review showed it
+is eight independent pieces with real dependencies between them. Each is its own spec → plan →
+implement cycle; **do not try to plan them together.** At the granularity this project uses
+(every task a failing test, a run, an implementation, a run, a commit) a combined plan runs to
+several hundred steps and nobody executes it.
+
+| # | Subsystem | Touches | Blocked on | Notes |
+|---|---|---|---|---|
+| **1** | **Tool alignment** — their names, argument shapes, and Claude's model-facing guidance | MCP layer only | — | **Start here.** No library change. |
+| **2** | **File allowlisting** ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) | `Backend` wrapper | — | Do it **before** 4 and 5. See below. |
+| **3** | **Discovery** — `search_files`, `list_recent_files` | library: new axis on `Workspace` | 2 | Biggest usability win. |
+| **4** | **File lifecycle** — `create_file`, `copy_file`, `update_file`, `trash_file` | library: new axis | 2, 3 | |
+| **5** | **Permissions** — `get_file_permissions`, `share_file` | library | **2** | `share_file` is an exfiltration primitive. |
+| **6** | **Format breadth** — PDF, Office, ODF, images | `export` plumbing | — | Nearly free; `Document.export()` exists, just unexposed. Can ride with 1. |
+| **7** | **Differentiators** — `approvals`, `revisions`, `changes`+`watch` | 3 new API surfaces | — | Own brainstorm each. `approvals` is the most on-mission thing found. |
+| **8** | **Docs `batchUpdate` breadth** — 37 unused request types | library | — | A programme, not a plan. Tables first. |
+
+### Why #2 must come before #4 and #5 — and it is not only the security argument
+
+**Every one of `Backend`'s 22 methods takes `file_id` as its first parameter.** That uniformity
+is precisely what makes #82's `AllowlistBackend` trivial: wrap the backend, `policy.check(file_id,
+op)`, delegate. No changes to existing methods.
+
+The new operations break that shape:
+
+- `search_files(query)` — **no `file_id` at all**, and it discloses titles and content snippets,
+  which is information leakage even with nothing opened
+- `list_recent_files()` — no `file_id`
+- `create_file(title, content, parent_id)` — no `file_id`; it *produces* one
+- `copy_file(file_id, …)` — has one, but also produces a new one
+
+So #82 is not a security chore that can be deferred; it is **a schema decision with a
+deadline.** Design the policy while 22 methods are uniform and the exceptions are deliberate.
+Add discovery and creation first and the policy has to be retrofitted around them.
+
+### Recommended first step
+
+**#1 + #6 together.** One coherent plan, no library changes, ships the naming alignment and the
+transferability that makes the flavour switch possible, adds format breadth almost for free, and
+leaves `server.py` split into `_comments.py` / `_content.py` / `_files.py` — a shape that can
+absorb the rest. `server.py` is 265 lines with 10 tools today; the next dozen tools need that
+split regardless.
+
 ## Flavour switch — restrict this server to Google's or Claude's surface
 
 - [ ] **`CSA_GW_FLAVOUR=google | claude | full`** (default `full`). Registers only the tools the
