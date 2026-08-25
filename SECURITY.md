@@ -96,6 +96,14 @@ What it does about it, and what it does not:
   opaque id — it would match nothing, so the entry would protect nothing while looking like
   protection. Folder support needs the ancestor-traversal, shortcut-aliasing and
   add-to-folder-is-a-grant questions settled first; they are written out in `TODO.md`.
+- **Another Drive integration in the same client bypasses all of it.** Every control here is
+  enforced by *this* server, in-process, before the Google API call. Claude's built-in Google
+  Drive connector reaches the same account with no allowlist and no capability gating, so with
+  both enabled a refusal here is not a refusal — the operation is available by another route on
+  the same files. This is a limitation of client-side enforcement generally, not a defect that
+  can be fixed here: a process cannot bound what a sibling process is permitted to do.
+  **Disable the built-in connector when using this server**, and treat "two Drive integrations,
+  one scoped" as equivalent to unscoped. The README says where to turn it off.
 - **Note the scope of the claim.** What ships today is a *first* control: per-capability gating
   plus flat lists of documents. It is deliberately simple and it is not the whole answer — a
   broader model is being researched. It is enforced as a `Backend` wrapper, so it applies to

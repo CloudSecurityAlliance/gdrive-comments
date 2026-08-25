@@ -61,6 +61,30 @@ csa-google-workspace-mcp login --force        # ...or re-authorize deliberately
 claude mcp add csa-google-workspace -- csa-google-workspace-mcp
 ```
 
+### Turn off the built-in Google Drive connector
+
+**If you use this server, disable Claude's own Google Drive connector.** Not merely to avoid
+confusion — although there is that, since the tool names are deliberately identical — but
+because leaving both enabled **defeats the scoping described below.**
+
+The allowlists and capability gating here are enforced by *this* server. Claude's built-in
+connector reaches the same Google account with none of them. So with both enabled, a refusal
+from this server is not a refusal: the same operation is available through the other route, on
+the same files, with no allowlist at all. **The scoping stops being a bound on what the model
+can do and becomes a bound on one of two ways to do it.**
+
+Where to turn it off:
+
+- **Claude Desktop / claude.ai** — Settings → Connectors → Google Drive → disconnect. This is
+  where it matters most; connectors are on by default once authorized.
+- **Claude Code** — the same connector, unless another auth source takes precedence. If `/mcp`
+  reports *"claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source
+  is set"*, they are already inactive and there is nothing to do.
+
+Keeping the built-in one instead is a perfectly reasonable choice — see the comparison below,
+and note that Google's hosted server has a *better* answer to scoping than either of us. What
+is not reasonable is running both and believing the allowlist means something.
+
 ### Scoping what it may touch
 
 Three independent bounds, all plain environment variables, so they can be set wherever your MCP
