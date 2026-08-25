@@ -223,10 +223,14 @@ the server*, which the stdio server deliberately skips.
 
 ### Prior art in-house
 
-CSA has already built most of this shape once: `CINO-Customer360` runs a FastMCP server with
-Google OAuth, an Internal consent screen, Cloudflare Tunnel, and secrets in AWS Secrets Manager.
-Its `docs/IT-SETUP.md` is the runbook to start from — note that it authenticates users *into* the
-service with `openid email profile`, which is only the inbound half of what is needed here.
+CSA has already worked most of this shape out once: `CINO-Customer-360`'s
+`docs/IT-SETUP.md` is a runbook for exactly this deployment — a FastMCP server behind an
+**Internal** Google OAuth consent screen, secrets in AWS Secrets Manager, a Cloudflare Tunnel
+hostname for the public surface, and Cloudflare Access in front of it. Start there rather than
+from scratch. Two caveats: the tunnel is **specified but not deployed** there (`cloudflared` was
+removed in its V1 — "we run no inbound web surface"), and its OAuth is `openid email profile`
+only, i.e. *identifying* the user to the service. That is the inbound half. Holding a full-Drive
+token per user on their behalf is the half nobody at CSA has built yet.
 
 ## Flavour switch — restrict this server to Google's or Claude's surface
 
