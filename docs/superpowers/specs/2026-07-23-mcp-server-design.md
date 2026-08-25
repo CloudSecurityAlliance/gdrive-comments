@@ -25,8 +25,9 @@ matches the project's standing constraint on sensitive-Drive access.
 Decisions locked in the brainstorm:
 - **Transport:** local single-user **stdio** first; structured so Streamable HTTP can be
   added later without reworking the tools.
-- **Framework:** the official **`mcp` SDK's bundled FastMCP** (`from mcp.server.fastmcp
-  import FastMCP`) — first-party, spec-tracking. Target spec revision `2025-11-25`.
+- **Framework:** the official **`mcp` SDK**, class `MCPServer` (`from mcp.server import
+  MCPServer`) — first-party, spec-tracking. Target spec revision **`2026-07-28`** (current).
+  *`mcp.server.fastmcp` was removed in SDK 2.0 — FastMCP became `MCPServer`.*
 - **Write posture:** **full read + write, on by default**, mirroring the library. Hedged
   (not gated) with MCP tool annotations and an optional read-only launch flag (§7).
 - **v1 primitives:** tools + one Resource (document text) + one Prompt (comment triage).
@@ -36,7 +37,7 @@ Decisions locked in the brainstorm:
 **In (v1):** stdio server; full read/write tool surface; a document-text Resource; a
 comment-triage Prompt; `[mcp]` optional-dependency extra; a console entry point with a `login`
 subcommand (the only interactive code path, §5); typed-error → tool-error mapping; unit tests via
-`FakeBackend` + FastMCP's in-memory client.
+`FakeBackend` driven through the server's in-process `call_tool`.
 
 **Out (v1, designed-for not built):** Streamable HTTP / remote transport; multi-user OAuth
 2.1 (resource-server model) + per-user token custody; MCP Sampling/Elicitation; a raw
@@ -52,39 +53,41 @@ variant content ~ `documents/`).
 
 ```
 src/csa_google_workspace/mcp/
-  __init__.py        # re-exports create_server, main
-  __main__.py        # `python -m csa_google_workspace.mcp` -> main()
-  server.py          # create_server(workspace) -> FastMCP app; composes the producers below
-  _comments.py       # register_comment_tools(app, ws)   — UNIFORM axis (all file types) ~ CommentsMixin
-  _content.py        # register_content_tools(app, ws)    — VARIANT axis; read/write via open() + typed methods
-  _resources.py      # register_resources(app, ws)        — the document-text resource
-  _prompts.py        # register_prompts(app, ws)          — the comment-triage prompt
-  _config.py         # env -> Workspace (cached token only, never interactive); read_only flag
+  __init__.py        # re-exports Settings/WorkspaceProvider/settings_from_env + main
+  cli.py             # argv -> run the stdio server, or `login`
+  server.py          # create_server(get_workspace) -> MCPServer; holds both tool producers:
+                     #   register_comment_tools  — UNIFORM axis (all file types) ~ CommentsMixin
+                     #   register_content_tools  — VARIANT axis; via open() + typed methods
+  _config.py         # env -> Settings; WorkspaceProvider (cached token only, thread-local)
   _login.py          # the `login` subcommand — the ONLY interactive-consent code path
-  _schemas.py        # structured-output models for tool results
+  _schemas.py        # TypedDict output shapes (bare `dict` is not serializable in SDK 2.x)
+
+Deferred until they earn their own files: `_resources.py` (document-text resource) and
+`_prompts.py` (comment-triage prompt). The two producers live in `server.py` while it is
+small; split them along the same axis boundary when it stops being.
 ```
 
-- **`create_server(workspace: Workspace) -> FastMCP`** builds the app and calls each
-  `register_*` producer to bind tools/resources/prompts to the given `Workspace`. This is the
-  DI seam (parallel to `Workspace` itself): tests pass `Workspace(FakeBackend(...))`, the CLI
-  builds a real one. Each producer is independently testable against `FakeBackend`.
+- **`create_server(get_workspace: Callable[[], Workspace]) -> MCPServer`** builds the app and
+  calls each `register_*` producer. The seam is a **provider, not an instance**, and that is
+  load-bearing twice over: credentials resolve on first tool use (so a server with no token
+  still starts and reports the remedy in chat rather than dying at startup, where an MCP client
+  renders the failure as an opaque "server failed to start"), and it lets each worker thread
+  hold its own `Workspace`. Tests pass `lambda: Workspace(FakeBackend(...))`; the CLI passes a
+  `WorkspaceProvider`.
 - **`main()`** (entry point) reads config (§5), constructs the `Workspace` from **cached
   credentials only** (never `from_oauth` — see §5), calls `create_server`, and runs it over stdio
   (`app.run()`). **All logging goes to stderr** —
   under stdio, stdout is the JSON-RPC channel and must never be written to (no `print`, no
   stdout log handler; the library's own `logging` warnings must land on stderr).
-- **Tool handlers are synchronous in v1 — a deliberate, recorded trade-off.** Verified against
-  the installed SDK (`mcp` 1.27.0): `FuncMetadata.call_fn_with_arg_validation` calls a sync tool
-  `fn(**args)` **inline on the event loop** — it does *not* offload to a worker thread. Two
-  consequences. (1) *Safe:* there is no concurrent access to the injected `Workspace`, so the
-  library's "never share a `Workspace` across threads" rule (`googleapiclient` clients are not
-  thread-safe) is satisfied by construction. (2) *Cost:* each Google API call blocks the whole
-  server for its duration — one slow `as_text()` stalls every other tool call and the protocol
-  itself. For a **local single-user** server this serialization is acceptable: one human, one
-  agent, naturally sequential requests. The alternative — wrapping handlers in
-  `anyio.to_thread.run_sync` — restores responsiveness but reintroduces the thread-safety
-  constraint, and would then require a `Workspace` per call or a lock. Deferred, not rejected;
-  the stateless `open()`-per-call rule below already leans the right way if we switch.
+- **Tool handlers are synchronous; the SDK runs them on worker threads.** Verified against
+  `mcp` 2.1.0: `FuncMetadata.call_fn` does
+  `await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))` for a sync tool, and says
+  so — *"A sync function runs on a worker thread."* **This reverses the finding recorded here
+  on 2026-08-05**, which was measured against `mcp` 1.27.0, where sync tools ran inline on the
+  event loop. Consequences flip with it: Google calls no longer block the event loop (good),
+  but concurrent tool calls now execute on *different threads*, so a single shared `Workspace`
+  would be touched concurrently — which `SECURITY.md` forbids and `googleapiclient` does not
+  survive. Hence the provider seam below, which hands each thread its own `Workspace`.
 - **Factory-based dispatch (not a type ladder).** Content tools use `ws.open(file)` — the
   library's MIME-sniffing producer — and call the returned typed `Document`'s method directly,
   leaning on the library's polymorphism. A capability the type lacks (e.g. `replace_text` on a
@@ -357,9 +360,11 @@ Recorded decisions, not oversights. None blocks the plan.
   2.1 resource-server model, per-user token custody in a real secret store) is a **separate
   design**, deliberately not a config flag on this one — it inverts the token-custody model that
   `SECURITY.md` is built around. v1 is local, self-hosted, single-user. Tracked in `TODO.md`.
-- **Async / responsiveness.** Sync handlers serialize all work and block the event loop (§3).
-  Accepted for a single-user local server. Revisit if a hosted variant or genuine concurrency
-  arrives; the fix is `anyio.to_thread.run_sync` plus a per-call `Workspace`.
+- **Async / responsiveness.** Resolved by the SDK rather than by us: `mcp` 2.x already runs
+  sync handlers on worker threads (§3), so no `anyio.to_thread` work is needed and the event
+  loop is not blocked. What it *created* is the thread-safety requirement, met by the
+  thread-local provider. An async-native facade over `google-api-python-client` remains out of
+  scope (that library is synchronous).
 - **Token custody beyond `0600`.** OS-keychain storage instead of a plaintext file (§7). A real
   improvement, a real amount of work, and cross-platform. Not v1.
 - **Elicitation for re-consent.** MCP Elicitation could let the server ask the client to prompt
