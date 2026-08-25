@@ -29,11 +29,15 @@ coverage so it fails in CI instead.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from . import exceptions as exc
+from .allowlist import Entry
+
+log = logging.getLogger(__name__)
 
 # --- the capabilities -------------------------------------------------------
 
@@ -62,6 +66,22 @@ DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COM
 # Google's own MCP server declines to offer at all.
 DEFAULT_DISABLED = frozenset({FILE_UPDATE, FILE_TRASH, FILE_SHARE})
 
+@dataclass(frozen=True)
+class Gate:
+    """What a `Backend` method needs in order to proceed.
+
+    Both facts belong in one place because `_GATES` is the security contract: a reader
+    should see, per method, which capability it costs *and* whether the file allowlist
+    applies. `file_scoped=False` is for calls with no file to check — the account axis, and
+    creation, which cannot damage a file that already exists.
+    """
+    capability: str | Callable[..., str] | None
+    file_scoped: bool = True
+
+
+READ = Gate(capability=None, file_scoped=False)
+
+
 def _reply_gate(file_id: str, comment_id: str, content: Any = None,
                 action: Any = None) -> str:
     """`create_reply` is two operations wearing one method name.
@@ -78,48 +98,68 @@ def _reply_gate(file_id: str, comment_id: str, content: Any = None,
 # are deliberately ungated: #82 is about damage containment, not confidentiality, because
 # the agent already sees whatever the user's credentials see. A callable is consulted with
 # the call's own arguments, for methods whose capability depends on them.
-_GATES: dict[str, str | Callable[..., str] | None] = {
-    # reads
-    "get_file_metadata": None,
-    "list_permissions": None,
-    "search_files": None,
-    "list_comments": None,
-    "get_comment": None,
-    "export_file": None,
-    "get_document": None,
-    "get_spreadsheet": None,
-    "get_values": None,
-    "get_presentation": None,
+_GATES: dict[str, Gate] = {
+    # reads — never gated: #82 is damage containment, not confidentiality. The agent already
+    # sees whatever the user's credentials see.
+    "get_file_metadata": READ,
+    "list_permissions": READ,
+    "search_files": READ,
+    "list_comments": READ,
+    "get_comment": READ,
+    "export_file": READ,
+    "get_document": READ,
+    "get_spreadsheet": READ,
+    "get_values": READ,
+    "get_presentation": READ,
     # comment writes
-    "create_comment": COMMENT_CREATE,
-    "create_reply": _reply_gate,             # reply vs resolve/reopen — see above
-    "update_comment": COMMENT_EDIT,
-    "update_reply": COMMENT_EDIT,
-    "delete_comment": COMMENT_DELETE,
-    "delete_reply": COMMENT_DELETE,
+    "create_comment": Gate(COMMENT_CREATE),
+    "create_reply": Gate(_reply_gate),       # reply vs resolve/reopen — see above
+    "update_comment": Gate(COMMENT_EDIT),
+    "update_reply": Gate(COMMENT_EDIT),
+    "delete_comment": Gate(COMMENT_DELETE),
+    "delete_reply": Gate(COMMENT_DELETE),
     # content writes
-    "docs_batch_update": CONTENT_WRITE,
-    "sheets_values_update": CONTENT_WRITE,
-    "sheets_values_append": CONTENT_WRITE,
-    "sheets_values_clear": CONTENT_WRITE,
-    "sheets_batch_update": CONTENT_WRITE,
-    "slides_batch_update": CONTENT_WRITE,
-    # API-impossible today; ApiBackend raises UnsupportedOperation. Gated anyway so a
-    # future PlaywrightBackend does not arrive ungated.
-    "accept_suggestion": CONTENT_WRITE,
-    "create_cell_anchored_comment": COMMENT_CREATE,
+    "docs_batch_update": Gate(CONTENT_WRITE),
+    "sheets_values_update": Gate(CONTENT_WRITE),
+    "sheets_values_append": Gate(CONTENT_WRITE),
+    "sheets_values_clear": Gate(CONTENT_WRITE),
+    "sheets_batch_update": Gate(CONTENT_WRITE),
+    "slides_batch_update": Gate(CONTENT_WRITE),
+    # API-impossible today; ApiBackend raises UnsupportedOperation. Gated anyway so a future
+    # PlaywrightBackend does not arrive ungated.
+    "accept_suggestion": Gate(CONTENT_WRITE),
+    "create_cell_anchored_comment": Gate(COMMENT_CREATE),
 }
 
 
 @dataclass(frozen=True)
 class Policy:
-    """Which capabilities this deployment permits.
+    """What this deployment may mutate: which capabilities, and on which files.
+
+    The two dimensions compose one way only — **global is a ceiling, the file list narrows**.
+    A capability absent from `enabled` cannot be reached by listing a file, and a file absent
+    from `allowed_files` cannot be reached by enabling a capability.
+
+    `allowed_files=None` means *no file restriction* — every file the credentials can reach.
+    That is the default, because it is what this library has always done; making it
+    fail-closed is a deliberate 1.0.0 decision recorded in `TODO.md`, not something to change
+    silently under existing users.
 
     Construct with `Policy.default()` for today's behaviour, or `Policy(enabled=frozenset())`
     for a policy that permits no mutation at all — the same outcome as `read_only=True`,
     reached from the other direction.
     """
     enabled: frozenset[str]
+    allowed_files: frozenset[str] | None = None
+    entries: tuple[Entry, ...] = field(default=(), repr=False)
+
+    @classmethod
+    def from_entries(cls, enabled: frozenset[str], entries: tuple[Entry, ...]) -> Policy:
+        return cls(enabled=enabled, allowed_files=frozenset(e.file_id for e in entries),
+                   entries=entries)
+
+    def allows_file(self, file_id: str) -> bool:
+        return self.allowed_files is None or file_id in self.allowed_files
 
     @classmethod
     def default(cls) -> Policy:
@@ -137,12 +177,15 @@ class Policy:
         return capability is None or capability in self.enabled
 
     def with_enabled(self, *capabilities: str) -> Policy:
-        """Widen. Only ever called by whoever *configures* the server, never in-band: an
-        agent that can widen its own policy does not have one."""
-        return Policy.of(*(self.enabled | set(Policy.of(*capabilities).enabled)))
+        """Widen the capability set. Only ever called by whoever *configures* the server,
+        never in-band: an agent that can widen its own policy does not have one."""
+        widened = Policy.of(*(self.enabled | set(Policy.of(*capabilities).enabled)))
+        return Policy(enabled=widened.enabled, allowed_files=self.allowed_files,
+                      entries=self.entries)
 
     def without(self, *capabilities: str) -> Policy:
-        return Policy(enabled=self.enabled - set(capabilities))
+        return Policy(enabled=self.enabled - set(capabilities),
+                      allowed_files=self.allowed_files, entries=self.entries)
 
 
 class PolicyBackend:
@@ -171,21 +214,45 @@ class PolicyBackend:
                 f"refused. Add it there (with None for a read) rather than bypassing this.")
         gate = _GATES[name]
         inner = getattr(self._inner, name)
-        if gate is None:
+        if gate.capability is None:
             return inner                                  # a read; no wrapper needed
 
         def guarded(*args: Any, **kwargs: Any) -> Any:
-            capability = gate(*args, **kwargs) if callable(gate) else gate
+            rule = gate.capability
+            capability = rule(*args, **kwargs) if callable(rule) else rule
             if not self._policy.allows(capability):
+                log.warning("policy denied %s: capability %r is disabled", name, capability)
                 raise exc.ReadOnlyError(
                     f"the {capability!r} capability is disabled for this server, so {name} "
                     f"is refused. An operator enables it in configuration; it cannot be "
                     f"turned on from here.")
+            if gate.file_scoped:
+                file_id = kwargs.get("file_id") or (args[0] if args else None)
+                if file_id is None:
+                    # Fail closed: a file-scoped call we cannot attribute to a file is one
+                    # the allowlist cannot check.
+                    raise exc.UnsupportedOperation(
+                        f"{name} is declared file-scoped but was called without a file id, "
+                        f"so the allowlist cannot be applied. This is a bug.")
+                if not self._policy.allows_file(file_id):
+                    log.warning("policy denied %s on %s: not in the write allowlist",
+                                name, file_id)
+                    raise exc.ReadOnlyError(self._not_allowlisted(name, file_id))
+            log.debug("policy allowed %s (%s)", name, capability)
             return inner(*args, **kwargs)
 
         guarded.__name__ = name
         return guarded
 
+    def _not_allowlisted(self, name: str, file_id: str) -> str:
+        count = len(self._policy.allowed_files or ())
+        return (f"{name} is refused: file {file_id} is not in the write allowlist "
+                f"({count} file(s) listed). Reads are unaffected. To permit it, an operator "
+                f"adds the document's URL to the allowlist file — it cannot be added from "
+                f"here.")
+
     def __repr__(self) -> str:
+        scope = ("unrestricted" if self._policy.allowed_files is None
+                 else f"{len(self._policy.allowed_files)} file(s)")
         return (f"PolicyBackend(inner={type(self._inner).__name__}, "
-                f"enabled={sorted(self._policy.enabled)})")
+                f"enabled={sorted(self._policy.enabled)}, files={scope})")

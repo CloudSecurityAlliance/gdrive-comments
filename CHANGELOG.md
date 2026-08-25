@@ -1,5 +1,73 @@
 # Changelog
 
+## 2026-08-25 — v0.8.0 (the write allowlist: #82, second dimension)
+
+Gate **A4** completed in its basic form. `CSA_GW_ALLOWLIST` points at a plain-text list of
+Google document URLs; **writes are refused for any file not listed, and reads are unaffected**.
+
+Deliberately the simplest thing that works: a flat list of direct document URLs. No folders, no
+patterns, no wildcards. Folders are the interesting design problem and they are *not* solved
+here — `TODO.md` → "Folders in the allowlist" writes out the seven questions they drag in, and
+why folder-as-rule is more dangerous than it looks.
+
+### Added
+
+- **`CSA_GW_ALLOWLIST`** — path to the allowlist. Format is one URL per line, `#` starts a
+  comment, so the trailing comment gives #82's required *reason per entry* on the same line and
+  the whole thing reviews like code in a `git diff`:
+
+  ```
+  # CSA WG documents this agent may write to.
+  https://docs.google.com/document/d/1oW1BM…/edit?tab=t.0   # CCM v5 mapping, per WG lead
+  https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
+  ```
+
+- **`allowlist.py`** — `parse_document_url`, `parse_allowlist`, `load_allowlist`, `Entry`.
+- **`Policy.allowed_files` / `Policy.from_entries`**, and `Gate(capability, file_scoped)` so
+  `_GATES` states both facts per method: what it costs, and whether the file list applies.
+
+### The properties worth reviewing
+
+**Matched by file id, not URL string.** Every URL form for one document is one entry — a pasted
+`/edit?tab=t.0` link, an `#heading=` anchor and a `?usp=sharing` link all normalise together. It
+also means a **copy** of an allowlisted document has a different id and is *not* writable, which
+is the correct default, and that id-based entries survive renames and moves.
+
+**Fails closed on every failure mode.** Missing file, unreadable file, no usable entries, any
+malformed line — all raise. Never a fallback to unrestricted writes. The failure being avoided
+is an operator who believes writes are scoped because they set the variable, and mistyped the
+path.
+
+**Folder URLs are a loud error.** Treated as an opaque id, a folder URL would match nothing, so
+the entry would protect nothing while looking in the file like protection — the silent no-op #82
+calls dead-entry detection. The error names the document-URL form and points at the open design
+questions.
+
+**A bare file id is rejected**, unlike `Workspace.open()` which accepts one. Drive ids are
+unstructured base64url, so a bare id cannot be told apart from a typo — an early version of this
+parser happily accepted `nonsense-one` as a file id. A URL in a reviewed config is also
+*clickable*: whoever approves the entry can open it and see what they are granting.
+
+**Every bad line is reported, not just the first.** Fixing a curated list of thirty URLs should
+not take thirty runs to find thirty typos.
+
+**Denials log at WARNING** with the method and file id. Denials are the security signal.
+
+### Reads stay unrestricted, on purpose
+
+#82 is damage containment, not confidentiality: the agent already sees whatever the user's
+credentials see, so bounding what it can *break* is the part that helps. An unlisted file can
+still be read, searched and had its comments listed.
+
+### Still open before 1.0.0
+
+An **unset** `CSA_GW_ALLOWLIST` still means no file restriction, because that is what this
+library has always done and flipping it silently would break existing users. #82 asks for
+fail-closed including the no-policy default; the recommendation, recorded in `TODO.md`, is to
+flip it at 1.0.0 with an explicit opt-out, so that choosing unrestricted writes is something
+somebody typed. Also open: per-capability scope (needs a structured format — plain text cannot
+say "commentable but not editable"), expiry, dead-entry detection, and a dry-run.
+
 ## 2026-08-25 — v0.7.0 (capability gating: #82, first dimension)
 
 Gate **A4**, half of it. #82's settled requirement surface separates two independent things —

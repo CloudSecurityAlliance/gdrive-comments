@@ -41,7 +41,8 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
 - `_services.py` — lazy Google API client registry. `_errors.py` — `HttpError`→typed translator + retry.
 - `base.py` — `Document` base + `CommentsMixin`. `documents/` — `Doc`/`Sheet`/`Slides` (per-type content read/write).
 - `comments.py` — `Author`/`Reply`/`Comment`/`Location`/`CommentCollection` + in-place mutation.
-- `policy.py` — **#82 dimension 1**: capability names, `Policy`, and `PolicyBackend` (a `Backend` wrapper). `_GATES` must name every `Backend` method — an unlisted one is *refused*, not delegated, and `tests/test_policy.py` fails in CI if the protocol grows past it.
+- `policy.py` — **#82**: capability names, `Policy` (capabilities **and** the file allowlist), and `PolicyBackend` (a `Backend` wrapper). `_GATES` must name every `Backend` method with a `Gate(capability, file_scoped)` — an unlisted one is *refused*, not delegated, and `tests/test_policy.py` fails in CI if the protocol grows past it.
+- `allowlist.py` — the write allowlist: parse/validate a plain-text list of document URLs. **Folder URLs are a loud error**, and a bare file id is rejected (unlike `Workspace.open()`) because it cannot be told apart from a typo. See `TODO.md` → "Folders in the allowlist" before touching this.
 - `permissions.py` — `Permission` + `PermissionsMixin` (`doc.permissions`). A uniform Drive concern, so a mixin — the same shape as `CommentsMixin`.
 - `files.py` — **the account axis**: `FileCollection` (`workspace.files`) + `FileRef`. The one place that is *not* reached through `open(file_id)`, because you cannot open a file you are searching for.
 - `suggestions.py` — `Suggestion` + read-only suggestion extraction (grouped by suggestion id).
