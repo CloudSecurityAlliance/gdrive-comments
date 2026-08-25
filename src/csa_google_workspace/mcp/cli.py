@@ -12,7 +12,7 @@ import os
 import sys
 from collections.abc import Mapping, Sequence
 
-from ._config import WorkspaceProvider, settings_from_env
+from ._config import WorkspaceProvider, settings_from_env, startup_warnings
 from .server import create_server
 
 USAGE = """usage: csa-google-workspace-mcp [login [--force]]
@@ -34,14 +34,23 @@ environment:
                            default,file.trash          the usual set, plus trashing
                            comment.create,comment.reply  exactly these two
                            none                        no mutation at all
-  CSA_GW_ALLOWLIST       which files may be written. Everything unlisted is read-only.
-                         Takes a path, the URLs inline (any value containing `://`), or
-                         `any` for unrestricted. Unset uses
-                         ~/.csa_google_workspace/allowlist.txt if it exists.
+  CSA_GW_ALLOWLIST_READ    which files may be READ
+  CSA_GW_ALLOWLIST_MODIFY  which files may be CHANGED, added to, or deleted
+
+                         Both FAIL CLOSED: unset means nothing is permitted. Each takes
+                         a path, the URLs inline (any value containing `://`), or `*`
+                         for unrestricted. Unset falls back to
+                         ~/.csa_google_workspace/allowlist-{read,modify}.txt if present.
+
+                         The usual posture:
+                           CSA_GW_ALLOWLIST_READ=*
+                           CSA_GW_ALLOWLIST_MODIFY=https://docs.google.com/document/d/AAA/edit
+
                          File format: one Google document URL per line, `#` starts a
-                         comment and the comment is the reason. Configured-but-unusable
-                         is a hard failure, never a fallback to unrestricted writes.
-                         Folders are not supported yet and are rejected loudly.
+                         comment and the comment is the reason. A line of just `*` means
+                         every file. Configured-but-unusable is a hard failure, never a
+                         fallback to unrestricted access. Folders are not supported yet
+                         and are rejected loudly.
   CSA_GW_CLIENT_SECRETS  OAuth client secrets JSON (`login` only; defaults to
                          ~/.csa_google_workspace/client_secret.json if that exists)
 """
@@ -66,6 +75,12 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
     if argv:
         print(f"unknown argument: {argv[0]}\n\n{USAGE}", file=sys.stderr)
         return 2
+
+    # stderr, never stdout: stdout is the JSON-RPC channel and a single stray byte on it
+    # corrupts the session. Most MCP clients surface a server's stderr in their logs, which
+    # is the only place to say this before the first tool call.
+    for line in startup_warnings(settings):
+        print(f"csa-google-workspace: {line}", file=sys.stderr)
 
     # The server never resolves credentials here: a missing token must not stop the server
     # from starting, or the MCP client reports an opaque "server failed to start" and the

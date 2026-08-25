@@ -61,65 +61,84 @@ csa-google-workspace-mcp login --force        # ...or re-authorize deliberately
 claude mcp add csa-google-workspace -- csa-google-workspace-mcp
 ```
 
-### Scoping what it may change
+### Scoping what it may touch
 
-Two independent controls, both plain environment variables, so they can be set wherever your
-MCP client declares the server — a shell, `.mcp.json`, or Claude Desktop's config.
+Three independent bounds, all plain environment variables, so they can be set wherever your MCP
+client declares the server — a shell, `.mcp.json`, or Claude Desktop's config. **Neither Google's
+nor Anthropic's Drive server offers anything equivalent**, which is why it is a row in the table
+above.
 
-| Variable | What it bounds |
-|---|---|
-| `CSA_GW_CAPABILITIES` | **What** may be mutated. The complete list, not a delta. Unset means the safe default: comment and content writes on; file rename/move, trash and share **off**. |
-| `CSA_GW_ALLOWLIST` | **Which files** may be written. Everything unlisted is read-only. |
-| `CSA_GW_READ_ONLY=1` | The blunt one. No writes at all, and narrower OAuth scopes. |
+| Variable | Bounds | Unset |
+|---|---|---|
+| `CSA_GW_ALLOWLIST_READ` | which files may be **read** | **nothing** — fail closed |
+| `CSA_GW_ALLOWLIST_MODIFY` | which files may be **changed, added to or deleted** | **nothing** — fail closed |
+| `CSA_GW_CAPABILITIES` | **what kind** of mutation is permitted at all | the safe default: comment and content writes on; file rename/move, trash and share off |
+| `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | — |
 
-`CSA_GW_ALLOWLIST` takes any of three forms:
+Each is a ceiling and none can widen another: a capability that is off cannot be reached by
+listing a file, and a file outside `MODIFY` cannot be reached by enabling a capability.
+
+**The usual posture** — reads as broad as the other two servers, writes narrow:
 
 ```jsonc
-{
-  "mcpServers": {
-    "csa-google-workspace": {
-      "command": "csa-google-workspace-mcp",
-      "env": {
-        // 1. URLs inline — no second file to ship
-        "CSA_GW_ALLOWLIST": "https://docs.google.com/document/d/AAA…/edit  # CCM mapping\nhttps://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker",
-        "CSA_GW_CAPABILITIES": "comment.create,comment.reply,comment.resolve"
-      }
-    }
+{ "mcpServers": { "csa-google-workspace": {
+  "command": "csa-google-workspace-mcp",
+  "env": {
+    "CSA_GW_ALLOWLIST_READ": "*",
+    "CSA_GW_ALLOWLIST_MODIFY": "https://docs.google.com/document/d/AAA…/edit  # CCM mapping\nhttps://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker",
+    "CSA_GW_CAPABILITIES": "comment.create,comment.reply,comment.resolve"
   }
-}
+} } }
 ```
+
+`READ=*` is deliberate rather than lazy: the agent already sees whatever your credentials see,
+so the thing worth bounding is what it can **break**. That is also what Google's and Anthropic's
+servers do — they simply have no way to narrow it.
+
+Each variable takes any of three forms:
 
 ```bash
-CSA_GW_ALLOWLIST=/etc/csa/wg-documents.txt   # 2. a path to a file
-CSA_GW_ALLOWLIST=any                          # 3. unrestricted, deliberately
+CSA_GW_ALLOWLIST_MODIFY='https://docs.google.com/document/d/AAA…/edit'   # URLs inline
+CSA_GW_ALLOWLIST_MODIFY=/etc/csa/wg-documents.txt                        # a path
+CSA_GW_ALLOWLIST_MODIFY='*'                                              # everything, deliberately
 ```
 
-…and with none of them set, `~/.csa_google_workspace/allowlist.txt` is used **if it exists** —
-next to `client_secret.json`, and for the same reason: a curated list distributed by a setup
-script should need no per-user configuration, because the people running it did not write it.
+…and with nothing set, `~/.csa_google_workspace/allowlist-read.txt` and `allowlist-modify.txt`
+are used **if they exist** — next to `client_secret.json`, and for the same reason: a curated
+list distributed by a setup script should need no per-user configuration, because the people
+running it did not write it.
 
-The file format is one URL per line, `#` starts a comment, and the comment is the *reason* —
-so `git diff` shows both what was granted and why:
+The file format is one URL per line, `#` starts a comment, and the comment is the *reason* — so
+`git diff` shows both what was granted and why:
 
 ```
-# CSA WG documents this agent may write to.
+# Documents this agent may change. Everything else is read-only.
 https://docs.google.com/document/d/1oW1BM…/edit?tab=t.0   # CCM v5 mapping, per WG lead
 https://docs.google.com/spreadsheets/d/1abc…/edit          # AICM tracker
 ```
 
-Four things worth knowing:
+A line containing just `*` means every file. It logs a warning each time it is read, because
+unrestricted access should be visible.
 
-- **Matching is by file id**, so every URL form for one document is one entry — and a **copy**
-  of an allowlisted document has a different id, so it is *not* writable. Entries also survive
-  renames and moves.
-- **Reads are never restricted.** The threat being contained is damage, not disclosure: the
-  agent already sees whatever your credentials see, so what is worth bounding is what it can
-  break.
+Five things worth knowing:
+
+- **Unset means nothing is permitted.** The server still starts — a startup crash reaches you as
+  an opaque "server failed to start" — and tells you on stderr exactly which variable to set.
+- **Matching is by file id**, so every URL form for one document is one entry, and a **copy** of
+  an allowlisted document has a different id and is *not* included. Entries survive renames and
+  moves.
+- **`search_files` results are filtered** to the read scope, not just made unopenable. A file
+  outside it must not be *named* either, or search becomes a way to enumerate what the policy
+  excludes.
 - **It fails closed.** A missing file, an unreadable one, an empty list or one bad line is a
-  hard error, never a quiet fallback to unrestricted writes.
+  hard error, never a quiet fallback to unrestricted access.
 - **Folders are not supported yet** and a folder URL is rejected loudly rather than silently
   matching nothing. The reasons are involved enough to be written down — see `TODO.md`,
   *"Folders in the allowlist"*.
+
+**This is a first, deliberately simple control** — capability gating plus flat lists of
+documents. It is not the last word: a broader model is being researched. What is here is meant
+to be concrete and honest rather than complete.
 
 **Why `pipx`.** This is a CLI you run, not a library you import, so it wants its own
 environment. `pip` into a shared or default virtualenv works until another project disagrees
@@ -247,6 +266,7 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 | — | **Edit an existing Doc** — replace, insert, append, delete a range | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | **Edit an existing Sheet** — write, append rows, clear | `sheets…values.update` / `.append` / `.clear` | ✗ | ✗ | ⚠️ library only, MCP soon |
 | — | **Edit an existing Slide deck** | `slides.presentations.batchUpdate` | ✗ | ✗ | ⚠️ library only, MCP soon |
+| — | **Scope what the agent may touch** — separate read and modify allowlists of specific documents, plus per-capability gating | enforced client-side over `drive` scope | ✗ | ✗ | ✅ `CSA_GW_ALLOWLIST_READ` / `_MODIFY` / `CSA_GW_CAPABILITIES` |
 | — | Browser consent from inside the MCP client | OAuth loopback + MCP URL elicitation | n/a *hosted* | n/a *built in* | ✅ `authenticate` |
 
 Two notes on the rows we now match. Our `read_file_content` reaches **Google-native types

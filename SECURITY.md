@@ -74,33 +74,36 @@ What it does about it, and what it does not:
   delegated, so a new method arrives *off* rather than unguarded.
   It also cannot be widened in-band. An agent has no tool that changes the policy; only whoever
   starts the server does. Session scoping that the guest can broaden is not scoping.
-- **`CSA_GW_ALLOWLIST` — the write allowlist**, #82's second dimension, shipped in v0.8.0.
-  One Google document URL per line, `#` for comments. Configurable three ways so it fits the
-  deployment: a **path**, the **URLs inline** (for an MCP client's JSON `env` block), or the
-  default `~/.csa_google_workspace/allowlist.txt` when present — the last of these so a
-  **curated list can be distributed by a setup script with no per-user configuration**, which
-  is the case that matters when the people running it did not write it. `any` is the explicit
-  opt-out. **Writes are refused for
-  any file not listed; reads are unaffected**, because #82 is damage containment rather than
-  confidentiality — the agent already sees whatever the credentials see, so what must be bounded
-  is what it can *break*.
-  Matched by **file id**, so every URL form for one document is one entry — and a **copy** of an
-  allowlisted document has a different id and is therefore not writable, which is the correct
-  default.
-  **Fails closed on every failure mode**: a missing file, an unreadable one, no usable entries,
-  or any malformed line raises rather than degrading to unrestricted writes. The failure being
-  avoided is an operator who believes writes are scoped because they set the variable, and
-  mistyped the path.
+- **`CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY` — file allowlists**, #82's second
+  dimension, split by access kind in v0.9.0. One Google document URL per line, `#` for comments,
+  a line of `*` for everything. **Both fail closed in the MCP server**: unset means nothing is
+  permitted, and every tool says which variable to set.
+  Reads and mutations are separated because they are different risks. The intended posture is
+  `READ=*` — which is what Google's and Anthropic's Drive servers effectively do, and defensible
+  because the agent already sees whatever the credentials see — with `MODIFY` a short, reviewed
+  list. **Bounding what can be broken is the part that helps.**
+  Configurable as a **path**, the **URLs inline** (for an MCP client's JSON `env` block), or the
+  default `~/.csa_google_workspace/allowlist-{read,modify}.txt` when present — the last of these
+  so a **curated list can be distributed by a setup script with no per-user configuration**,
+  which is the case that matters when the people running it did not write it.
+  Matched by **file id**, so a **copy** of an allowlisted document is not included, and entries
+  survive renames and moves. `search_files` results are **filtered** to the read scope rather
+  than merely unopenable — a file outside it must not be named either, or search enumerates what
+  the policy excludes. Denials log at WARNING; denials are the security signal.
   **Folders are not supported and are rejected loudly.** A folder URL cannot be treated as an
   opaque id — it would match nothing, so the entry would protect nothing while looking like
   protection. Folder support needs the ancestor-traversal, shortcut-aliasing and
   add-to-folder-is-a-grant questions settled first; they are written out in `TODO.md`.
-  Denials log at WARNING with the file id, because denials are the security signal.
-- **The remaining decision, before 1.0.0:** an *unset* `CSA_GW_ALLOWLIST` still means no file
-  restriction, because that is what this library has always done and flipping it silently would
-  break existing users. #82 asks for fail-closed including the no-policy default, and the
-  recommendation is to flip it at 1.0.0 with an explicit opt-out. Until then, an unattended
-  deployment should set an allowlist, or `CSA_GW_READ_ONLY=1`.
+- **Note the scope of the claim.** What ships today is a *first* control: per-capability gating
+  plus flat lists of documents. It is deliberately simple and it is not the whole answer — a
+  broader model is being researched. It is enforced as a `Backend` wrapper, so it applies to
+  library embedders and MCP clients alike and there is one place to audit; and it cannot be
+  widened in-band, because no tool changes the policy. Those two properties are what make it
+  worth relying on as far as it goes.
+- **The library's default is different, on purpose.** `Workspace.from_credentials` applies a
+  *permissive* policy: it is called by a developer writing code who has already made a decision.
+  The MCP server is configuration handed to a model, so it fails closed. Two artifacts, two
+  threat models.
 
 ### 2. Token custody
 

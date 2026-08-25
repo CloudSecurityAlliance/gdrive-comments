@@ -77,18 +77,18 @@ def test_a_dashed_word_is_not_mistaken_for_a_file_id():
 # --- the file format --------------------------------------------------------
 
 def test_comments_and_blank_lines_are_ignored_and_the_reason_is_kept():
-    entries = parse_allowlist(f"""
+    listing = parse_allowlist(f"""
         # CSA WG documents.
 
         {DOC_URL}   # CCM v5 mapping, per WG lead
     """)
-    assert len(entries) == 1
-    assert entries[0].file_id == DOC_ID
-    assert entries[0].reason == "CCM v5 mapping, per WG lead"
+    assert len(listing.entries) == 1
+    assert listing.entries[0].file_id == DOC_ID
+    assert listing.entries[0].reason == "CCM v5 mapping, per WG lead"
 
 
 def test_an_entry_without_a_reason_is_allowed():
-    assert parse_allowlist(DOC_URL)[0].reason is None
+    assert parse_allowlist(DOC_URL).entries[0].reason is None
 
 
 def test_every_bad_line_is_reported_not_just_the_first():
@@ -103,8 +103,8 @@ def test_every_bad_line_is_reported_not_just_the_first():
 
 def test_a_duplicate_is_dropped_not_an_error():
     other = f"https://docs.google.com/document/d/{DOC_ID}/edit#heading=h.x"
-    entries = parse_allowlist(f"{DOC_URL}\n{other}   # same document, pasted differently\n")
-    assert len(entries) == 1
+    listing = parse_allowlist(f"{DOC_URL}\n{other}   # same document, pasted differently\n")
+    assert len(listing.entries) == 1
 
 
 def test_an_empty_allowlist_is_refused():
@@ -116,13 +116,12 @@ def test_an_empty_allowlist_is_refused():
 
 
 def test_line_numbers_survive_comments_and_blanks():
-    entries = parse_allowlist(f"# a\n\n# b\n{DOC_URL}\n")
-    assert entries[0].line == 4
+    assert parse_allowlist(f"# a\n\n# b\n{DOC_URL}\n").entries[0].line == 4
 
 
 def test_entry_repr_does_not_leak_the_reason():
     """A reason may name a person or an unannounced project."""
-    entry = parse_allowlist(f"{DOC_URL}  # for Jane's unannounced launch doc")[0]
+    entry = parse_allowlist(f"{DOC_URL}  # for Jane's unannounced launch doc").entries[0]
     assert "Jane" not in repr(entry) and "has_reason=True" in repr(entry)
 
 
@@ -144,8 +143,7 @@ def test_a_directory_instead_of_a_file_is_a_hard_failure(tmp_path):
 def test_a_good_file_loads(tmp_path):
     path = tmp_path / "allow.txt"
     path.write_text(f"# ok\n{DOC_URL}  # reason here\n", encoding="utf-8")
-    entries = load_allowlist(str(path))
-    assert [e.file_id for e in entries] == [DOC_ID]
+    assert [e.file_id for e in load_allowlist(str(path)).entries] == [DOC_ID]
 
 
 def test_the_source_path_appears_in_the_error(tmp_path):
@@ -166,26 +164,63 @@ def test_is_inline_discriminates_urls_from_paths():
 
 
 def test_inline_accepts_a_single_url():
-    assert [e.file_id for e in parse_inline(DOC_URL)] == [DOC_ID]
+    assert [e.file_id for e in parse_inline(DOC_URL).entries] == [DOC_ID]
 
 
 @pytest.mark.parametrize("separator", [", ", ",", " ", "  ", ";", "\n", "\t"])
 def test_inline_accepts_any_separator_when_there_are_no_comments(separator):
     other = "https://docs.google.com/document/d/2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/edit"
-    entries = parse_inline(f"{DOC_URL}{separator}{other}")
-    assert len(entries) == 2
+    assert len(parse_inline(f"{DOC_URL}{separator}{other}").entries) == 2
 
 
 def test_inline_with_comments_splits_only_on_newlines():
     """The condition that stops a separator and a comment fighting over one character: when
     `#` is present, newlines are the only separator, so the ambiguous case is unreachable."""
     other = "https://docs.google.com/document/d/2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/edit"
-    entries = parse_inline(f"{DOC_URL}  # first, with a comma\n{other}  # second")
-    assert len(entries) == 2
-    assert entries[0].reason == "first, with a comma"
+    listing = parse_inline(f"{DOC_URL}  # first, with a comma\n{other}  # second")
+    assert len(listing.entries) == 2
+    assert listing.entries[0].reason == "first, with a comma"
 
 
 def test_inline_errors_name_the_variable_not_a_file():
     with pytest.raises(AllowlistError) as e:
-        parse_inline("https://example.com/nope")
-    assert "CSA_GW_ALLOWLIST" in str(e.value)
+        parse_inline("https://example.com/nope", source="CSA_GW_ALLOWLIST_MODIFY")
+    assert "CSA_GW_ALLOWLIST_MODIFY" in str(e.value)
+
+
+# --- the `*` entry ----------------------------------------------------------
+
+def test_a_star_line_means_every_file():
+    listing = parse_allowlist("* # all access, DANGEROUS, no file scoping at all")
+    assert listing.all_files is True and listing.entries == ()
+
+
+def test_a_star_short_circuits_the_rest_of_the_file():
+    """Once everything is permitted, nothing after it can narrow that — saying otherwise in
+    the file would read as a restriction that is not one."""
+    assert parse_allowlist(f"*\n{DOC_URL}\n").all_files is True
+
+
+def test_a_star_warns_because_unrestricted_access_should_be_visible(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        parse_allowlist("*  # yes really")
+    assert "EVERY file" in caplog.text
+
+
+@pytest.mark.parametrize("spelling", ["*", "any", "all", "ANY", " * "])
+def test_the_synonyms_for_everything(spelling):
+    assert parse_allowlist(spelling).all_files is True
+
+
+def test_an_empty_file_points_at_the_star_escape_hatch():
+    """The error has to name the alternative, or an operator's only obvious move is to delete
+    the configuration — which used to mean unrestricted."""
+    with pytest.raises(AllowlistError) as e:
+        parse_allowlist("# nothing\n")
+    assert "`*`" in str(e.value)
+
+
+def test_a_listing_repr_distinguishes_everything_from_a_set():
+    assert repr(parse_allowlist("*")) == "Listing(all_files=True)"
+    assert "files=1" in repr(parse_allowlist(DOC_URL))
