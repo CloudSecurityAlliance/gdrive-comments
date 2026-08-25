@@ -6,9 +6,71 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.12.1, 0.12.2. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.12.1, 0.12.2, 0.13.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-25 — v0.13.0 (implement everything the server advertises)
+
+`describe_configuration` advertised four capabilities with no tool behind them. Rather than
+narrow the claim, this implements them — plus the version, and a route to the documentation
+that works in clients which do not surface resources to the model.
+
+**`capabilities_unreachable` is now empty for every profile except `full`.**
+
+### Added — the missing capabilities
+
+- **`content.write`** — `replace_text`, `append_text`, `update_cells`, `append_rows`,
+  `list_slides`, `insert_slide_text`. All of it existed in the library since v0.2 and none of it
+  was exposed. Raw `batch_update` stays library-only on purpose: it is an arbitrary-mutation
+  primitive, and `SECURITY.md`'s preference for the surgical form over raw index edits applies
+  most when the caller is a language model.
+- **`file.create`** — `create_file` (document, spreadsheet, presentation, **folder**) and
+  `copy_file`, with new `Backend.create_file` / `copy_file`. `create_file(content=…)` uploads
+  **Markdown** and lets Drive convert it, so `# Heading` becomes a real heading — the other half
+  of the round-trip that `Doc.as_markdown()` starts.
+- **`comment.edit`** and **`comment.delete`** — `edit_comment`, `delete_comment`, both able to
+  target a single reply. `delete_comment` says in its own description that the delete is soft
+  and strips author *and* content irrecoverably, and points at `resolve_comment` for a thread
+  that is merely finished.
+
+### Added — knowing what you are talking to
+
+- **`server_version`** in `describe_configuration`. Previously answerable only out-of-band by
+  reading `pyproject.toml` in a checkout, which is a poor answer to "is this build old, or is
+  the tool genuinely missing?" — a question that came up in practice.
+- **`read_server_resource`** — a tool that returns `csa-gw://config` or
+  `csa-gw://help/configuration`. The resources were correctly registered all along, but several
+  clients surface resources only to the *user*, through an attachment menu, and never to the
+  model. So a tool that said "read `csa-gw://config`" was pointing at something the reader could
+  not reach. Other servers ship the same workaround; now so does this one.
+
+### Two policy decisions worth stating
+
+- **Creating a file is not gated by the modify allowlist.** A file that does not exist yet
+  cannot be damaged. Writing to it afterwards *is* gated — and since the new file is not in the
+  allowlist either, `create_file` followed by `append_text` is refused unless an operator lists
+  it.
+- **`copy_file` requires the source in the READ scope**, not the modify scope. The copy is a new
+  file and therefore unwritable too, so copying cannot be used to obtain a writable duplicate of
+  something unwritable.
+
+### Fixed in `FakeBackend`
+
+Two gaps that made real behaviour untestable: `docs_batch_update` now returns a genuine
+`occurrencesChanged` reply (the count drives the "zero is a real answer, re-read rather than
+retry" guidance, and with the fake always returning 0 that path could not be tested), and a
+created file is now seeded with an empty body so it can actually be opened and written to next.
+
+### Verified live
+
+The whole task, end to end against real Google: a folder, a Doc created *from Markdown*, a Sheet
+with a formula, a deck, lorem ipsum in all three, and a comment on each.
+
+The deck exposed a real gap on the first attempt — `replace_text` returned **0**, because a new
+deck's placeholders hold no literal text to match. That is precisely the case the tool's own
+description warns about, and the fix was `list_slides`, which returns the shape ids that
+`insert_slide_text` needs. Slides content is shape-addressed, not linear like a Doc's.
 
 ## 2026-08-25 — v0.12.2 (stop advertising authority the tools cannot exercise)
 

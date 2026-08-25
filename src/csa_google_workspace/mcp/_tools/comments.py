@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from mcp.server import MCPServer
 
+from ... import exceptions as exc
 from .._schemas import CommentOut, CommentsOut, comment_out
-from ._base import READ, WRITE, WorkspaceProviderT, _errors, _require
+from ._base import DESTRUCTIVE, READ, WRITE, WorkspaceProviderT, _errors, _require
 
 
 def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> None:
@@ -58,6 +59,51 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT) ->
         comment = get_workspace().open(fileId).comments.get(commentId)
         comment.resolve(content)
         return comment_out(comment)
+
+    @app.tool(annotations=WRITE)
+    @_errors
+    def edit_comment(fileId: str, commentId: str, content: str,
+                     replyId: str | None = None) -> CommentOut:
+        """Change the text of a comment, or of one reply within it.
+
+        Give `replyId` to edit a reply instead of the top-level comment. Google keeps no
+        visible edit history, so the previous text is not recoverable — quote it back to the
+        user if they may want it."""
+        comment = get_workspace().open(fileId).comments.get(commentId)
+        if replyId is None:
+            comment.edit(content)
+        else:
+            target = next((r for r in comment.replies if r.id == replyId), None)
+            if target is None:
+                raise exc.NotFoundError(f"reply {replyId!r} is not in comment {commentId!r}")
+            target.edit(content)
+        return comment_out(get_workspace().open(fileId).comments.get(commentId))
+
+    @app.tool(annotations=DESTRUCTIVE)
+    @_errors
+    def delete_comment(fileId: str, commentId: str,
+                       replyId: str | None = None) -> CommentOut:
+        """Delete a comment thread, or one reply within it.
+
+        A **soft** delete: Drive keeps the record but strips its content *and* its author, so
+        neither is recoverable — probe-verified, and the reason the models allow both to be
+        absent. Prefer `resolve_comment` for a thread that is simply finished; resolving keeps
+        the conversation readable, deleting does not.
+
+        Give `replyId` to delete a single reply. Returns the thread as it now stands."""
+        doc = get_workspace().open(fileId)
+        comment = doc.comments.get(commentId)
+        if replyId is None:
+            comment.delete()
+            # Re-fetched, not returned from memory: the soft delete strips content and author
+            # server-side, and the caller should see what Drive now holds rather than what we
+            # sent.
+            return comment_out(doc.comments.get(commentId))
+        target = next((r for r in comment.replies if r.id == replyId), None)
+        if target is None:
+            raise exc.NotFoundError(f"reply {replyId!r} is not in comment {commentId!r}")
+        target.delete()
+        return comment_out(get_workspace().open(fileId).comments.get(commentId))
 
     @app.tool(annotations=WRITE)
     @_errors

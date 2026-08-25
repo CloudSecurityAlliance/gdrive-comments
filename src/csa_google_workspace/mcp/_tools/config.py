@@ -11,12 +11,15 @@ unauthorized — which is exactly when someone is most likely to ask.
 from __future__ import annotations
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
+from ... import __version__
 from ...policy import ALL_CAPABILITIES, Policy
+from .._capabilities import reachable_capabilities
 from .._config import Settings
-from .._schemas import ConfigOut
+from .._resources import CONFIG_URI, HELP_URI, render_config, render_help
+from .._schemas import ConfigOut, ResourceOut
 from ._base import READ
-from ._capabilities import reachable_capabilities
 
 
 def register_config_tools(app: MCPServer, settings: Settings) -> None:
@@ -55,5 +58,29 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
             "capabilities_disabled": sorted(set(ALL_CAPABILITIES) - policy.enabled),
             "read_only": settings.read_only,
             "blocked_reason": blocked,
-            "help_resource": "csa-gw://help/configuration",
+            # Asked for repeatedly and previously answerable only out-of-band, by reading
+            # pyproject.toml in a checkout. A model that cannot say which version it is
+            # talking to cannot tell "this tool does not exist" from "this build is old".
+            "server_version": __version__,
+            "help_resource": HELP_URI,
+            "help_tool": "read_server_resource",
         }
+
+    @app.tool(annotations=READ)
+    def read_server_resource(uri: str = HELP_URI) -> ResourceOut:
+        """Read one of this server's own documentation resources.
+
+        A workaround, and worth naming as one. This server publishes `csa-gw://config` (the
+        live policy) and `csa-gw://help/configuration` (the reference) as MCP *resources*, but
+        several clients surface resources only to the user — through an attachment menu — and
+        never to the model. So a tool that told you to "read csa-gw://config" was pointing at
+        something you could not reach. This tool is the route that always works.
+
+        `uri` defaults to the configuration reference. Pass `csa-gw://config` for the live
+        policy instead."""
+        pages = {CONFIG_URI: lambda: render_config(settings), HELP_URI: render_help}
+        render = pages.get(uri.strip())
+        if render is None:
+            raise ToolError(f"no such resource: {uri!r}. This server publishes "
+                            f"{', '.join(sorted(pages))}.")
+        return {"uri": uri.strip(), "content": render()}

@@ -32,6 +32,15 @@ ORDER_BY = {
 
 MAX_PAGE_SIZE = 100
 
+# What `create()` accepts, and the Google mime type each maps to. A folder is a file in Drive,
+# which is why it belongs in the same call rather than a separate one.
+KINDS = {
+    "document": "application/vnd.google-apps.document",
+    "spreadsheet": "application/vnd.google-apps.spreadsheet",
+    "presentation": "application/vnd.google-apps.presentation",
+    "folder": "application/vnd.google-apps.folder",
+}
+
 
 def _parse_time(value: str | None) -> datetime | None:
     if not value:
@@ -116,6 +125,33 @@ class FileCollection:
     def recent(self, *, limit: int = 10, order_by: str = "recency") -> list[FileRef]:
         """Recently touched files. `order_by` is `recency`, `lastModified` or `lastModifiedByMe`."""
         return self._page("trashed = false", limit, self._order(order_by) or ORDER_BY["recency"])
+
+    def create(self, name: str, kind: str, *, parent_id: str | None = None,
+               content: str | None = None) -> FileRef:
+        """Create a new file. `kind` is `document`, `spreadsheet`, `presentation` or `folder`.
+
+        With `content`, the text is uploaded as Markdown and Drive converts it — so headings,
+        lists, tables and links become real document structure rather than literal `#`
+        characters. That is the other half of the Markdown round-trip: `Doc.as_markdown()` out,
+        this in. Only meaningful for `document`.
+        """
+        mime = KINDS.get(kind)
+        if mime is None:
+            raise ValueError(f"kind must be one of {sorted(KINDS)}, not {kind!r}")
+        if content is not None and kind != "document":
+            raise ValueError(f"content is only supported for documents, not {kind}s")
+        payload = content.encode("utf-8") if content is not None else None
+        raw = self._backend.create_file(
+            name, mime, parent_id=parent_id, content=payload,
+            content_mime_type="text/markdown" if payload is not None else None)
+        return self._wrap(raw)
+
+    def copy(self, file_id_or_url: str, *, name: str | None = None,
+             parent_id: str | None = None) -> FileRef:
+        """Duplicate a file. The copy is a new file with a new id."""
+        from .workspace import parse_file_id
+        return self._wrap(self._backend.copy_file(
+            parse_file_id(file_id_or_url), name=name, parent_id=parent_id))
 
     # -- internals ----------------------------------------------------------
 

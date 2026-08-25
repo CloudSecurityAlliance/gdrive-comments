@@ -107,7 +107,32 @@ class ConfigOut(TypedDict):
     capabilities_disabled: list[str]
     read_only: bool
     blocked_reason: str | None         # why something permits nothing, when it does
-    help_resource: str                 # where the full reference lives
+    server_version: str                # csa-google-workspace's own version
+    help_resource: str                 # the resource URI, for clients that surface resources
+    help_tool: str                     # ...and the tool, for clients that do not
+
+
+class SlideOut(TypedDict):
+    index: int                        # 1-based, as a person counts slides
+    shape_ids: list[str]              # text-capable shapes, for insert_slide_text
+    text: str
+    notes: str
+
+
+class SlidesOut(TypedDict):
+    slides: list[SlideOut]
+
+
+class EditOut(TypedDict):
+    file_id: str
+    type: str
+    occurrences_changed: int | None   # None where the operation has no natural count
+    detail: str
+
+
+class ResourceOut(TypedDict):
+    uri: str
+    content: str
 
 
 class CommentsOut(TypedDict):

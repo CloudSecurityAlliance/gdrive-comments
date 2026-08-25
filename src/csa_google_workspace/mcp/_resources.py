@@ -24,8 +24,8 @@ from __future__ import annotations
 from mcp.server import MCPServer
 
 from ..policy import _GATES, ALL_CAPABILITIES, DEFAULT_ENABLED, MODIFY, READ, Policy, Scope
+from ._capabilities import reachable_capabilities
 from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
-from ._tools._capabilities import reachable_capabilities
 
 CONFIG_URI = "csa-gw://config"
 HELP_URI = "csa-gw://help/configuration"

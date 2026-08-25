@@ -31,6 +31,11 @@ class Backend(Protocol):
     # -- the account axis: no file_id, because there is no file yet ---------
     def search_files(self, query: str, *, page_size: int = 25, order_by: str | None = None,
                      page_token: str | None = None) -> JsonDict: ...
+    def create_file(self, name: str, mime_type: str, *, parent_id: str | None = None,
+                    content: bytes | None = None,
+                    content_mime_type: str | None = None) -> JsonDict: ...
+    def copy_file(self, file_id: str, *, name: str | None = None,
+                  parent_id: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
     def get_spreadsheet(self, file_id: str) -> JsonDict: ...
     def get_values(self, file_id: str, a1_range: str) -> list[list[Any]]: ...
@@ -164,6 +169,41 @@ class FakeBackend:
         self.get_file_metadata(file_id)              # validates the file exists
         return [copy.deepcopy(p) for p in self._permissions.get(file_id, [])]
 
+    def create_file(self, name, mime_type, *, parent_id=None, content=None,
+                    content_mime_type=None):
+        self._seq += 1
+        file_id = f"new{self._seq}"
+        meta = {"id": file_id, "name": name, "mimeType": mime_type,
+                "webViewLink": f"https://x/d/{file_id}"}
+        if parent_id:
+            meta["parents"] = [parent_id]
+        if content is not None:
+            # Records what was uploaded so a test can assert conversion happened, which is the
+            # only interesting part of create-with-content.
+            meta["_uploaded"] = {"bytes": len(content), "as": content_mime_type}
+        self._files[file_id] = meta
+        # Seed an empty body too. A created file that cannot then be opened or written to is
+        # not a useful double — the whole point of creating one is to use it next.
+        if mime_type.endswith(".document"):
+            self._documents[file_id] = {"body": {"content": []}}
+        elif mime_type.endswith(".spreadsheet"):
+            self._spreadsheets[file_id] = {"sheets": [
+                {"properties": {"sheetId": 0, "title": "Sheet1"}}]}
+        elif mime_type.endswith(".presentation"):
+            self._presentations[file_id] = {"slides": []}
+        return copy.deepcopy(meta)
+
+    def copy_file(self, file_id, *, name=None, parent_id=None):
+        source = self.get_file_metadata(file_id)       # raises NotFoundError
+        self._seq += 1
+        new_id = f"copy{self._seq}"
+        meta = {"id": new_id, "name": name or f"Copy of {source.get('name', '')}",
+                "mimeType": source["mimeType"], "webViewLink": f"https://x/d/{new_id}"}
+        if parent_id:
+            meta["parents"] = [parent_id]
+        self._files[new_id] = meta
+        return copy.deepcopy(meta)
+
     def search_files(self, query, *, page_size=25, order_by=None, page_token=None):
         """Substring-matches `name contains '...'` / `fullText contains '...'` clauses and
         honours `mimeType = '...'`; anything else matches everything.
@@ -212,9 +252,32 @@ class FakeBackend:
     def get_presentation(self, file_id):
         return self._fixture(self._presentations, file_id, "presentation")
 
+    def _replace_all_text_reply(self, file_id, requests):
+        """Simulate `replaceAllText` well enough to exercise the occurrence count.
+
+        The count drives real guidance — a model told "0 occurrences" should re-read rather
+        than retry — and with the fake always returning 0 that path could not be tested.
+        """
+        replies: list[JsonDict] = []
+        for request in requests:
+            spec = request.get("replaceAllText")
+            if spec is None:
+                replies.append({})
+                continue
+            find = spec.get("containsText", {}).get("text", "")
+            body = self._documents.get(file_id, {})
+            from . import _content
+            text = _content.doc_text(body) if body else ""
+            if not spec.get("containsText", {}).get("matchCase", True):
+                count = text.lower().count(find.lower())
+            else:
+                count = text.count(find)
+            replies.append({"replaceAllText": {"occurrencesChanged": count}})
+        return {"replies": replies}
+
     def docs_batch_update(self, file_id, requests):
         self._writes.append((file_id, "docs", requests))
-        return {}
+        return self._replace_all_text_reply(file_id, requests)
 
     def sheets_values_update(self, file_id, a1_range, values, value_input_option="RAW"):
         self._writes.append((file_id, "sheets_values_update", a1_range, values, value_input_option))
@@ -353,6 +416,36 @@ class ApiBackend:
     # Requested fields are explicit: the default response omits webViewLink, and asking for
     # everything makes a search of 100 files needlessly large.
     _SEARCH_FIELDS = "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime)"
+
+    _NEW_FILE_FIELDS = "id, name, mimeType, webViewLink, parents"
+
+    def create_file(self, name, mime_type, *, parent_id=None, content=None,
+                    content_mime_type=None):
+        body = {"name": name, "mimeType": mime_type}
+        if parent_id:
+            body["parents"] = [parent_id]
+        kw = {"body": body, "fields": self._NEW_FILE_FIELDS, "supportsAllDrives": True}
+        if content is not None:
+            from googleapiclient.http import MediaInMemoryUpload
+            # `body.mimeType` is the *target* and the upload's is the *source*: Drive converts
+            # between them, which is how text/markdown becomes a real Doc rather than a file
+            # containing markdown. See experiments/export-formats/RESULTS.md finding 6.
+            kw["media_body"] = MediaInMemoryUpload(
+                content, mimetype=content_mime_type or "text/plain", resumable=False)
+        return _errors.call(self._services.drive.files().create(**kw).execute,
+                            idempotent=False)
+
+    def copy_file(self, file_id, *, name=None, parent_id=None):
+        body = {}
+        if name:
+            body["name"] = name
+        if parent_id:
+            body["parents"] = [parent_id]
+        return _errors.call(
+            self._services.drive.files().copy(
+                fileId=file_id, body=body, fields=self._NEW_FILE_FIELDS,
+                supportsAllDrives=True).execute,
+            idempotent=False)
 
     def search_files(self, query, *, page_size=25, order_by=None, page_token=None):
         kw = {"q": query, "pageSize": page_size, "fields": self._SEARCH_FIELDS,

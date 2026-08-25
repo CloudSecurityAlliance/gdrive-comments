@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from mcp.server import MCPServer
 
-from .._schemas import FilesOut, PermissionsOut, file_ref_out, permissions_out
-from ._base import READ, WorkspaceProviderT, _errors
+from ...files import KINDS
+from .._schemas import FileRefOut, FilesOut, PermissionsOut, file_ref_out, permissions_out
+from ._base import READ, WRITE, WorkspaceProviderT, _errors
 
 
 def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> None:
@@ -71,3 +72,35 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
         only reads; it cannot grant or revoke access."""
         doc = get_workspace().open(fileId)
         return permissions_out(doc.permissions)
+
+    @app.tool(annotations=WRITE)
+    @_errors
+    def create_file(name: str, kind: str, parentId: str | None = None,
+                    content: str | None = None) -> FileRefOut:
+        """Create a new Google Doc, Sheet, Slides deck, or folder.
+
+        `kind` is `document`, `spreadsheet`, `presentation` or `folder`. `parentId` is a folder
+        id — omit it for the account's root, or create a folder first and pass its id.
+
+        `content` (documents only) is **Markdown**, and Drive converts it: `# Heading` becomes a
+        real heading, `- item` a real list, and a table a real table. That is a much better
+        first draft than creating an empty document and appending plain text.
+
+        Returns the new file, including its `url` — hand that to the user so they can open it.
+        Creating a file is not restricted by the modify allowlist, because a file that does not
+        exist yet cannot be damaged; writing to it afterwards is."""
+        if kind not in KINDS:
+            raise ValueError(f"kind must be one of {sorted(KINDS)}, not {kind!r}")
+        return file_ref_out(get_workspace().files.create(
+            name, kind, parent_id=parentId, content=content))
+
+    @app.tool(annotations=WRITE)
+    @_errors
+    def copy_file(fileId: str, name: str | None = None,
+                  parentId: str | None = None) -> FileRefOut:
+        """Duplicate a file. `fileId` is an id or a share URL.
+
+        The copy is a **new file with a new id**, so it is not covered by the modify allowlist
+        even if the original was — writing to it will be refused unless an operator lists it.
+        Defaults to Drive's own "Copy of …" name."""
+        return file_ref_out(get_workspace().files.copy(fileId, name=name, parent_id=parentId))
