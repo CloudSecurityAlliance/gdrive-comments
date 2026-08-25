@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-08-25 — v0.2.4 (Python 3.14; install guidance)
+
+- **Python 3.14 is tested and declared.** A `pipx` install picks the newest interpreter
+  present, so 3.14 is what actually runs the MCP server in practice — while CI covered
+  3.10–3.13 and the classifiers claimed the same. The full suite was run on 3.14 (269 passed)
+  before claiming it; 3.14 is now in the CI matrix, in the trove classifiers, and in the
+  required status checks so a failure there blocks a merge.
+
+- **`pipx` is now the recommended install for the MCP server.** It is a CLI you run, not a
+  library you import, so it wants its own environment: `pip` into a shared virtualenv works
+  until another project disagrees about a dependency (`mcp>=2.1` here versus something else
+  pinning `mcp<2.0` is a conflict people hit). `pipx` also gives the console script an
+  absolute shebang, which is what makes it launchable from a GUI app. `pip` remains documented
+  for embedding the *library* in your own application.
+
+- **Claude Desktop guidance made concrete.** Claude Code runs in your shell; Claude Desktop is
+  a GUI app inheriting launchd's `PATH`, which contains neither `~/.local/bin` nor Homebrew and
+  where `python3` is macOS's 3.9 — below this package's floor. The troubleshooting entry now
+  gives the literal `claude_desktop_config.json` snippet with an absolute path.
+
+- **`SECURITY.md` reconciled with what shipped.** It previously called `from_oauth` +
+  `token.json` "PoC/CLI scaffolding — not for server use", written before the bundled MCP
+  server existed. The real distinction is *whose machine holds the token*: local single-user
+  (a CLI, or this server over stdio) is fine; hosted multi-user is not. It also now states that
+  the bundled server *is* the prompt-injection risk the threat model describes — untrusted
+  document text reaching a model with write tools live — what the server does about it, and
+  what it does not (there is no file allowlist yet; #82).
+
+- Docs reconciled with reality throughout: the MCP spec marked implemented with *[as-built]*
+  deltas, `research/mcp-protocol-notes.md` corrected (it still said to target `2025-11-25` and
+  not to build against the `2026-07-28` release candidate — which was ratified, and which this
+  server is built on), `TODO.md` phase 2 marked shipped with its honest deferred list, and the
+  PyPI Trusted Publisher constrained to the `pypi` environment.
+
+No library behaviour changes; the `--force` switch shipped in 0.2.1.
+
 ## 2026-08-25 — v0.2.3 (docs patch: MCP troubleshooting)
 
 No code changes. The README is the PyPI long description and is frozen at each release, so a
