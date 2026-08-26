@@ -33,6 +33,15 @@ their OS) and "10" on Windows 11. It also infers the install route, because the 
 differently: a pipx venv upgrades cleanly, a shared environment can have another project's pin
 holding the version down, and a checkout may match no release at all.
 
+**The environment is reported wherever the model already looks**, not only from
+`report_a_problem`. `describe_configuration` and the `csa-gw://config` resource now carry the
+version, OS, architecture, Python and install route — so the facts a bug report needs land in
+the transcript as a side effect of ordinary use, and a conversation pasted into an issue
+arrives complete. `describe_configuration` is the tool a model calls after *any* refusal, which
+makes it the surface most likely to have been consulted before anyone decided to report
+anything. A test asserts all three surfaces agree: three renderings of a version that disagree
+are worse than one that is merely absent, because each looks authoritative alone.
+
 **Two things the server was saying that were not true.**
 
 - Its instructions told the model "this server has no search tool yet, so ask the user for a

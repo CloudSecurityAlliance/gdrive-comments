@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from mcp.server import MCPServer
 
+from .._environment import describe_environment
 from ..policy import _GATES, ALL_CAPABILITIES, DEFAULT_ENABLED, MODIFY, READ, Policy, Scope
 from ._capabilities import reachable_capabilities
 from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
@@ -58,8 +59,14 @@ def render_config(settings: Settings) -> str:
     unreachable = sorted(policy.enabled - reachable)
     off = sorted(set(ALL_CAPABILITIES) - policy.enabled)
 
+    env = describe_environment()
     lines = [
         "# csa-google-workspace — effective configuration",
+        "",
+        # First, because it is the first question asked of any bug report and the cheapest one
+        # to answer wrongly from memory.
+        f"`{env.server_version}` on {env.os} ({env.architecture}), Python "
+        f"{env.python_version}, installed via {env.installed_via}.",
         "",
         "Everything below is read from the environment at startup. **Nothing here can be "
         "changed by a tool**, by this model, or by anything a document asks for; only whoever "
