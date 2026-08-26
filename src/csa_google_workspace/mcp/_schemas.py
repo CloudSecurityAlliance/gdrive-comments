@@ -78,7 +78,11 @@ class FilesOut(TypedDict):
 
 class PermissionOut(TypedDict):
     id: str
-    type: str                 # user | group | domain | anyone
+    # `grantee_type`, not `type`. Everywhere else in this surface `type` is the DOCUMENT kind
+    # - document / spreadsheet / presentation - and a model reads these outputs interleaved.
+    # One field name carrying two unrelated vocabularies is a misreading waiting to happen,
+    # and renaming it costs nothing before 1.0.0 and is impossible after.
+    grantee_type: str         # user | group | domain | anyone
     role: str                 # reader | commenter | writer | fileOrganizer | organizer | owner
     display_name: str | None
     email: str | None         # the payload of this call, unlike elsewhere here
@@ -240,7 +244,8 @@ SNIPPET_CHARS = 500
 
 
 def permission_out(p: Any) -> PermissionOut:
-    return {"id": p.id, "type": p.type, "role": p.role, "display_name": p.display_name,
+    return {"id": p.id, "grantee_type": p.type, "role": p.role,
+            "display_name": p.display_name,
             "email": p.email, "domain": p.domain, "can_write": p.can_write,
             "is_public": p.is_public}
 
@@ -292,7 +297,9 @@ class FileUpdateOut(TypedDict):
     """The result of a metadata change: what the file is now, not what it was."""
     id: str
     name: str | None
-    parents: list[str]
+    # `None` means the response did not carry parents, NOT that the file has none - a file
+    # with no parents is not a state Drive has. Hard-coded to `[]` until v0.21.0.
+    parents: list[str] | None
 
 
 class TrashOut(TypedDict):

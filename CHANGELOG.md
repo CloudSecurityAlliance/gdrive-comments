@@ -6,9 +6,102 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.21.0 (profiles regrouped on one question: can this be undone?)
+
+Three things, and the first is a behaviour change to the **default**.
+
+### The default profile permitted the irreversible and forbade the reversible
+
+Until now the line was drawn on "what this library already did", which put both operations
+Google gives you no way to undo *inside* the default and left a recoverable one outside it:
+
+| Operation | Recoverable? | How | Was | Now |
+|---|---|---|---|---|
+| edit document content | **yes** | Drive revision history | editor | editor |
+| resolve / reopen | **yes** | reversible, and posts a visible reply | editor | editor |
+| create a file | n/a | nothing existing is touched | editor | editor |
+| rename / move | **yes** | rename it back | **full** | **editor** |
+| trash a file | **yes, 30 days** | Drive's bin; the owner restores it | **full** | **editor** |
+| edit a comment | **no** | Google keeps no edit history. Text gone | **editor** | **full** |
+| delete a comment | **no** | soft delete strips content *and* author | **editor** | **full** |
+| share a file | **no, in effect** | grant revocable, a copy is not | full | full |
+
+*"Content edits are versioned, so editing is safe"* is true of **document content** and false of
+**comments** — and the old grouping encoded the wrong half. So `editor` now means **everything
+reversible** and `full` means **everything you cannot take back**.
+
+The practical consequence, and the reason this came up: `editor` could destroy a comment thread
+beyond recovery but could not trash a scratch file it had just created. **Withholding a
+reversible capability produced irreversible litter in real Drives** — an end-to-end run under
+the default left seven files behind, and the only tool that could tidy them was off. That is the
+wrong trade, and it was made because "trash" sounds more alarming than "delete a comment".
+
+There is still no permanent delete anywhere in this library and no capability that empties the
+trash. The worst a `full` install can do to a **file** is put it in a bin its owner controls.
+
+**If you were relying on the old default**, name what you need explicitly:
+`CSA_GW_CAPABILITIES=comment.create,comment.reply,comment.resolve,comment.edit,comment.delete,content.write,file.create`.
+That variable is a complete list rather than a delta precisely so it cannot drift under you.
+
+### The regrouping exposed a latent bug in the demonstration
+
+`demonstration_plan` exists to say **up front** what the current policy will refuse, so a
+walkthrough does not walk somebody into a skipped step. It could not: steps declared `requires`
+only for capabilities that were off by default, so everything else was reported *available* and
+the refusal was discovered by hitting it. A `reader` profile met **sixteen** unpredicted
+refusals, one at a time, and had done since the tool shipped.
+
+`requires` is now **derived from `TOOL_CAPABILITIES`** — the server's own tool→capability map,
+already guarded by `tests/test_mcp_capabilities.py` — rather than hand-annotated, so a gated
+step cannot be unannotated and a new gated tool arrives correctly annotated for free. An
+explicit `requires=` still wins for the case the map cannot express.
+
+Predictions per profile now: `reader` 16, `commenter` 12, `editor` 3, `full` 0. Before: at most
+three, whatever the profile.
+
+### Gate C1: a written API-stability policy, and the review that makes it mean something
+
+[`API-STABILITY.md`](./API-STABILITY.md). The **MCP tool surface is the contract**; the Python
+API is best-effort but taken seriously. The reason is asymmetric feedback rather than
+preference: a Python embedder breaks loudly, in their own test suite, having pinned a version,
+with a traceback naming what moved. An MCP tool is called by a **model** reading a schema, from
+a prompt written weeks ago, where the failure surfaces as *"I couldn't do that"* — and sometimes
+with the message suppressed outright. The surface with the weaker feedback loop gets the
+stronger promise.
+
+Two things it settles that were not obvious. **Which capability gates which tool is part of the
+contract**: moving a tool between capabilities silently changes what an existing configuration
+permits, so it is breaking with no name changed. And **profile membership is explicitly not** —
+they are curated sets, recurated in this very release.
+
+A policy is worth nothing without spending the last moment when the surface is free, so the
+**pre-1.0.0 API review** ran against all 32 tools. Three findings, two of them defects:
+
+- **`update_file` returned `parents: []`, hard-coded.** Not a missing answer — a *wrong* one,
+  and one that read as "the file is nowhere", which is not a state Drive has. Google had been
+  returning the parents all along and the library layer discarded them. `FileRef` now carries
+  `parents`, with **`None` meaning "not asked for"** and `()` meaning genuinely none, because a
+  search hit reporting an empty list would assert a fact it never checked.
+- **Its description pointed at a field that does not exist** — "the current parents are on
+  `get_file_metadata`", which returns no parents. Corrected to say the tool returns them itself.
+- **`get_file_permissions` called its grantee kind `type`**, where `type` means the *document*
+  kind everywhere else in the surface — document, spreadsheet, presentation — in outputs a model
+  reads interleaved. Renamed to **`grantee_type`**. Free today, impossible after 1.0.0.
+
+Also documented as deliberate rather than fixed: `create_file(kind=…)` returning `type` is not
+an inconsistency. `kind` accepts `folder`; `type` is `null` for a folder, because a folder is
+not something this library can open. Different names because different value sets.
+
+### Publishing no longer waits for a human
+
+The `pypi` environment's required-reviewer gate is removed at the repository owner's explicit
+instruction. The environment itself **remains**, and that is the load-bearing part: the PyPI
+Trusted Publisher is constrained to `Environment: pypi`, so only a job declaring it can publish
+and a stray workflow added to this repo still cannot. What is gone is the approval click.
 
 ## 2026-08-26 — v0.20.1 (two feedback paths, two labels — and both labels now exist)
 

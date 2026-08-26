@@ -64,6 +64,12 @@ class FileRef:
     mime_type: str
     url: str
     modified_time: datetime | None = None
+    # `None` means NOT ASKED FOR; `()` means genuinely no parents. The distinction is the
+    # whole value of the field: `search` does not request parents, so a search hit that
+    # reported `()` would be asserting a fact it never checked. Drive moves a file by editing
+    # this list, so "where is it now" has to be answerable after an update - and answerable
+    # correctly, not plausibly.
+    parents: tuple[str, ...] | None = None
     _backend: Backend | None = None
     _read_only: bool = False
 
@@ -103,9 +109,13 @@ class FileCollection:
         self._read_only = read_only
 
     def _wrap(self, raw: dict[str, Any]) -> FileRef:
+        # `parents` only when the response carried the key at all - absent means the call did
+        # not request it, which is not the same as a file with no parents.
+        parents = tuple(raw["parents"]) if "parents" in raw else None
         return FileRef(id=raw["id"], name=raw.get("name", ""),
                        mime_type=raw.get("mimeType", ""), url=raw.get("webViewLink", ""),
                        modified_time=_parse_time(raw.get("modifiedTime")),
+                       parents=parents,
                        _backend=self._backend, _read_only=self._read_only)
 
     def search(self, query: str, *, limit: int = 25,

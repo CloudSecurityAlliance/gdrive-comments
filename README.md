@@ -119,9 +119,32 @@ enforcement, it owes you an equivalent, and these are it.
 | Profile | May |
 |---|---|
 | `reader` | nothing — read and report only, whatever the allowlists say |
-| `commenter` | comment, reply, resolve. **Not** edit content, delete a thread, or touch the file |
-| `editor` | the above, plus edit content, tidy comments, create new files |
-| `full` | everything, including rename/move, trash and share |
+| `commenter` | comment, reply, resolve. All additive, and resolve leaves a visible reply |
+| `editor` | **everything reversible** — the above, plus edit content, create files, rename/move, and trash |
+| `full` | **everything you cannot take back** — the above, plus edit a comment, delete a comment, and share |
+
+**The line is drawn on one question: can this be undone?** Not on how alarming the verb
+sounds, which is where it used to be drawn and which had it backwards.
+
+| Operation | Recoverable? | How |
+|---|---|---|
+| edit document content | **yes** | Drive revision history, restorable in the UI |
+| resolve / reopen a thread | **yes** | reversible, and either way it posts a visible reply |
+| create a file | n/a | nothing that already exists is touched |
+| rename or move | **yes** | rename it back |
+| **trash a file** | **yes — 30 days** | Drive's bin. The owner can see it and restore it |
+| edit a comment | **no** | Google keeps no visible edit history. The previous text is gone |
+| delete a comment | **no** | the soft delete strips content *and* author. Gone |
+| share a file | **no, in effect** | the grant is revocable; a copy the recipient took is not |
+
+"Content edits are versioned, so editing is safe" is true of **document content** and false of
+**comments** — and the old grouping encoded the wrong half of that. Until v0.21.0 the default
+profile permitted both irreversible comment operations and forbade trashing, so an agent could
+destroy a comment thread beyond recovery but could not tidy up a scratch file it had just
+created. Withholding a reversible capability produced irreversible litter in real Drives.
+
+There is **no permanent delete** anywhere in this library and no capability that empties the
+trash. The worst a `full` install can do to a file is put it in a bin its owner controls.
 
 Profiles cover **capabilities only**. The allowlists are deliberately not profiled: which
 documents a deployment may touch is specific to that deployment, and a named default for it
@@ -627,6 +650,7 @@ This library is a building block for MCP servers / agents / automations acting *
 
 | Document | What it is |
 |----------|------------|
+| [`API-STABILITY.md`](./API-STABILITY.md) | **What will not break.** The MCP tool surface is the contract; the Python API is best-effort. SemVer as applied here, what is deliberately unstable, and what you are owed when something changes. |
 | [`docs/superpowers/specs/2026-07-20-csa-google-workspace-design.md`](./docs/superpowers/specs/2026-07-20-csa-google-workspace-design.md) | **The design spec.** Scope, two-axis architecture, API surface, error model, phasing. |
 | [`docs/superpowers/plans/`](./docs/superpowers/plans/) | The six phased, TDD implementation plans (foundations · comments · content read · cell-mapping · content write · suggestions read). |
 | [`research/google-drive-comments-reference.md`](./research/google-drive-comments-reference.md) | Canonical reference on how Drive/Sheets comments actually work: the 10 API methods, fields, resolution/deletion models, OAuth scopes, and the hard truth about the `anchor` field. |

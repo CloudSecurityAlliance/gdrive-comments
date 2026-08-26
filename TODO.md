@@ -141,7 +141,9 @@ arrived *after* the gate that turns them off.
             `PolicyBackend` wrapper that **fails closed** — a `Backend` method with no declared
             gate is refused, not delegated, so a new method arrives *off*. `CSA_GW_CAPABILITIES`
             is the complete permitted list, not a delta, so it reviews like code. Default
-            refuses rename/move, trash and share. Cannot be widened in-band.
+            refuses the three that cannot be undone - edit a comment, delete a comment,
+            share a file (regrouped on recoverability in v0.21.0; see A5). Cannot be
+            widened in-band.
       - [x] **Per-URL scope** — **done 2026-08-25** (v0.8.0, split by access kind in v0.9.0).
             Two flat lists of document URLs held **in the environment** —
             `CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY`, no file — matched by
@@ -251,12 +253,23 @@ None of that is built. The questions above are the work.
       which is why Google's own server declines to offer it. All three go through the **account
       axis** rather than `open()`, so they work on folders too. → **completed Claude's 11.**
 
-      Two policy questions this raised and did not answer, both live:
-      - `editor` has `file.create` and not `file.trash`, so it **cannot clear up after itself** —
-        an end-to-end run under the default profile leaves its files behind. Deliberate (trash
-        is destructive) but surprising enough that `demonstration_plan` now says so up front.
-      - `comment.delete` sits in `editor`. Whether tidying a thread belongs beside creating one,
-        or with the `full` set, has not been argued.
+      Two policy questions this raised, **both answered in v0.21.0** by regrouping the profiles
+      on a single criterion — *can this be undone?*:
+      - ~~`editor` has `file.create` and not `file.trash`, so it cannot clear up after itself.~~
+        **`file.trash` moved into `editor`.** Trash is a 30-day bin the owner can see and
+        restore from, so withholding it was withholding a *reversible* capability in order to
+        produce *irreversible* litter in somebody's Drive. Wrong trade.
+      - ~~`comment.delete` sits in `editor`.~~ **Moved to `full`, along with `comment.edit`.**
+        Both are genuinely unrecoverable — Google keeps no comment edit history, and the soft
+        delete strips content *and* author — so they belong with `file.share` rather than beside
+        creating a comment. The old grouping had the default permitting the two irreversible
+        operations while forbidding the reversible one.
+
+      The regrouping exposed a **latent bug** in the demonstration: only capabilities that were
+      off by default declared `requires`, so a `reader` or `commenter` profile already walked
+      into refusals `demonstration_plan` was supposed to predict — sixteen of them, one at a
+      time. `requires` is now derived from `TOOL_CAPABILITIES`, so a gated step cannot be
+      unannotated.
 
 **Still deliberately excluded from "parity":** their `read_file_content` covers 13 mime types
 including PDF, Office and PNG/JPEG; ours covers the three Google-native types. Closing that
@@ -292,10 +305,23 @@ no longer anything this project can do that a client cannot reach.
 
 ### Gate C — the part that literally *is* 1.0
 
-- [ ] **C1 A written API-stability and deprecation policy.** What is public (package `__all__`;
-      MCP tool names, parameters and result shapes), what is not (anything `_`-prefixed), and
-      what we owe people when it changes. Without this, "1.0" is just a number. Cheapest item
-      here and the only one that cannot be added afterwards without being retroactive.
+- [x] **C1 A written API-stability and deprecation policy** — **done 2026-08-26** (v0.21.0):
+      [`API-STABILITY.md`](./API-STABILITY.md). The **MCP tool surface is the contract** and the
+      Python API is best-effort-but-serious, for a stated reason rather than by preference: a
+      Python embedder breaks loudly, in their own test suite, having pinned a version; an MCP
+      tool is called by a model reading a schema from a prompt written weeks ago, where the
+      failure surfaces as *"I couldn't do that"* and sometimes with the message suppressed
+      outright. The surface with the weaker feedback loop gets the stronger promise.
+
+      Two things it settles that were not obvious: **which capability gates which tool is part
+      of the contract** (moving a tool between capabilities silently changes what an existing
+      config permits, so it is breaking with no name changed), and **profile membership is
+      explicitly NOT** (they are curated sets, recurated in v0.21.0; name capabilities
+      explicitly if you need an exact one).
+
+      It also came with the **pre-1.0.0 API review** the policy is only meaningful with — see
+      the v0.21.0 CHANGELOG entry for the three findings, two of which were defects that would
+      have been permanent after 1.0.0.
 - [ ] **C2 The flavour switch.** Restrict the server to Google's or the claude.ai connector's
       surface. It is a **config surface**, so its shape must land pre-1.0 even though the
       feature itself is optional. Registration-time filter — see the `_tools/` split.
