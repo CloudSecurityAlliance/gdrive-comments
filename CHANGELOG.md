@@ -6,7 +6,7 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, 0.24.0, 0.25.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
@@ -101,7 +101,22 @@ in its own threat model — and it was missing from the list. That omission is a
 than the bug: the categories were written from the failures we had seen rather than from the
 threat model we had already written down.
 
-## 2026-08-26 — v0.24.0 (`export_comments`: a review register, for people and for other tools)
+## 2026-08-26 — v0.24.0 (`export_comments`: a review register, for people and for other tools) — **YANKED**
+
+> **⚠ This version is yanked. Use `0.25.0` or later.**
+>
+> **Reason:** CSV formula injection in `export_comments`. A comment beginning `=`, `+`, `-` or
+> `@` was written into the CSV unescaped, so a hostile comment on a shared document could
+> execute when the export was opened in Excel. `destination="sheet"` was not affected.
+>
+> **Exposure:** published 21:17:51 UTC, superseded by `0.25.0` at 23:08:23 UTC — **1 h 50 m**.
+> Yanked the same day. A yanked version is still installable when pinned; it is skipped by
+> resolvers that have an alternative.
+>
+> This is the first yank in this project's history, and the first exercise of the policy in
+> [`PROVENANCE.md`](PROVENANCE.md#yanking) — which had to gain a category to cover it, because
+> "untrusted document content reaching somewhere it executes" was not on the list. See the
+> `0.25.0` entry.
 
 `export_comments(fileId)` — every comment on a file as **flat rows with ordered columns**, one
 call, ready to write to a spreadsheet or hand to something else entirely.
