@@ -6,11 +6,17 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
-## 2026-08-25 — v0.13.1 (say which version you are, and how to report it) — not released
+## 2026-08-25 — v0.14.0 (say which version you are, and how to report it)
+
+**0.14.0 rather than 0.13.1**, because this adds API rather than repairing it: a `--version`
+flag, a `report_a_problem` tool, environment fields on `describe_configuration`, and a `cell`
+argument on `create_comment`. All additive, none breaking — which is precisely a MINOR bump.
+Numbering it a patch would have told anyone reading the version alone that nothing new was
+reachable, when four things are.
 
 **`report_a_problem`.** A bug report about an MCP server is usually missing the same four
 things — which version, which Python, which OS, and what the policy was — and each one costs a
