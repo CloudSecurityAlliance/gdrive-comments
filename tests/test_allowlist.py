@@ -406,8 +406,9 @@ class TestTheHostIsActuallyChecked:
 
     @pytest.mark.parametrize("host", ["docs.google.com", "drive.google.com",
                                       "sheets.google.com", "slides.google.com",
-                                      "docs.google.com."])
-    def test_googles_own_hosts_are_accepted(self, host):
+                                      "DOCS.GOOGLE.COM", "docs.google.com."])
+    def test_the_known_hosts_are_accepted(self, host):
+        """Case-insensitive, and a trailing dot is the same host fully qualified."""
         assert len(parse_allowlist(self.url(host)).entries) == 1
 
     @pytest.mark.parametrize("host", [
@@ -420,10 +421,19 @@ class TestTheHostIsActuallyChecked:
         with pytest.raises(AllowlistError, match="not a Google Docs or Drive address"):
             parse_allowlist(self.url(host))
 
-    def test_a_real_subdomain_is_still_accepted(self):
-        """Equality OR a dot boundary - so Google can add a subdomain without a code change,
-        while a lookalike registered next door cannot walk in."""
-        assert len(parse_allowlist(self.url("eu.docs.google.com")).entries) == 1
+    @pytest.mark.parametrize("host", ["eu.docs.google.com", "www.docs.google.com",
+                                      "a.b.drive.google.com"])
+    def test_even_a_genuine_subdomain_is_refused(self, host):
+        """The list is EXACT, not a suffix rule and not a subdomain rule.
+
+        A subdomain rule closes the `endswith` hole and still trusts any hostname on the
+        strength of its parent - including ones Google has never served a document from.
+        Equality has no such edge, and it makes adding a host a reviewed one-line change,
+        which is the right amount of friction for something that decides what a write
+        allowlist may name.
+        """
+        with pytest.raises(AllowlistError, match="not a Google Docs or Drive address"):
+            parse_allowlist(self.url(host))
 
     def test_a_bare_id_and_a_path_still_reach_their_own_diagnoses(self):
         """The host rung was hoisted above extraction, so these had to keep working: both parse

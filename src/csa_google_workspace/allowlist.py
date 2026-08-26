@@ -111,25 +111,45 @@ class Entry:
 
 
 PLACEHOLDER_MARKS = ("…", "...", "<", ">", "[", "]", "{", "}", "xxx", "AAA", "BBB")
+# The complete set of hosts a Google document URL is served from, matched by EQUALITY - see
+# `_is_google_host`. Each is here because somebody can genuinely paste it:
+#
+#   docs.google.com     Docs, Sheets and Slides all live here in practice
+#                       (/document/d/, /spreadsheets/d/, /presentation/d/)
+#   drive.google.com    file and folder links (/file/d/, /open?id=)
+#   sheets.google.com   redirect hosts. They bounce to docs.google.com, but a person who
+#   slides.google.com   typed one by hand should not have their entry refused for it.
+#
+# Adding to this list is a deliberate act, reviewed like any other change. That is the point
+# of an exact list over a pattern: the friction is where it belongs.
 GOOGLE_HOSTS = ("docs.google.com", "drive.google.com", "sheets.google.com",
                 "slides.google.com")
 
 
 def _is_google_host(host: str) -> bool:
-    """Is `host` one of Google's document hosts, or a real subdomain of one?
+    """Is `host` EXACTLY one of the hosts Google serves documents from?
 
-    Equality or a dot-boundary suffix, never a bare `endswith`. `"evildocs.google.com"
-    .endswith("docs.google.com")` is True, so the obvious version accepted
-    `https://evildocs.google.com/document/d/<id>/edit` - the same incomplete-substring family
-    CodeQL flags as `py/incomplete-url-substring-sanitization`, and one this project had
-    already been warned about elsewhere.
+    An allowlist of hostnames, matched by equality. Not a suffix rule, and not a subdomain
+    rule either - both of those answer "does this look like Google?" when the question is
+    "is this one of the four addresses a document URL actually comes from?"
 
-    Not an escalation either way: the id extracted from such a URL is a real Drive id, so the
-    entry granted exactly what listing that id would have. What it cost was the check itself -
-    a reviewer reading the config saw a lookalike domain that the tool had apparently blessed.
+    Two rejected approaches, in the order they were tried and found wanting:
+
+      `host.endswith("docs.google.com")`   accepts evildocs.google.com. This is the
+                                           incomplete-substring family CodeQL flags as
+                                           py/incomplete-url-substring-sanitization.
+      `host == g or host.endswith("." + g)` closes that, and still accepts any subdomain -
+                                           so a hostname Google has never served a document
+                                           from is trusted on the strength of its parent.
+
+    Equality has no such edge. Google adding a host is then a one-line change to a list
+    somebody reviews, which is the right amount of friction for something that decides what a
+    write-allowlist entry is permitted to name.
+
+    A trailing dot is stripped first: `docs.google.com.` is the fully-qualified spelling of
+    the same host, not a different one.
     """
-    host = host.lower().rstrip(".")
-    return any(host == g or host.endswith("." + g) for g in GOOGLE_HOSTS)
+    return host.lower().rstrip(".") in GOOGLE_HOSTS
 
 
 def diagnose_url(text: str) -> str | None:

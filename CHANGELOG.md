@@ -6,9 +6,39 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.19.1 (the allowlist accepts four hostnames, and only four)
+
+A tightening of what 0.19.0 shipped a few hours earlier. That version replaced a bare
+`endswith` with equality-or-dot-boundary, which closed the `evildocs.google.com` hole and still
+accepted **any** subdomain — so a hostname Google has never served a document from was trusted
+on the strength of its parent.
+
+The rule is now equality against a list of four:
+
+    docs.google.com     Docs, Sheets and Slides all live here in practice
+    drive.google.com    file and folder links
+    sheets.google.com   redirect hosts - they bounce to docs.google.com, but somebody who
+    slides.google.com   typed one by hand should not have their entry refused for it
+
+`eu.docs.google.com` and `www.docs.google.com` are now refused along with the lookalikes.
+Case is ignored and a trailing dot is stripped, because `DOCS.GOOGLE.COM.` is the same host
+spelled differently rather than a different one.
+
+The point of an exact list over a pattern is where the friction sits: Google adding a host
+becomes a reviewed one-line change, which is the right cost for something that decides what a
+write allowlist is permitted to name.
+
+Also filed [#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145):
+every log call in this library is `log.warning` — ten of them, no other level, no
+configuration. That is one channel for policy decisions and XLSX parse chatter alike, which is
+why a demonstration run buried its own output in five repeats of a cell-map warning. The issue
+is research before code: which of the ten is which, whether policy decisions belong on their
+own logger, and whether a file id in a log line is acceptable when the log may be shipped
+somewhere shared.
 
 ## 2026-08-26 — v0.19.0 (the allowlist checks the host; the capability matrix is tested)
 
