@@ -6,9 +6,48 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.19.0 (the allowlist checks the host; the capability matrix is tested)
+
+Both of these come from an end-to-end report that named its own limits precisely: *"all three
+disabled capabilities fail at the same gate, so this run really tested one code path three times
+— not three independent ones. The allowlist path never executed at all, since both scopes were
+`*`."*
+
+That is exactly right — `PolicyBackend.guarded` is one closure — and following the two threads
+it left open found a real bug in the second one.
+
+**The allowlist never checked the host.** `diagnose_url` returned "usable" for any URL
+containing a `/d/<id>/` segment, so the host rung below it was unreachable and
+`https://evil.example.com/document/d/<real-id>/edit` was accepted. The check has been hoisted
+above extraction, which is safe because a bare id and a filesystem path both parse to an empty
+netloc and still reach their own diagnoses.
+
+And the check itself used a bare `endswith`, which blesses `evildocs.google.com` — the
+incomplete-substring family CodeQL flags as `py/incomplete-url-substring-sanitization`, and one
+this project had already been warned about elsewhere. It is now equality or a dot boundary, so
+`eu.docs.google.com` passes and `docs.google.com.evil.net` does not.
+
+**Neither was an escalation, and saying so matters.** The id extracted from such a URL is a real
+Drive id, so the entry granted exactly what listing that id would have granted. What was lost
+was the check: somebody pasting a lookalike domain or a link-tracker wrapper had it silently
+blessed, and whoever reviewed the config saw a non-Google URL the tool had apparently approved.
+
+**`tests/test_policy_matrix.py`** does the two things a session cannot. It enables **one
+capability at a time** and asserts precisely which operations become possible — with the
+expectation written out by hand rather than derived from `_GATES`, because deriving it would
+test the table against itself and pass whatever it said. A mis-wired gate (`trash_file` mapped
+to `file.update`) refuses identically when both are off and quietly grants trashing to anybody
+who enables updates; this catches that. And it runs a **narrow allowlist**, one file in and one
+out, attempting every file-scoped operation against both — the property the control exists for.
+
+Writing it corrected a wrong expectation of mine rather than the code: `copy_file` is permitted
+for an unlisted file *by design*, because it is gated on the **read** scope and the copy it
+produces has a new id that is in no modify list either. The test now states that, and asserts
+that the copy is not writable.
 
 ## 2026-08-26 — v0.18.0 (two things the tools reported misleadingly)
 
