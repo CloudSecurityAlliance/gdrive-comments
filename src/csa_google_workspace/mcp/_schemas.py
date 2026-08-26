@@ -153,6 +153,24 @@ class TextOut(TypedDict):
     text: str
 
 
+class SuggestionOut(TypedDict):
+    suggestion_id: str
+    kind: str                         # insertion | deletion
+    text: str
+    # No `author`. The Docs API does not expose one, and a permanently-null field is an
+    # invitation to attribute somebody's edit to nobody.
+
+
+class SuggestionsOut(TypedDict):
+    suggestions: list[SuggestionOut]
+    # Carried in the RESULT, not only the tool description. A model reads a description once,
+    # when choosing the tool, and then reads the result - so by the time it is composing
+    # "shall I accept these?" the description is thousands of tokens behind it and this is
+    # what is in front of it.
+    can_accept_or_reject: bool
+    detail: str
+
+
 class AuthOut(TypedDict):
     status: str          # authorized | already_authorized | declined | timed_out
     detail: str
@@ -193,6 +211,24 @@ def comment_out(comment: Any) -> CommentOut:
         "cell": getattr(location, "cell", None) if location else None,
         "linked_cell": linked.group(1) if linked else None,
         "replies": [reply_out(r) for r in (comment.replies or [])],
+    }
+
+
+_NO_ACCEPT = (
+    "Read-only: the Google Docs API has no accept or reject endpoint, so no tool here can "
+    "apply or discard a suggestion. It has to be done in the document. Use "
+    "read_file_content(suggestions=\"accepted\"|\"rejected\") to see what the document would "
+    "say either way.")
+
+
+def suggestions_out(found: list) -> SuggestionsOut:
+    return {
+        "suggestions": [{"suggestion_id": s.suggestion_id, "kind": s.kind, "text": s.text}
+                        for s in found],
+        "can_accept_or_reject": False,
+        # Said even when the list is empty, because "nothing suggested" and "I could not
+        # tell" are different answers and a bare `[]` does not distinguish them.
+        "detail": (f"{len(found)} suggestion(s). " if found else "No suggestions. ") + _NO_ACCEPT,
     }
 
 

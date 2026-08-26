@@ -6,9 +6,70 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.20.0 (Docs suggestions reach the server; gate B2 closed)
+
+The last functional gap between the Python library and the MCP server. Two surfaces:
+
+    list_suggestions(fileId)                       the suggestions, as objects
+    read_file_content(fileId, suggestions="…")     what the document WOULD say
+
+`list_suggestions` returns each with an id, a `kind` of `insertion` or `deletion`, and the text.
+A **replacement is two entries sharing one id** — a deletion and an insertion — because that is
+what Google stores; the tool says so rather than collapsing them.
+
+`read_file_content` gained `suggestions`, taking `accepted`, `rejected` or `inline`, and it is
+the one that will actually get used. *"What would this document say if the edits were taken?"* is
+the review question, and answering it by listing edits and applying them mentally is how you get
+a confident wrong answer. Google renders the preview server-side; all this needed was to stop
+hiding the parameter.
+
+**Read-only, and the wording is the control.** The Docs API has no accept endpoint and no reject
+endpoint — established by enumerating the API rather than by failing to find one in the docs. So
+the hazard is not an exception. A model that has just listed six suggestions is one turn from
+being asked *"great, accept them"*, and the failure mode is the model replying **"done"** when
+nothing happened. There is no API call to get wrong, so there is nothing else to check.
+
+Hence the refusal is stated three times, in the three places a model reads at different moments:
+
+- in the **tool description**, which it reads when choosing the tool
+- in a `can_accept_or_reject: false` field of the **result**
+- in the result's `detail` string, which names the preview as the thing to use instead
+
+and `tests/test_suggestions_mcp.py` asserts all three, including a test on the *wording* of the
+descriptions. Unusual, and deliberate: on this path the wording is the only control there is.
+
+Two smaller decisions worth recording:
+
+- **`tab` and `suggestions` together are refused, not resolved.** One applies to spreadsheets and
+  one to documents, so no single file can take both — honouring either would silently answer a
+  different question from the one asked.
+- **No `author` field.** Google exposes no author for a suggestion. A schema field for it would
+  be permanently null, and a permanently-null field is an invitation to attribute somebody's
+  edit to nobody.
+
+### Six guard rails fired, which is the point of having them
+
+Adding one tool broke six existing tests, every one by design, and the list is worth reading as a
+description of what this project checks about itself:
+
+    test_every_tool_has_smoke_arguments          a registered tool nothing calls ships untested
+    test_it_exercises_every_tool_the_server_...  demo coverage is computed from the registry
+    test_every_registered_tool_declares_a_cap…   no capability declared -> cannot self-describe
+    test_the_readme_lists_every_tool…            undocumented tool
+    test_the_stated_count_matches                "31 tools" became false
+    test_the_stated_tool_counts_are_arithmetic…  and so did the comparison table's three numbers
+
+None of them is clever. Together they meant a new tool could not be added while leaving the
+README, the demonstration, the capability report or the smoke suite behind — which is exactly
+what happened when five tools were added in v0.13.0/v0.15.0 and the comparison table was not
+touched for eleven days (see v0.19.2).
+
+Also: footnote ³ in that table — *"the Python library only"* — is deleted, because there is no
+longer anything it describes.
 
 ## 2026-08-26 — v0.19.2 (the comparison table said "planned" about five shipped tools)
 
