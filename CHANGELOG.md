@@ -6,9 +6,62 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.23.0 (the passage a comment is about now reaches the server)
+
+Found by a question rather than by a test: *"can it export the comments to a spreadsheet — with
+the text each one is about?"*
+
+The answer was no, for a reason nobody had noticed. Drive returns `quotedFileContent` — the
+passage a Docs comment is attached to — and this library has modelled it as
+`Comment.quoted_text` since the beginning. **The MCP surface dropped it.** `CommentOut` carried
+`id`, `author`, `content`, `resolved`, `created_time`, `cell`, `linked_cell` and `replies`:
+everything except *what the comment is pointing at*.
+
+So a model could list twenty comments on a draft and could not tell you which paragraph any of
+them referred to. For comment triage — the one thing this project exists for — that is the column
+somebody actually wants.
+
+`quoted_text` is now on `CommentOut`, so `list_comments` and `get_comment` both report it. `None`
+means the comment is on the **file** rather than on a passage ("looks good to me"), which is a
+common state and a different thing from an empty string.
+
+**Why it stayed hidden**, because the shape is worth recognising: `quoted_text` *was* reachable —
+`_inline.py` uses it to anchor comments into text for `read_file_content(includeComments=true)`. A
+field with one internal consumer looks used. Nothing flagged it as absent from the schema, and no
+test could: the library had it, the library's tests passed, and the delivery layer simply never
+asked. Same class as gate B2, and the third instance this month of a capability the library had
+and the server did not.
+
+**A comment register needs no new tool.** With this exposed, the columns all come off one call —
+`id`, `author`, `quoted_text`, `content`, `resolved`, `created_time`, and `replies` nested so a
+thread stays one row — and `create_file(kind="spreadsheet")` plus `update_cells` writes the sheet.
+`list_comments`'s description now says so explicitly, including *put `quoted_text` in early; it is
+the column that makes the register usable*, because a field a model cannot see the point of is a
+field it will not use.
+
+The redaction still holds, and there is a test for it: `quoted_text` is document text, and these
+models get logged by embedders, so it stays out of `__repr__`.
+
+### What a register can and cannot tell you, stated plainly
+
+Asked what such an export would actually contain, per file type:
+
+| | Docs | Sheets | Slides |
+|---|---|---|---|
+| the passage it is about | **yes** — `quoted_text` | n/a | **yes**, where Drive recorded one |
+| cell address | n/a | **yes** — `cell`, plus `linked_cell` for a deep link | n/a |
+| **tab / sheet name** | n/a | **no** — see below | n/a |
+| thread identity, author, resolved state, replies | **yes** | **yes** | **yes** |
+
+The tab name is the honest gap, and v0.22.0 already made the tool say so: the XLSX export carries
+one `threadedComments` member per sheet but no way to correlate a member back to a sheet *name*,
+so on a multi-tab workbook `comments_by_cell` reports `tab_ambiguous` with the tab list rather
+than guessing. A register of a multi-tab spreadsheet therefore has a cell column and no tab
+column, and should say so rather than implying one tab.
 
 ## 2026-08-26 — v0.22.0 (Claude Desktop works; a multi-tab answer says it is uncertain)
 
