@@ -22,6 +22,7 @@ from .base import MIME_TO_TYPE
 
 if TYPE_CHECKING:                                     # pragma: no cover
     from .base import Document
+    from .permissions import Permission
 
 # What the connector and Google's server both accept, mapped to Drive `orderBy` values.
 ORDER_BY = {
@@ -152,6 +153,59 @@ class FileCollection:
         from .workspace import parse_file_id
         return self._wrap(self._backend.copy_file(
             parse_file_id(file_id_or_url), name=name, parent_id=parent_id))
+
+
+    # -- lifecycle: any file, including folders -----------------------------
+    #
+    # These live on the account axis rather than on Document deliberately. `Workspace.open()`
+    # MIME-dispatches to Doc / Sheet / Slides and refuses anything else, which is right for
+    # content but wrong here: renaming, trashing and sharing are uniform Drive operations that
+    # apply to a folder, a PDF or a shortcut just as much as to a document.
+    #
+    # The demonstration found this by trying to tidy up after itself and being told
+    # "unsupported file type" for the folder it had just created.
+
+    def update(self, file_id_or_url: str, *, name: str | None = None,
+               parent_id: str | None = None,
+               remove_parent_id: str | None = None) -> FileRef:
+        """Rename a file or move it between folders. Metadata only, any file type.
+
+        Drive moves by editing a parent list rather than by taking a destination, so
+        `parent_id` alone ADDS a parent and the file then lives in both places. Pass
+        `remove_parent_id` to move rather than to add.
+        """
+        from .workspace import parse_file_id
+        if name is not None and not name.strip():
+            raise ValueError("a file name cannot be empty")
+        return self._wrap(self._backend.update_file_metadata(
+            parse_file_id(file_id_or_url), name=name, add_parent=parent_id,
+            remove_parent=remove_parent_id))
+
+    def trash(self, file_id_or_url: str, *, untrash: bool = False) -> dict:
+        """Move a file to the trash, or restore it. Any file type, including folders.
+
+        Recoverable: Drive keeps a trashed file for 30 days. Trashing a FOLDER does not trash
+        what is inside it - the children are left loose in My Drive - so anything that tidies
+        up after itself has to remove the children first.
+        """
+        from .workspace import parse_file_id
+        return self._backend.trash_file(parse_file_id(file_id_or_url), trashed=not untrash)
+
+    def share(self, file_id_or_url: str, email: str, role: str = "reader", *,
+              notify: bool = True) -> Permission:
+        """Grant access to any file, including a folder. See `PermissionsMixin.share`."""
+        from .permissions import ROLES, Permission
+        from .workspace import parse_file_id
+        if role == "owner":
+            raise ValueError(
+                "share() will not transfer ownership; use the Drive UI deliberately. "
+                "Pass 'writer' to grant full edit access.")
+        if role not in ROLES:
+            raise ValueError(f"unknown role {role!r}; expected one of {', '.join(ROLES)}")
+        if not email or "@" not in email:
+            raise ValueError(f"expected an email address, got {email!r}")
+        return Permission.from_api(self._backend.create_permission(
+            parse_file_id(file_id_or_url), email=email, role=role, notify=notify))
 
     # -- internals ----------------------------------------------------------
 

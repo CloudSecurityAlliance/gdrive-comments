@@ -149,8 +149,9 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT) ->
             comment.delete()
             # Re-fetched, not returned from memory: the soft delete strips content and author
             # server-side, and the caller should see what Drive now holds rather than what we
-            # sent.
-            return comment_out(doc.comments.get(commentId))
+            # sent. include_deleted is REQUIRED here - without it Drive 404s the comment that
+            # was just deleted, so a successful delete reported "Comment not found".
+            return comment_out(doc.comments.get(commentId, include_deleted=True))
         target = next((r for r in comment.replies if r.id == replyId), None)
         if target is None:
             raise exc.NotFoundError(f"reply {replyId!r} is not in comment {commentId!r}")

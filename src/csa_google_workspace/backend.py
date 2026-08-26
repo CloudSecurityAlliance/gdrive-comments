@@ -19,7 +19,8 @@ class Backend(Protocol):
     def create_cell_anchored_comment(self, file_id: str, cell: str, text: str) -> None: ...
     def list_comments(self, file_id: str, include_deleted: bool = False,
                       start_modified_time: str | None = None) -> list[JsonDict]: ...
-    def get_comment(self, file_id: str, comment_id: str) -> JsonDict: ...
+    def get_comment(self, file_id: str, comment_id: str,
+                    include_deleted: bool = False) -> JsonDict: ...
     def create_comment(self, file_id: str, content: str) -> JsonDict: ...
     def create_reply(self, file_id: str, comment_id: str,
                      content: str | None = None, action: str | None = None) -> JsonDict: ...
@@ -109,8 +110,13 @@ class FakeBackend:
             out = [c for c in out if c.get("modifiedTime", "") >= start_modified_time]
         return [copy.deepcopy(c) for c in out]
 
-    def get_comment(self, file_id, comment_id):
-        return copy.deepcopy(self._require(file_id, comment_id))
+    def get_comment(self, file_id, comment_id, include_deleted=False):
+        raw = self._require(file_id, comment_id)
+        if raw.get("deleted") and not include_deleted:
+            # As Drive does. Returning it regardless was the more forgiving behaviour and it
+            # hid a real bug for as long as this fake existed.
+            raise exc.NotFoundError(f"comment '{comment_id}' not found")
+        return copy.deepcopy(raw)
 
     def create_comment(self, file_id, content):
         self.get_file_metadata(file_id)  # validates the file exists (raises NotFoundError)
@@ -170,6 +176,35 @@ class FakeBackend:
         return copy.deepcopy(store[key])
 
     def export_file(self, file_id, mime_type):
+        """A seeded export if there is one, otherwise render what this fake holds.
+
+        Seeded fixtures still win, because the tests that assert exact export bytes depend on
+        them. The fallback exists because a fake that cannot export a file it just created
+        diverges from Google in a way that hides bugs: every walk-the-whole-surface exercise
+        hit a NotFoundError that the real API would never produce, so export was the one
+        operation nothing end-to-end could cover.
+
+        The format resolution has already happened by the time a mime type reaches here, so
+        rendering it approximately does not paper over a resolution mistake.
+        """
+        seeded = self._exports.get((file_id, mime_type))
+        if seeded is not None:
+            return seeded
+        self.get_file_metadata(file_id)              # NotFoundError for an unknown file
+        if file_id in self._spreadsheets:
+            rows = [v for (fid, _), v in self._values.items() if fid == file_id]
+            flat = rows[0] if rows else []
+            return "\n".join(",".join(str(c) for c in row) for row in flat).encode()
+        if file_id in self._documents:
+            from . import _content
+            return _content.doc_text(self._documents[file_id]).encode()
+        if file_id in self._presentations:
+            from . import _content
+            return "\n".join(_content.slide_text(sl) for sl in
+                              self._presentations[file_id].get("slides", [])).encode()
+        # A file this fake holds no content for. Fall through to the fixture lookup so it
+        # raises exactly as it did before: "nothing to export" and "no fixture seeded" are
+        # the same answer, and a test that asserts the error still gets one.
         return self._fixture(self._exports, (file_id, mime_type), "export")
 
     def list_permissions(self, file_id):
@@ -197,7 +232,15 @@ class FakeBackend:
             self._spreadsheets[file_id] = {"sheets": [
                 {"properties": {"sheetId": 0, "title": "Sheet1"}}]}
         elif mime_type.endswith(".presentation"):
-            self._presentations[file_id] = {"slides": []}
+            # One slide with one text shape, because that is what Google creates. An empty
+            # deck made every shape-addressed operation unreachable in the fake - so
+            # `insert_slide_text` could not be exercised without seeding a fixture by hand,
+            # and a demo or test that walks a freshly created deck hit a wall the real API
+            # does not have.
+            self._presentations[file_id] = {"slides": [{
+                "objectId": f"slide_{file_id}",
+                "pageElements": [{"objectId": f"shape_{file_id}",
+                                  "shape": {"text": {"textElements": []}}}]}]}
         return copy.deepcopy(meta)
 
     def update_file_metadata(self, file_id, *, name=None, add_parent=None,
@@ -386,9 +429,14 @@ class ApiBackend:
             if not page:
                 return out
 
-    def get_comment(self, file_id, comment_id):
+    def get_comment(self, file_id, comment_id, include_deleted=False):
+        # Drive 404s a soft-deleted comment unless includeDeleted is set, which made a
+        # SUCCESSFUL delete report "Comment not found": the tool deleted the comment and then
+        # re-fetched it to show what Drive now held. Found by the demonstration against real
+        # Google; every unit test passed, because the fake returned deleted comments happily.
         return _errors.call(self._comments().get(
-            fileId=file_id, commentId=comment_id, fields=self._CF).execute)
+            fileId=file_id, commentId=comment_id, fields=self._CF,
+            includeDeleted=include_deleted).execute)
 
     def create_comment(self, file_id, content):
         return _errors.call(self._comments().create(

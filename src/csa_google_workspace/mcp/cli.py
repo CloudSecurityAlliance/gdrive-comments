@@ -20,6 +20,8 @@ USAGE = """usage: csa-google-workspace-mcp [login [--force]]
   (no argument)   run the MCP server over stdio, for an MCP client to launch
   login           authorize with Google in a browser and cache the token
   login --force   authorize again even if a cached token looks usable
+  demo            create real files and walk every operation, narrated
+  demo --auto     the same, unattended - it is also the end-to-end test
   --version       print the installed version and exit
 
 Clients that support MCP URL elicitation (Claude Code) can authorize in-session via
@@ -79,6 +81,11 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         from .. import __version__
         print(__version__, file=sys.stderr)
         return 0
+    if argv and argv[0] == "demo":
+        # A guided demonstration that is also this project's end-to-end test - see
+        # csa_google_workspace.demo. Imported here so the server path never loads it.
+        from ..demo._cli import main as demo_main
+        return demo_main(argv[1:], env)
     if argv and argv[0] == "login":
         from ._login import login  # imported here so the server path never loads it
         rest = argv[1:]
