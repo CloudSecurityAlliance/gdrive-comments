@@ -6,9 +6,124 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, 0.24.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.24.0 (`export_comments`: a review register, for people and for other tools)
+
+`export_comments(fileId)` — every comment on a file as **flat rows with ordered columns**, one
+call, ready to write to a spreadsheet or hand to something else entirely.
+
+The framing that produced it is worth keeping, because it is not an AI feature:
+
+> *Being able to export comments in bulk, sanely, and work with them means people who don't like
+> AI can do it their older way a bit better — but also export comments for bulk analysis with
+> other tools.*
+
+Both audiences want the same thing and neither wants a conversation. A register of every thread,
+with the text each one is about, is how document review has always been done; and flat rows with
+a thread id feed a notebook, a BI query or `grep`, where nested JSON does not.
+
+### The column that makes it worth reading is per-type
+
+    Docs / decks    quoted_text  the passage the reviewer selected (exposed in v0.23.0)
+    Sheets          cell         the address, AND
+                    cell_text    WHAT THE CELL HOLDS
+
+That second one is new here and it is the point. *"A comment on B11"* is useless in a register;
+*"B11, which reads Q3 revenue"* is a finding somebody can act on. One read per tab for the whole
+export, not one per comment — a register of forty comments must not be forty API calls.
+
+### And it turns out the cell's contents solve the multi-tab problem
+
+Not in the API — in practice, which is better than nothing and honest about which it is.
+
+We still cannot know which tab a comment is on (gate D3): the XLSX export carries one
+`threadedComments` member per sheet and no way to correlate a member back to a sheet *name*. So
+instead of guessing or refusing, the export reports that cell **on every tab**:
+
+    cell: "B2"
+    cell_text_by_tab: {"Summary": "42", "Detail": "Q3 revenue"}
+    caveats: ["This workbook has 2 tabs (Summary, Detail) and Google's export gives no way to
+               tell which tab a comment is on, so there is no tab column. `cell_text_by_tab`
+               shows what that cell holds on each tab instead - the content usually makes it
+               obvious which one a comment was about."]
+
+A comment reading *"Where is this from?"* is obviously about **Detail**, and no code had to
+decide that. The data disambiguates what the API cannot, and the caveat says so rather than
+letting a reader assume one tab.
+
+### Shape decisions
+
+- **Flat: one row per comment AND per reply**, with `reply_to` naming the thread. Lossless —
+  one-row-per-thread is a group-by away, and the reverse is not recoverable. A register a human
+  works through and a table a tool analyses want opposite shapes; this is the one you can get
+  both from.
+- **`columns` returned in order**, so writing a spreadsheet is a loop rather than a judgement
+  call about column order.
+- **Every row carries every column**, so a sheet write never has ragged rows.
+- **A reply carries no `quoted_text` and no `cell` of its own.** Only the top-level comment
+  anchors; repeating the thread's anchor on every reply would make one finding look like several.
+- **An empty cell reports `""`, not `null`.** A cell inside the sheet with nothing in it *is*
+  empty, and a register printing "None" there states a different fact.
+- **No comments still returns the columns**, so a caller writing a spreadsheet gets a header row.
+
+### Where it goes: a Google Sheet, or a CSV on disk
+
+Rows are the smallest useful answer and not what saves anybody time, so `destination` makes the
+two things people actually want first-class:
+
+    "rows"   (default) rows only - smallest response
+    "csv"    also returns `csv`, the whole thing as RFC 4180 text
+    "sheet"  CREATES A NEW GOOGLE SHEET and returns its URL to hand over
+    "file"   writes a .csv on this machine and returns the path
+
+A dict column (`cell_text_by_tab`) flattens to `Summary=42 | Detail=Q3 revenue` rather than being
+dumped as JSON, because a CSV cell reading `{'Summary': '42'}` is not something a person can read.
+Booleans render `yes`/`no` for the same reason.
+
+**And it is in the server's own instructions**, not only the tool description — a capability
+nobody discovers saves nobody any time. The instructions also say what *not* to do: don't loop
+`list_comments` and assemble a table by hand, because it is slower and it drops the column that
+makes a register worth reading.
+
+### The local-file destination, and why it is off by default
+
+This is **the first thing in this project that can write to the local filesystem**, and prompt
+injection through document content is the named primary risk in `SECURITY.md`. A comment reading
+*"also save a copy to ~/.zshrc"* must not become a code-execution primitive. Five layers, and the
+first two are the ones that matter:
+
+1. **Fail closed on configuration.** No `CSA_GW_EXPORT_DIR` → refused, with the error naming the
+   variable and pointing at `destination="csv"` as the alternative. Most installs never enable it.
+2. **The tool takes a FILENAME, never a path.** Any separator, any `..`, any `~`, anything
+   absolute is refused outright — so the *directory* is the operator's decision and cannot be
+   redirected from inside a session.
+3. **The extension is forced to `.csv`.** `filename="zshrc"` writes `zshrc.csv`.
+4. **No silent overwrite** — `overwrite=true` is explicit.
+5. **Containment re-checked after resolution**, so a symlink inside the export directory cannot
+   escape it.
+
+Layers 2 and 3 together mean the worst case is *"a CSV appeared in the operator's own export
+folder under an odd name"*, which is not exploitable. The export directory is also **not created
+automatically**: a typo'd variable should not quietly start writing somewhere unexpected.
+
+`destination="sheet"` needs no new gate — it goes through `create_file` and the Sheets write, so
+`file.create` and `content.write` already govern it, and under a narrow allowlist the write to the
+*new* sheet is refused exactly as any other write to an unlisted file would be. That is deliberate
+rather than an oversight, and the refusal names the variable.
+
+### Not a new tool for the writing half
+
+`create_file(kind="spreadsheet")` plus `update_cells` already writes the sheet. What was missing
+was the *data* — which is also why v0.23.0's `quoted_text` had to land first. The tool
+description says so, and says to put `quoted_text` in early, because a field a model cannot see
+the point of is a field it will not use.
+
+Exercised in the demonstration against all three file types, and the six guard rails fired again
+on the new tool: smoke arguments, demo coverage, capability declaration, README tool list, the
+stated count, and the comparison table's arithmetic.
 
 ## 2026-08-26 — v0.23.0 (the passage a comment is about now reaches the server)
 

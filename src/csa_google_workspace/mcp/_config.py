@@ -92,6 +92,11 @@ class Settings:
     client_secrets: str | None = None
     policy: Policy | None = None            # None -> Policy.default()
     profile: str | None = None              # the CSA_GW_PROFILE name, for reporting
+    # The one directory `export_comments(destination="file")` may write a .csv into. `None`
+    # means local writing is OFF, which is the default: this is the only path in the project
+    # that touches the local filesystem, and document content is untrusted input, so the
+    # operator opts in and chooses the directory rather than a conversation choosing it.
+    export_dir: str | None = None
 
 
 def policy_from_env(env: Mapping[str, str]) -> Policy:
@@ -245,6 +250,7 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         client_secrets=explicit or (default if os.path.exists(default) else None),
         policy=policy_from_env(env),
         profile=_profile_from_env(env),
+        export_dir=(env.get("CSA_GW_EXPORT_DIR") or "").strip() or None,
     )
 
 

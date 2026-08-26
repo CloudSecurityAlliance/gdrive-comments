@@ -287,14 +287,14 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 32, each with structured output and read-only/destructive annotations
+**Tools** — 33, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
 |---|---|
 | **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
 | **Read** | `read_file_content` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
-| **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` |
+| **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` |
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
 | **File lifecycle** ⚠️ | `update_file` · `trash_file` · `share_file` — each OFF unless an operator names its capability |
@@ -398,13 +398,13 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **32** |
+| MCP tools | 8 | 11 | **33** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **21** |
+| Tools they do not have | — | — | **22** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
-The twenty-one they do not have: nine comment tools, five content-write tools, `list_slides`
-and `list_suggestions`, four in which the server accounts for itself
+The twenty-two they do not have: **ten** comment tools, five content-write tools,
+`list_slides` and `list_suggestions`, four in which the server accounts for itself
 (`describe_configuration`, `read_server_resource`, `authenticate`, `report_a_problem`), and
 `demonstration_plan`.
 
@@ -456,6 +456,7 @@ accepting a share URL, which neither of theirs does.
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
 | `resolve_comment`, `reopen_comment` | Close or reopen a thread | ✗ | ✗ | ✅ |
 | `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
+| `export_comments` | Every comment as **flat rows for a spreadsheet or another tool** — with the passage or the cell's contents | ✗ | ✗ | ✅ |
 | `read_file_content(includeComments)` | Fold threads into the text where they were left | ✗ | ✅ | ✅ |
 | `replace_text` · `append_text` · `update_cells` · `append_rows` · `insert_slide_text` | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ✅ |
 | `list_suggestions` · `read_file_content(suggestions=)` | Read suggestions, and preview a Doc as if they were accepted/rejected | ✗ | ✗ | ✅ ⁸ |
