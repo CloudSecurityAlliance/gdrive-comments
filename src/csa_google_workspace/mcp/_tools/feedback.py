@@ -22,7 +22,7 @@ import urllib.parse
 
 from mcp.server import MCPServer
 
-from ..._environment import ISSUES_URL, describe_environment
+from ..._environment import ASSISTED_REPORT_LABEL, ISSUES_URL, describe_environment
 from ...policy import Policy
 from .._config import Settings
 from .._schemas import ProblemReportOut
@@ -93,11 +93,18 @@ def register_feedback_tools(app: MCPServer, settings: Settings) -> None:
         ])
 
         title = f"[{env.server_version}] "
-        query = urllib.parse.urlencode({"title": title, "body": report})
+        # Labelled, and NOT with the demonstration's label. An issue filed from here is a
+        # person who is stuck; one filed by a demo run is telemetry about the demo. Before
+        # this path carried no label at all, which made an assisted report look identical
+        # to a hand-written one and left the label unable to answer the only question it is
+        # good for: is anybody actually blocked?
+        query = urllib.parse.urlencode(
+            {"title": title, "body": report, "labels": ASSISTED_REPORT_LABEL})
         return {
             "report": report,
             "issues_url": ISSUES_URL,
             "new_issue_url": f"{ISSUES_URL}/new?{query}",
+            "label": ASSISTED_REPORT_LABEL,
             "server_version": env.server_version,
             "python_version": env.python_version,
             "os": env.os,

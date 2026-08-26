@@ -343,6 +343,12 @@ At the end it asks what you thought, and can file that as a public GitHub issue 
 `automated-feedback` — shown to you in full first, and never including a document name, link or
 id. Skipping is one keypress.
 
+**Two labels, because there are two kinds of report.** `automated-feedback` is a demonstration
+run commenting on itself: unprompted, nobody blocked, and the signal is in the aggregate — twenty
+runs skipping the same step is a design problem. `assisted-report`, from the `report_a_problem`
+tool, means a person hit something and a model helped them describe it: somebody is stuck, and
+those get read first.
+
 ## How this compares to the other Drive MCP servers
 
 There are two other ways to reach Google Drive from an AI client, and **for many people they

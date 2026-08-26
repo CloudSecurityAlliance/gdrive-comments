@@ -24,6 +24,22 @@ from . import __version__
 
 ISSUES_URL = "https://github.com/CloudSecurityAlliance/csa-google-workspace/issues"
 
+# TWO labels, because the two paths that reach that tracker are not the same kind of report and
+# want opposite triage. Kept here beside ISSUES_URL rather than in either caller: where feedback
+# goes, and under what name, is one fact.
+#
+#   DEMO_FEEDBACK_LABEL    a demonstration run reporting on ITSELF. Unprompted, nobody is
+#                          blocked, and the signal is in the aggregate - twenty runs skipping
+#                          the same step is a design problem, one run skipping it is a policy.
+#   ASSISTED_REPORT_LABEL  a PERSON has a problem now and a model helped them describe it.
+#                          Somebody is stuck. Read these first.
+#
+# They were one label - or rather, the demo had one and `report_a_problem` had none, which made
+# an assisted report indistinguishable from a hand-written one and defeated the labelling
+# entirely. `tests/test_feedback_labels.py` asserts they stay distinct.
+DEMO_FEEDBACK_LABEL = "automated-feedback"
+ASSISTED_REPORT_LABEL = "assisted-report"
+
 
 def _os_description() -> str:
     """A one-line OS description, using the most specific source each platform offers.

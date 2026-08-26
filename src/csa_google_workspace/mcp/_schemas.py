@@ -272,7 +272,8 @@ class ProblemReportOut(TypedDict):
     """
     report: str                 # ready to paste, markdown
     issues_url: str
-    new_issue_url: str
+    new_issue_url: str          # prefilled, and already carries `label`
+    label: str                  # the tracker label this will be filed under
     server_version: str
     python_version: str
     os: str
