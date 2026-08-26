@@ -1,0 +1,155 @@
+"""`report_a_problem` must be complete enough to act on and safe to publish.
+
+Most of these are absence tests. The report exists to be pasted into a *public* tracker, so what
+it must never contain matters more than what it contains, and absence is exactly what a reviewer
+stops noticing after the third read.
+"""
+from __future__ import annotations
+
+import asyncio
+import dataclasses
+import platform
+
+import pytest
+
+from csa_google_workspace import Workspace, __version__
+from csa_google_workspace._environment import Environment, describe_environment
+from csa_google_workspace.backend import FakeBackend
+from csa_google_workspace.mcp import settings_from_env
+from csa_google_workspace.mcp.server import create_server
+
+# A real-looking id: the allowlist rejects obvious placeholders like AAA, so a test that wants a
+# populated scope has to supply something that survives validation.
+DOC_ID = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
+DOC_URL = f"https://docs.google.com/document/d/{DOC_ID}/edit"
+
+
+def call(env: dict[str, str] | None = None) -> dict:
+    settings = settings_from_env(env if env is not None else {
+        "CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": DOC_URL})
+    server = create_server(lambda: Workspace(FakeBackend()), settings=settings)
+    return asyncio.run(server.call_tool("report_a_problem", {})).structured_content
+
+
+def test_report_names_the_version_python_and_os():
+    out = call()
+    assert out["server_version"] == __version__
+    assert out["python_version"] == platform.python_version()
+    assert out["os"]
+    for expected in (__version__, platform.python_version(), out["os"]):
+        assert expected in out["report"]
+
+
+def test_report_carries_no_file_ids():
+    """The one that matters. A Drive id in a public issue is a working link to the document."""
+    out = call()
+    for key, value in out.items():
+        assert DOC_ID not in str(value), f"{key} leaks the allowlisted file id"
+
+
+def test_report_carries_no_filesystem_paths():
+    """A home directory is a username, which is more than a bug report needs."""
+    out = call()
+    for key, value in out.items():
+        if key in ("issues_url", "new_issue_url", "checklist"):
+            continue                       # URLs, and a checklist that cites a URL
+        text = str(value)
+        assert "/Users/" not in text and "C:\\Users" not in text, f"{key} leaks a path"
+
+
+def test_scopes_are_described_by_shape_not_content():
+    out = call()
+    assert out["read_scope"] == "every file the credentials can reach"
+    assert out["modify_scope"] == "1 file"
+
+
+def test_a_closed_scope_says_so_rather_than_looking_empty():
+    """"nothing" and "unset" are the same shape and very different problems; the report has to
+    make the fail-closed case legible, because that is what most refusals actually are."""
+    out = call({"CSA_GW_ALLOWLIST_READ": "*"})       # modify unset -> closed
+    assert "nothing" in out["modify_scope"]
+
+
+def test_the_issue_url_is_prefilled_with_the_report():
+    out = call()
+    assert out["issues_url"].endswith("/issues")
+    assert out["new_issue_url"].startswith(out["issues_url"] + "/new?")
+    assert "title=" in out["new_issue_url"] and "body=" in out["new_issue_url"]
+
+
+def test_the_checklist_is_present_and_mentions_the_version_check():
+    out = call()
+    assert out["checklist"]
+    assert any("pypi.org" in item for item in out["checklist"])
+
+
+def test_the_tool_is_absent_without_settings():
+    """A library embedder wiring its own Workspace gets the document tools and none of this -
+    the same rule config and auth follow, for the same reason: it needs Settings."""
+    server = create_server(lambda: Workspace(FakeBackend()))
+    names = {tool.name for tool in asyncio.run(server.list_tools())}
+    assert "report_a_problem" not in names
+
+
+class TestEnvironment:
+    def test_os_is_named_the_way_a_person_would_name_it(self):
+        """Not the kernel version. `platform.release()` gives "25.6.0" on macOS, which nobody
+        recognises as the OS they are running, and "10" on Windows 11."""
+        described = describe_environment().os
+        system = platform.system()
+        if system == "Darwin":
+            assert described.startswith("macOS")
+            assert "Darwin" not in described or not platform.mac_ver()[0]
+        elif system == "Windows":
+            assert described.startswith("Windows")
+        assert described.strip()
+
+    def test_markdown_is_aligned_and_lists_every_field(self):
+        text = describe_environment().as_markdown()
+        for label in ("csa-google-workspace", "Python", "OS", "Architecture", "mcp SDK",
+                      "Installed via"):
+            assert label in text
+
+    def test_as_dict_round_trips_the_dataclass(self):
+        env = describe_environment()
+        assert env.as_dict()["server_version"] == env.server_version
+        assert isinstance(env.as_dict()["notes"], list)
+
+    def test_a_shared_environment_is_called_out(self, monkeypatch):
+        """The note has to be able to fire and has to change what the reader does. A shared
+        environment is where another project's pin holds this package at an old version, so
+        "upgrade first" becomes the right first reply to the report."""
+        from csa_google_workspace import _environment
+        monkeypatch.setattr(_environment, "_installed_via",
+                            lambda: "pip (shared environment)")
+        assert any("pipx" in note for note in _environment.describe_environment().notes)
+
+    def test_an_isolated_install_gets_no_note(self):
+        from csa_google_workspace import _environment
+        env = _environment.Environment(
+            server_version="1", python_version="3.12.0", python_implementation="CPython",
+            os="macOS 26", architecture="arm64", mcp_sdk_version="2.1.0", installed_via="pipx")
+        assert env.notes == []
+
+    @pytest.mark.parametrize("location,expected", [
+        ("/Users/x/.local/pipx/venvs/csa-google-workspace/lib/python3.12/site-packages/"
+         "csa_google_workspace", "pipx"),
+        ("/opt/homebrew/lib/python3.12/site-packages/csa_google_workspace", "pip"),
+        ("/Users/x/GitHub/csa-google-workspace/src/csa_google_workspace", "editable"),
+    ])
+    def test_install_route_is_inferred_from_where_the_package_lives(self, monkeypatch,
+                                                                    location, expected):
+        """Worth reporting because the routes fail differently: a pipx venv upgrades cleanly, a
+        shared environment can have another project's pin holding the version down, and a
+        checkout may match no release at all."""
+        from csa_google_workspace import _environment
+        monkeypatch.setattr(_environment, "__file__", f"{location}/_environment.py")
+        assert expected in _environment._installed_via()
+
+    def test_environment_is_frozen(self):
+        """It is a snapshot handed to a caller who may put it in a report; nothing downstream
+        should be able to edit it after the fact."""
+        env = describe_environment()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            env.server_version = "9.9.9"    # type: ignore[misc]
+        assert isinstance(env, Environment)

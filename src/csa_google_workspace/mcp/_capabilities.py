@@ -65,6 +65,8 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "copy_file": FILE_CREATE,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
+    # A read in the strict sense - it touches no Google API at all, only this process.
+    "report_a_problem": None,
     "read_server_resource": None,
     "authenticate": None,
 }

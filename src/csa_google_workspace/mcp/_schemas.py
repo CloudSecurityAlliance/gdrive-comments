@@ -203,3 +203,28 @@ def file_ref_out(ref: Any) -> FileRefOut:
 def file_metadata_out(doc: Any, snippet: str | None) -> FileMetadataOut:
     return {"id": doc.id, "name": doc.name, "type": doc.type, "mime_type": doc.mime_type,
             "url": doc.url, "snippet": snippet}
+
+
+class ProblemReportOut(TypedDict):
+    """What to put in a bug report, and where to put it.
+
+    Carries no file ids, no titles and no paths: this is written to be pasted into a PUBLIC
+    issue tracker. Scopes are described by shape ("every file", "3 files") rather than by
+    content, which is the opposite of `ConfigOut` and deliberate — see `_environment`.
+    """
+    report: str                 # ready to paste, markdown
+    issues_url: str
+    new_issue_url: str
+    server_version: str
+    python_version: str
+    os: str
+    architecture: str
+    mcp_sdk_version: str | None
+    installed_via: str
+    profile: str | None
+    read_only: bool
+    read_scope: str
+    modify_scope: str
+    authorized: bool
+    checklist: list[str]
+
