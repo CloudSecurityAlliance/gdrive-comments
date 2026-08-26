@@ -48,22 +48,43 @@ def test_an_undeclared_method_is_refused_not_delegated():
 
 # --- defaults --------------------------------------------------------------
 
-def test_the_default_policy_preserves_todays_behaviour():
-    """Comment and content writes already worked; turning them off here would be a silent
-    behaviour change dressed up as a security improvement."""
+def test_the_default_permits_everything_that_can_be_undone():
+    """The line the defaults are drawn on since v0.21.0: *can this be undone?*
+
+    Content edits have Drive revision history. Resolve can be reopened and leaves a visible
+    reply either way. A rename can be renamed back. Trash is a 30-day bin whose owner can see
+    it and restore from it themselves. None of those is a decision somebody is stuck with."""
     p = Policy.default()
     for capability in (policy.COMMENT_CREATE, policy.COMMENT_REPLY, policy.COMMENT_RESOLVE,
-                       policy.COMMENT_EDIT, policy.COMMENT_DELETE, policy.CONTENT_WRITE,
-                       policy.FILE_CREATE):
+                       policy.CONTENT_WRITE, policy.FILE_CREATE, policy.FILE_UPDATE,
+                       policy.FILE_TRASH):
         assert p.allows(capability), capability
 
 
-def test_the_dangerous_three_are_off_by_default():
-    """update/trash/share each alter or expose a file that already exists, and each is one
-    Google's own MCP server declines to offer."""
+def test_the_default_refuses_everything_that_cannot_be_undone():
+    """The other half, and the reason the grouping changed in v0.21.0.
+
+    Until then the default permitted both IRREVERSIBLE operations and forbade a REVERSIBLE
+    one, because it was drawn on "what this library already did" rather than on consequence:
+
+        comment.edit    Google keeps no visible edit history. The previous text is gone.
+        comment.delete  the soft delete strips content AND author. Gone.
+        file.share      the grant is revocable; a copy the recipient took is not.
+
+    "Editing is safe because everything is versioned" holds for document content and does not
+    hold for comments. That mismatch is what this test now pins."""
     p = Policy.default()
-    for capability in (policy.FILE_UPDATE, policy.FILE_TRASH, policy.FILE_SHARE):
+    for capability in (policy.COMMENT_EDIT, policy.COMMENT_DELETE, policy.FILE_SHARE):
         assert not p.allows(capability), capability
+
+
+def test_no_capability_can_destroy_something_beyond_recovery():
+    """The backstop under the whole scheme: there is no permanent delete and no empty-trash
+    capability, so the worst even `full` can do to a FILE is put it in a bin its owner
+    controls. If somebody ever adds one, this fails and the profile design needs rethinking
+    rather than a new entry."""
+    assert not any("purge" in c or "destroy" in c or "permanent" in c
+                   for c in policy.ALL_CAPABILITIES)
 
 
 def test_default_enabled_and_disabled_together_cover_everything():

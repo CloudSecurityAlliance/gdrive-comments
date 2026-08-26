@@ -18,8 +18,10 @@ exercise?" is answerable without a Google account.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
+
+from ..mcp._capabilities import TOOL_CAPABILITIES
 
 # What each file type is called, what its content operations are, and how to seed it. Keyed by
 # the `kind` that `create_file` takes.
@@ -344,13 +346,37 @@ _MAX_CLEANUP = 8
 
 
 def build(prefix: str, folder_name: str, share_with: str, *, keep: bool) -> list[Step]:
-    """The whole plan, in the order a person would meet it."""
+    """The whole plan, in the order a person would meet it, every gated step annotated."""
     steps = account_opening()
     for kind in TYPES:
         steps += per_type(kind)
     steps += account_closing()
     steps += cleanup(keep)
-    return steps
+    return [_annotate(step) for step in steps]
+
+
+def _annotate(step: Step) -> Step:
+    """Fill in `requires` from the server's own tool->capability map.
+
+    Steps used to declare `requires` **only** for capabilities that were off by default, which
+    worked by accident: everything else was always on, so an unannotated step never met a
+    refusal. Two things broke that. A `reader` or `commenter` profile already walked into
+    refusals the plan could have predicted, and v0.21.0 moved `comment.edit` and
+    `comment.delete` out of the default - so the most common configuration started hitting
+    them. `demonstration_plan` exists precisely to say up front what will be skipped, and it
+    could not.
+
+    Derived rather than hand-annotated because 22 of the 36 steps are gated and a table
+    somebody has to remember is a table that goes stale. `TOOL_CAPABILITIES` is already the
+    single source of truth - `tests/test_mcp_capabilities.py` fails if a tool is missing from
+    it - so reading it here means a new gated tool arrives correctly annotated for free. An
+    explicit `requires=` still wins, for the one case the map cannot express: `resolve_comment`
+    and `reopen_comment` share a capability, and a step may need a NARROWER one than its tool.
+    """
+    if step.requires is not None:
+        return step
+    capability = TOOL_CAPABILITIES.get(step.tool)
+    return replace(step, requires=capability) if capability else step
 
 
 def initial_state(prefix: str, folder_name: str, share_with: str) -> State:

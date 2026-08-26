@@ -21,6 +21,7 @@ from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.demo import NOT_EXERCISED, Runner, build, coverage, render
 from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
+from csa_google_workspace.policy import Policy
 
 FULL = {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*", "CSA_GW_PROFILE": "full"}
 
@@ -129,17 +130,34 @@ def test_every_file_type_gets_the_full_operation_set(report):
 
 
 def test_a_disabled_capability_is_skipped_not_failed():
-    """The demonstration has to be runnable on a default install, where share and trash are
-    off. Refusing to start would make the safest configuration the one that cannot be shown."""
+    """The demonstration has to be runnable on a default install. Refusing to start would make
+    the safest configuration the one that cannot be shown.
+
+    Since v0.21.0 the default is drawn on recoverability, so WHAT a default run skips changed:
+    it can now create files and trash them (both reversible) and cannot edit or delete a
+    comment or share a file (none of those can be undone). Asserted against the policy rather
+    than a hard-coded list, so it keeps testing the property if the grouping moves again."""
     backend = FakeBackend({})
     server = create_server(lambda: Workspace(backend), settings=settings_from_env(
         {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*"}))   # default profile
     report = Runner(server).run(prefix="demo-test", folder_name="Demo",
                                 share_with="someone@example.com")
+    enabled = set(Policy.default().enabled)
     gated = [o for o in report.outcomes if o.step.requires]
     assert gated, "the plan no longer exercises any gated tool"
-    assert all(o.status == "skipped" for o in gated)
-    assert all("capability" in o.detail for o in gated)
+
+    refused = [o for o in gated if o.step.requires not in enabled]
+    assert refused, "the plan no longer exercises anything the DEFAULT policy refuses"
+    assert all(o.status == "skipped" for o in refused)
+    assert all("capability" in o.detail for o in refused)
+
+    # The other half: a step whose capability the default DOES grant must not be skipped for
+    # that reason - otherwise "runnable on a default install" would be satisfied by a run that
+    # skipped everything.
+    permitted = [o for o in gated if o.step.requires in enabled]
+    assert permitted, "the plan no longer exercises any gated tool the default permits"
+    assert not any(o.status == "skipped" and "capability" in (o.detail or "")
+                   for o in permitted)
     assert report.failed == []
 
 
@@ -290,13 +308,24 @@ class TestDiscoverableFromMcp:
     def test_it_says_the_files_are_real(self):
         assert self.plan()["creates_real_files"] is True
 
-    def test_a_default_profile_is_told_it_cannot_clear_up(self):
-        """The case the session hit. `editor` has no file.trash, so the demonstration leaves
-        artefacts - and that changes what you say BEFORE creating anything, not after."""
+    def test_the_default_profile_can_now_clear_up_after_itself(self):
+        """The inverse of the test this replaces, and the point of the v0.21.0 regrouping.
+
+        `editor` used to lack `file.trash`, so a demonstration created real files in somebody's
+        Drive with no way to remove them. Withholding a REVERSIBLE capability produced
+        irreversible litter, which is the wrong trade: trash is a 30-day bin the owner
+        controls, and files left behind are forever until a human notices them."""
         out = self.plan("editor")
-        assert out["cleanup_possible"] is False
-        assert any("file.trash" in reason for reason in out["unavailable"])
-        assert any("by hand" in reason for reason in out["unavailable"])
+        assert out["cleanup_possible"] is True
+        assert not any("file.trash" in reason for reason in out["unavailable"])
+
+    def test_a_default_profile_is_still_told_what_it_cannot_do(self):
+        """Cleanup working does not mean nothing is refused - the default still declines the
+        three that cannot be undone, and the plan says so before anything is created."""
+        out = self.plan("editor")
+        reasons = " ".join(out["unavailable"])
+        assert "comment.edit" in reasons or "comment.delete" in reasons
+        assert "file.share" in reasons
 
     def test_a_full_profile_has_nothing_to_warn_about(self):
         out = self.plan("full")
@@ -308,7 +337,33 @@ class TestDiscoverableFromMcp:
         out = self.plan("editor")
         blocked = [s for s in out["steps"] if not s["available"]]
         assert blocked
-        assert {s["tool"] for s in blocked} <= {"update_file", "share_file", "trash_file"}
+        # The default refuses exactly the three that cannot be undone. Named, rather than
+        # checked with `<=`, because the previous version of this test would have passed on a
+        # plan that predicted NOTHING - and that is what it was doing: before v0.21.0 most
+        # gated steps carried no `requires` at all, so they were reported "available" and the
+        # walkthrough discovered the refusal by hitting it.
+        assert {s["tool"] for s in blocked} == {"edit_comment", "delete_comment", "share_file"}
+
+    @pytest.mark.parametrize("profile,expected", [
+        ("reader", {"comment.create", "comment.reply", "comment.resolve", "comment.edit",
+                    "comment.delete", "content.write", "file.create", "file.update",
+                    "file.trash", "file.share"}),
+        ("commenter", {"comment.edit", "comment.delete", "content.write", "file.create",
+                       "file.update", "file.trash", "file.share"}),
+        ("editor", {"comment.edit", "comment.delete", "file.share"}),
+        ("full", set()),
+    ])
+    def test_the_plan_predicts_every_refusal_for_every_profile(self, profile, expected):
+        """The property `demonstration_plan` exists for: say up front what will be skipped.
+
+        It was quietly false for three of these four profiles. `requires` is now derived from
+        the server's own tool->capability map rather than hand-annotated, so a gated step
+        cannot be unannotated - which is what let a `reader` walk into sixteen unpredicted
+        refusals one at a time."""
+        out = self.plan(profile)
+        named = {reason.split("needs the ")[1].split(" capability")[0]
+                 for reason in out["unavailable"] if "needs the " in reason}
+        assert named == expected
 
     def test_every_step_says_what_it_applies_to(self):
         """A model narrating "now the same thing on a Sheet" needs to know which is which."""

@@ -134,8 +134,10 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
 
         Drive moves a file by editing its parent list rather than by taking a destination, so
         `parentId` alone ADDS a parent and the file then lives in both folders - a real Drive
-        state, not an error. Pass `removeParentId` as well to move rather than to add; the
-        current parents are on `get_file_metadata`.
+        state, not an error. Pass `removeParentId` as well to move rather than to add. This
+        tool RETURNS the parents the file has afterwards, so a move can be confirmed rather
+        than assumed - and to see them beforehand, call it with only a `name` change, or read
+        `parents` from a `search_files` hit.
 
         Works on ANY file, folders included - it goes through the account axis rather than
         through `open()`, which MIME-dispatches to a document type and refuses everything else.
@@ -145,7 +147,11 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
             raise ValueError("nothing to change: pass name, parentId or removeParentId")
         ref = get_workspace().files.update(fileId, name=name, parent_id=parentId,
                                            remove_parent_id=removeParentId)
-        return {"id": ref.id, "name": ref.name, "parents": []}
+        # Reported from the response, not invented. This returned a hard-coded `[]` until
+        # v0.21.0, so "where is it now?" was answered wrongly rather than not at all - and
+        # the answer looked like "nowhere", which is not a state Drive has.
+        return {"id": ref.id, "name": ref.name,
+                "parents": list(ref.parents) if ref.parents is not None else None}
 
     @app.tool(annotations=DESTRUCTIVE)
     @_errors

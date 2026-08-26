@@ -56,15 +56,35 @@ ALL_CAPABILITIES = (COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COMMENT_EDIT
                     COMMENT_DELETE, CONTENT_WRITE, FILE_CREATE, FILE_UPDATE, FILE_TRASH,
                     FILE_SHARE)
 
-# On by default because they are what this library already did — turning them off here
-# would be a silent behaviour change dressed as a security improvement. `file.create` joins
-# them because creating a file cannot damage one that already exists.
-DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COMMENT_EDIT,
-                             COMMENT_DELETE, CONTENT_WRITE, FILE_CREATE})
+# --- the line the defaults are drawn on: CAN THIS BE UNDONE? -----------------------------
+#
+# Until v0.21.0 the default set was "whatever this library already did", which put the two
+# IRREVERSIBLE operations inside the default profile and left a REVERSIBLE one outside it.
+# Stated as a table, the inversion is obvious:
+#
+#   operation        recoverable?  how
+#   content.write    yes           Drive revision history; restorable in the UI
+#   comment.resolve  yes           reopen, and it leaves a visible reply either way
+#   file.create      n/a           nothing existing to damage
+#   file.update      yes           rename/move back by hand
+#   file.trash       yes, 30 days  Drive trash; the USER can restore it themselves
+#   comment.edit     NO            Google keeps no visible edit history. Previous text gone.
+#   comment.delete   NO            the soft delete strips content AND author. Gone.
+#   file.share       NO, in effect the grant is revocable; a copy the recipient took is not
+#
+# "Content edits are versioned, so editing is safe" is true of DOCUMENT CONTENT and false of
+# COMMENTS - which is exactly the assumption the old grouping encoded. So the default now
+# means *everything that can be undone*, and the irreversible three sit together in `full`.
+#
+# There is no permanent delete anywhere in this library, deliberately, and no capability that
+# empties the trash. The worst a `full` install can do to a file is put it in the trash, where
+# its owner can see it and restore it.
+DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
+                             FILE_CREATE, FILE_UPDATE, FILE_TRASH})
 
-# Off by default. Each one alters or exposes a file that already exists, and each is one
-# Google's own MCP server declines to offer at all.
-DEFAULT_DISABLED = frozenset({FILE_UPDATE, FILE_TRASH, FILE_SHARE})
+# Off by default: the two Google gives you no way to undo, and the one that sends data out of
+# the organisation.
+DEFAULT_DISABLED = frozenset({COMMENT_EDIT, COMMENT_DELETE, FILE_SHARE})
 
 # Named capability sets, so "what may this install do?" has an answer shorter than a list.
 #
@@ -75,18 +95,25 @@ DEFAULT_DISABLED = frozenset({FILE_UPDATE, FILE_TRASH, FILE_SHARE})
 PROFILES: dict[str, frozenset[str]] = {
     # Read and report. Cannot change anything, whatever the allowlists say.
     "reader": frozenset(),
-    # Join the conversation: comment, reply, resolve. Cannot alter document *content*, cannot
-    # delete a thread, cannot touch the file itself. The useful default for review work.
+    # Join the conversation: comment, reply, resolve. Every one of those is additive, and
+    # resolve leaves a visible reply rather than a silent flag. Cannot alter document content
+    # and cannot touch the file itself.
     "commenter": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE}),
-    # Also edit content, tidy comments, and create new files. Still cannot rename, move, trash
-    # or share an existing one.
-    "editor": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COMMENT_EDIT,
-                         COMMENT_DELETE, CONTENT_WRITE, FILE_CREATE}),
-    # Everything, including the three Google's own server declines to offer.
+    # EVERYTHING REVERSIBLE. Content edits (revision history), new files, rename/move, and
+    # trash - which is 30 days in a bin the file's owner can see and empty themselves.
+    #
+    # `file.trash` being here is what lets a deployment CLEAN UP AFTER ITSELF. Without it an
+    # agent that creates a working file has no way to remove it, so the litter accumulates in
+    # somebody's Drive and the only tool that could tidy it is off. That was the state until
+    # v0.21.0 and it was a worse outcome than the one the restriction was protecting against.
+    "editor": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
+                         FILE_CREATE, FILE_UPDATE, FILE_TRASH}),
+    # EVERYTHING YOU CANNOT TAKE BACK. Editing a comment (no edit history), deleting one
+    # (content and author stripped), and sharing (the grant is revocable, a copy is not).
     "full": frozenset(ALL_CAPABILITIES),
 }
-# `editor` is exactly the historical default set. `tests/test_policy.py` holds them together —
-# not an `assert` here, which bandit rightly flags and `python -O` strips.
+# `editor` is exactly `DEFAULT_ENABLED`. `tests/test_policy.py` holds them together — not an
+# `assert` here, which bandit rightly flags and `python -O` strips.
 
 READ = "read"
 MODIFY = "modify"

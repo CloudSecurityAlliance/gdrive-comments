@@ -90,18 +90,29 @@ class TestTheLibrary:
 class TestTheBounds:
     """Two independent gates, and neither can be widened from inside."""
 
-    @pytest.mark.parametrize("action", ["rename", "trash", "share"])
-    def test_each_is_off_under_the_default_policy(self, action):
-        """The default enables comment and content writes and nothing else. Somebody has to ask
-        for these three by name."""
+    def test_share_is_off_under_the_default_policy(self):
+        """Of the three, `share` is the one the default refuses - and since v0.21.0 the reason
+        is stated as recoverability rather than as "these three are dangerous". A permission
+        grant is revocable; a copy the recipient already took is not, so sharing cannot be
+        undone in the sense that matters. Rename and trash both can, which is why they moved
+        into the default; see tests/test_policy.py."""
         document = Workspace(PolicyBackend(FakeBackend(files()), Policy.default())).open(DOC)
         with pytest.raises(exc.ReadOnlyError):
-            if action == "rename":
-                document.rename("x")
-            elif action == "trash":
-                document.trash()
-            else:
-                document.share("someone@example.com")
+            document.share("someone@example.com")
+
+    @pytest.mark.parametrize("action", ["rename", "trash"])
+    def test_rename_and_trash_are_permitted_by_the_default_policy(self, action):
+        """The other half of the v0.21.0 regrouping, asserted rather than implied.
+
+        Both are reversible - a rename can be renamed back, and trash is a 30-day bin the
+        file's owner can see and restore from - and withholding trash meant a deployment could
+        create files and never tidy them, which left litter in real Drives. That was a worse
+        outcome than the one the restriction protected against."""
+        document = Workspace(PolicyBackend(FakeBackend(files()), Policy.default())).open(DOC)
+        if action == "rename":
+            document.rename("x")
+        else:
+            document.trash()
 
     @pytest.mark.parametrize("action", ["rename", "trash", "share"])
     def test_each_is_refused_for_a_file_outside_the_modify_allowlist(self, action):
@@ -308,3 +319,61 @@ class TestFromTheEndToEndReport:
         tools = {t.name: (t.description or "")
                  for t in asyncio.run(self._sheet().list_tools())}
         assert "ABSENT unless you pass `includeDeleted`" in tools["list_comments"]
+
+
+class TestTheApiReviewFindings:
+    """Three things the v0.21.0 pre-1.0.0 API review found, each pinned so it cannot come back.
+
+    The review existed because the MCP tool surface is the contract this project actually has
+    to keep - a wire name, a parameter, a result field - and pre-1.0.0 is the only moment any
+    of it is free to change. Two of the three were defects rather than preferences.
+    """
+
+    def _server(self):
+        from csa_google_workspace.mcp import settings_from_env
+        from csa_google_workspace.mcp.server import create_server
+        backend = FakeBackend(
+            {DOC: {"id": DOC, "name": "D", "mimeType": "application/vnd.google-apps.document",
+              "parents": ["FOLDER1"]},
+             "FOLDER2": {"id": "FOLDER2", "name": "F2",
+                         "mimeType": "application/vnd.google-apps.folder"}},
+            permissions={DOC: [{"id": "p1", "type": "user", "role": "writer",
+                                "emailAddress": "a@b.com"}]})
+        return create_server(lambda: Workspace(backend), settings=settings_from_env(
+            {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",
+             "CSA_GW_PROFILE": "full"}))
+
+    def _call(self, name, args):
+        import asyncio
+        return asyncio.run(self._server().call_tool(name, args)).structured_content
+
+    def test_update_file_reports_the_parents_the_file_actually_has(self):
+        """It returned a hard-coded `[]` until v0.21.0.
+
+        Not a missing answer - a WRONG one, and one that looked like "the file is nowhere",
+        which is not a state Drive has. Google was returning the parents all along and the
+        library layer was discarding them.
+        """
+        out = self._call("update_file", {"fileId": DOC, "parentId": "FOLDER2",
+                                         "removeParentId": "FOLDER1"})
+        assert out["parents"] == ["FOLDER2"]
+
+    def test_a_search_hit_does_not_claim_to_know_the_parents(self):
+        """`None` (not asked) and `()` (genuinely none) are different answers.
+
+        `search_files` does not request parents, so a hit reporting an empty list would be
+        asserting a fact it never checked - the same missing-vs-empty conflation that made a
+        cell-map warning fire on correct behaviour, and that ZERO-DEFECT #17 is about.
+        """
+        space = workspace()
+        space.files.create("New", "document")
+        hits = space.files.search("name contains 'New'")
+        assert hits and all(hit.parents is None for hit in hits)
+
+    def test_a_permission_does_not_call_its_grantee_kind_type(self):
+        """`type` means the DOCUMENT kind everywhere else in this surface - document,
+        spreadsheet, presentation - and a model reads these outputs interleaved. One field
+        name carrying two unrelated vocabularies is a misreading waiting to happen."""
+        permissions = self._call("get_file_permissions", {"fileId": DOC})["permissions"]
+        assert permissions[0]["grantee_type"] == "user"
+        assert "type" not in permissions[0]
