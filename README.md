@@ -252,17 +252,25 @@ guess — and so the model can explain a refusal instead of retrying it:
 | `csa-gw://config` | the **effective** policy right now: what may be read, what may be changed, which mutation kinds are on, and — when something permits nothing — the diagnosis of why |
 | `csa-gw://help/configuration` | the reference: every variable, the accepted forms, what each kind of mistake looks like, and the limits worth knowing before you hit them |
 | `describe_configuration` | the same facts as structured output, for clients that do not surface resources. Needs no credentials, so it answers even when nothing else does |
+| `report_a_problem` | assembles a bug report — version, OS, Python, install route, active policy — with **no file ids, titles or paths**, so it can be pasted into a public issue. The opposite choice from `describe_configuration`, which does list ids: same facts, different destination |
 
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools:** `search_files`, `list_recent_files`, `get_file_metadata`, `get_file_permissions`,
-`read_file_content`, `download_file_content`, `list_comments`,
-`get_comment`, `comments_by_cell`, `create_comment`, `reply_comment`, `resolve_comment`,
-`reopen_comment`, `describe_configuration`, `authenticate` — each with structured output and read-only/destructive
-annotations. The first six carry the same names and parameters as Google's Drive MCP server
-and the claude.ai Drive connector, so habits transfer; `fileId` also accepts a share URL,
-which neither of theirs does.
+**Tools** — 27, each with structured output and read-only/destructive annotations
+(`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
+
+| | |
+|---|---|
+| **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
+| **Read** | `read_file_content` · `download_file_content` · `list_slides` · `comments_by_cell` |
+| **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` |
+| **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
+| **Create** | `create_file` · `copy_file` |
+| **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` |
+
+The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
+connector, so habits transfer; `fileId` also accepts a share URL, which neither of theirs does.
 
 **Authorizing without a terminal.** In a client that supports MCP URL elicitation (Claude Code
 v2.1.76+), just ask for a document: the tool reports missing credentials, the model calls
@@ -368,6 +376,7 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 | — | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ⚠️ ³ |
 | — | Preview a Doc as if suggestions were accepted/rejected | ✗ | ✗ | ⚠️ ³ |
 | `describe_configuration` + resources | The server explaining its own limits | ✗ | ✗ | ✅ |
+| `report_a_problem` | A bug report that assembles itself, safe to publish | ✗ | ✗ | ✅ |
 | `authenticate` | Browser consent from inside the MCP client | n/a *hosted* | n/a *built in* | ✅ |
 | — | Scope which files may be **read** | ⚠️ ⁴ | ✗ | ✅ |
 | — | Scope which files may be **changed** | ⚠️ ⁵ | ✗ | ✅ |

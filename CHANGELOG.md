@@ -10,7 +10,38 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
-## 2026-08-25 — v0.13.1 (say which version you are) — not released
+## 2026-08-25 — v0.13.1 (say which version you are, and how to report it) — not released
+
+**`report_a_problem`.** A bug report about an MCP server is usually missing the same four
+things — which version, which Python, which OS, and what the policy was — and each one costs a
+round trip that the reporter has usually moved on from by the time it arrives. The server now
+assembles them itself, with a prefilled issue URL and a four-item checklist.
+
+It reports **shape, never content**: no file ids, no document titles, no email, no token, no
+filesystem paths. A scope is "every file" or "3 files", never the ids. That is the opposite
+choice from `describe_configuration`, which does list them and is right to — its audience is
+somebody asking what they may touch on their own machine, and this text is written to be pasted
+into a public tracker. Same facts, different destination, different answer. Guarded by tests
+that assert the *absence*, which is the part a reviewer stops noticing.
+
+No network call: checking PyPI from inside a stdio server would surprise, and would fail on
+exactly the restricted machines most likely to need it. The checklist says how to check instead.
+
+`_environment.py` carries the platform detection, and names the OS the way a person would —
+`platform.release()` reports the Darwin kernel version on macOS (which nobody recognises as
+their OS) and "10" on Windows 11. It also infers the install route, because the three fail
+differently: a pipx venv upgrades cleanly, a shared environment can have another project's pin
+holding the version down, and a checkout may match no release at all.
+
+**Two things the server was saying that were not true.**
+
+- Its instructions told the model "this server has no search tool yet, so ask the user for a
+  link" — `search_files` shipped in v0.5.0. The server was suppressing a tool it has.
+- The README's tool list named fifteen while the server registered twenty-six, hiding every
+  content-write tool, `create_file`, `copy_file`, `list_slides`, `edit_comment` and
+  `delete_comment` from anyone deciding whether this project does what they need.
+  `tests/test_readme_tools.py` now holds the list equal to what is registered, and caught a
+  wrong count on its first run.
 
 Three small things, two of them found by running the installer on a real Windows machine.
 
