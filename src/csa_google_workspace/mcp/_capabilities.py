@@ -29,6 +29,9 @@ from ..policy import (
     COMMENT_RESOLVE,
     CONTENT_WRITE,
     FILE_CREATE,
+    FILE_SHARE,
+    FILE_TRASH,
+    FILE_UPDATE,
 )
 
 # Tool name -> the capability a call to it can require, or None for a read.
@@ -63,6 +66,12 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     # creation
     "create_file": FILE_CREATE,
     "copy_file": FILE_CREATE,
+    # file lifecycle - each maps to the capability that gates it, so
+    # `capabilities_unreachable` becomes empty for the `full` profile: every capability the
+    # policy can grant now has a tool that uses it.
+    "update_file": FILE_UPDATE,
+    "trash_file": FILE_TRASH,
+    "share_file": FILE_SHARE,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.

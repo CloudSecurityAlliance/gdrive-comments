@@ -34,6 +34,13 @@ class Backend(Protocol):
     def create_file(self, name: str, mime_type: str, *, parent_id: str | None = None,
                     content: bytes | None = None,
                     content_mime_type: str | None = None) -> JsonDict: ...
+    def update_file_metadata(self, file_id: str, *, name: str | None = None,
+                             add_parent: str | None = None,
+                             remove_parent: str | None = None) -> JsonDict: ...
+    def trash_file(self, file_id: str, *, trashed: bool = True) -> JsonDict: ...
+    def create_permission(self, file_id: str, *, email: str | None, role: str,
+                          permission_type: str = "user",
+                          notify: bool = True) -> JsonDict: ...
     def copy_file(self, file_id: str, *, name: str | None = None,
                   parent_id: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
@@ -192,6 +199,34 @@ class FakeBackend:
         elif mime_type.endswith(".presentation"):
             self._presentations[file_id] = {"slides": []}
         return copy.deepcopy(meta)
+
+    def update_file_metadata(self, file_id, *, name=None, add_parent=None,
+                             remove_parent=None):
+        meta = self._files[file_id] if file_id in self._files else self.get_file_metadata(file_id)
+        if name is not None:
+            meta["name"] = name
+        parents = list(meta.get("parents", []))
+        if remove_parent and remove_parent in parents:
+            parents.remove(remove_parent)
+        if add_parent and add_parent not in parents:
+            parents.append(add_parent)
+        if parents or "parents" in meta:
+            meta["parents"] = parents
+        return copy.deepcopy(meta)
+
+    def trash_file(self, file_id, *, trashed=True):
+        meta = self._files[file_id] if file_id in self._files else self.get_file_metadata(file_id)
+        meta["trashed"] = trashed
+        return copy.deepcopy({"id": file_id, "name": meta.get("name"), "trashed": trashed})
+
+    def create_permission(self, file_id, *, email, role, permission_type="user", notify=True):
+        self.get_file_metadata(file_id)                # raises NotFoundError
+        self._seq += 1
+        perm = {"id": f"perm{self._seq}", "type": permission_type, "role": role}
+        if email is not None:
+            perm["emailAddress"] = email
+        self._permissions.setdefault(file_id, []).append(perm)
+        return copy.deepcopy(perm)
 
     def copy_file(self, file_id, *, name=None, parent_id=None):
         source = self.get_file_metadata(file_id)       # raises NotFoundError
@@ -444,6 +479,55 @@ class ApiBackend:
         return _errors.call(
             self._services.drive.files().copy(
                 fileId=file_id, body=body, fields=self._NEW_FILE_FIELDS,
+                supportsAllDrives=True).execute,
+            idempotent=False)
+
+    def update_file_metadata(self, file_id, *, name=None, add_parent=None,
+                             remove_parent=None):
+        # Metadata only, exactly as Google's and Claude's `update_file` are: renaming and
+        # moving. Editing a file's CONTENT is a different API per type and is what
+        # docs_batch_update / sheets_values_update / slides_batch_update are for.
+        #
+        # Drive moves a file by editing its parent list rather than by taking a destination,
+        # so a move is addParents plus removeParents. The caller supplies the parent to
+        # remove because a file can legitimately have more than one, and guessing which to
+        # detach is not ours to do.
+        body = {}
+        if name is not None:
+            body["name"] = name
+        kw = {"fileId": file_id, "body": body, "fields": self._NEW_FILE_FIELDS,
+              "supportsAllDrives": True}
+        if add_parent:
+            kw["addParents"] = add_parent
+        if remove_parent:
+            kw["removeParents"] = remove_parent
+        return _errors.call(self._services.drive.files().update(**kw).execute,
+                            idempotent=False)
+
+    def trash_file(self, file_id, *, trashed=True):
+        # Trash, not delete. Drive keeps a trashed file for 30 days and `trashed=False`
+        # restores it, so this is reversible by the user without an administrator. There is
+        # deliberately no wrapper for files().delete(), which is not.
+        return _errors.call(
+            self._services.drive.files().update(
+                fileId=file_id, body={"trashed": trashed},
+                fields="id, name, trashed", supportsAllDrives=True).execute,
+            idempotent=False)
+
+    def create_permission(self, file_id, *, email, role, permission_type="user", notify=True):
+        # The one call in this backend that can move data OUT of the organisation, so it is
+        # gated by its own capability, off by default, and file-scoped. See policy._GATES.
+        #
+        # sendNotificationEmail defaults to True on purpose: a share the recipient is told
+        # about is a share somebody can notice and question. Silent grants are how access
+        # accumulates unobserved.
+        body = {"role": role, "type": permission_type}
+        if email is not None:
+            body["emailAddress"] = email
+        return _errors.call(
+            self._services.drive.permissions().create(
+                fileId=file_id, body=body, sendNotificationEmail=notify,
+                fields="id, type, role, emailAddress, displayName",
                 supportsAllDrives=True).execute,
             idempotent=False)
 

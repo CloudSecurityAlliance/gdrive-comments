@@ -236,3 +236,16 @@ class ProblemReportOut(TypedDict):
     authorized: bool
     checklist: list[str]
 
+
+class FileUpdateOut(TypedDict):
+    """The result of a metadata change: what the file is now, not what it was."""
+    id: str
+    name: str | None
+    parents: list[str]
+
+
+class TrashOut(TypedDict):
+    id: str
+    name: str | None
+    trashed: bool             # false after untrash, so one shape serves both directions
+

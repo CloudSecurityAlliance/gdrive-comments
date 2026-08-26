@@ -55,6 +55,10 @@ ARGS: dict[str, dict] = {
     "append_rows":           {"fileId": SHEET, "a1Range": "Tab1!A1", "values": [["z"]]},
     "create_file":           {"name": "New", "kind": "document"},
     "copy_file":             {"fileId": DOC, "name": "Copy"},
+    "update_file":           {"fileId": DOC, "name": "Renamed"},
+    "share_file":            {"fileId": DOC, "emailAddress": "someone@example.com"},
+    # last, and deliberately: it trashes the document every earlier tool needs.
+    "trash_file":            {"fileId": DOC},
     "describe_configuration": {},
     "read_server_resource":  {},
     "report_a_problem":      {},

@@ -101,14 +101,42 @@ def test_the_editor_profile_is_now_fully_reachable():
     assert out["capabilities_unreachable"] == []
 
 
-def test_the_config_resource_still_flags_a_gap_when_there_is_one():
-    """`full` enables the three operations Google's own server declines to offer, and this
-    server has no tools for them either. The reporting must say so rather than implying they
-    are available."""
+def test_full_no_longer_has_an_unreachable_capability():
+    """The acceptance test for A5, and the reason this file exists.
+
+    `full` used to enable three operations - update, trash, share - that no tool implemented,
+    so the server advertised authority it could not exercise. Each now has a tool, and the
+    right assertion is that the set is EMPTY rather than that it contains those three: an
+    assertion naming them would have had to be deleted to let the work land, which is a test
+    holding a gap open rather than tracking one.
+    """
     env = dict(ENV, CSA_GW_PROFILE="full")
     app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(env))
     out = asyncio.run(app.call_tool("describe_configuration", {})).structured_content
-    assert set(out["capabilities_unreachable"]) == {"file.share", "file.trash", "file.update"}
+    assert out["capabilities_unreachable"] == [], (
+        f"enabled but no tool uses them: {out['capabilities_unreachable']}. Either add the "
+        f"tool or stop claiming the capability.")
+
+
+def test_the_config_resource_still_flags_a_gap_when_there_is_one(monkeypatch):
+    """The mechanism, exercised against a synthetic gap.
+
+    Tested separately from the state above because the two say different things: that one is
+    "we have no gap today", this one is "we would still notice one". Without this, closing the
+    last gap would silently retire the reporting along with it.
+    """
+    # Patch the TABLE, not the function. Both consumers do `from .._capabilities import
+    # reachable_capabilities`, binding it by value at import time, so replacing the function
+    # at its source changes nothing for them. The function reads the table on every call, so
+    # the table is the seam that actually works - and it is the thing a real regression would
+    # touch anyway.
+    from csa_google_workspace.mcp import _capabilities
+    monkeypatch.setattr(_capabilities, "TOOL_CAPABILITIES",
+                        {"create_comment": "comment.create"})
+    env = dict(ENV, CSA_GW_PROFILE="full")
+    app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(env))
+    out = asyncio.run(app.call_tool("describe_configuration", {})).structured_content
+    assert "file.share" in out["capabilities_unreachable"]
 
     flat = " ".join(" ".join(c.content for c in
                              asyncio.run(app.read_resource("csa-gw://config"))).split())

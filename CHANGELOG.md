@@ -6,9 +6,41 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-25 — v0.15.0 (the file lifecycle, behind two locks)
+
+**`update_file`, `trash_file`, `share_file`** — the last three tools of Gate A, and the ones
+held back longest on purpose. Every tool before them could only add: a comment, a copy, some
+text. These three can rename what somebody else relies on, remove it from everybody who could
+see it, or hand it to an address outside the organisation.
+
+So each is off unless an operator names its capability, AND the file must be listed for
+modify. Two independent bounds, neither reachable from inside the server. `file.update`,
+`file.trash` and `file.share` remain absent from every profile but `full`.
+
+- **`update_file`** is metadata only — rename and move — exactly as Google's and Claude's are,
+  because content is a different API per file type. Drive moves a file by editing its parent
+  list rather than by taking a destination, so `parentId` alone *adds* a parent and the file
+  lives in both folders. That is a real Drive state, not a bug; pass `removeParentId` to move.
+- **`trash_file`** trashes and untrashes through one tool. Recoverable for 30 days, restorable
+  by the user without an administrator. There is deliberately no permanent delete anywhere in
+  this library, and no wrapper for `files().delete()`.
+- **`share_file`** is the only call here that can move data out of the organisation — which is
+  why Google's own Drive MCP server declines to offer it at all. `sendNotificationEmail`
+  defaults to true, because a share the recipient is told about is one somebody can notice and
+  question; silent grants are how access accumulates unobserved. **Ownership transfer is
+  refused**: it needs Drive's `transferOwnership` flag, can leave the previous owner unable to
+  undo it, and would let a model give a document away by picking a plausible-looking role.
+
+**`capabilities_unreachable` is now empty for every profile.** The server had been advertising
+three capabilities no tool implemented; that gap is closed, and the test that tracked it now
+asserts the set is *empty* rather than naming those three — an assertion naming them would have
+had to be deleted for the work to land, which is a test holding a gap open rather than
+reporting one. A second test drives the reporting with a synthetic gap, so closing the last
+real one did not quietly retire the mechanism.
 
 ## 2026-08-25 — v0.14.0 (say which version you are, and how to report it)
 

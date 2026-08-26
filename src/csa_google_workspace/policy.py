@@ -188,6 +188,15 @@ _GATES: dict[str, Gate] = {
     # obtain a writable duplicate of something unwritable.
     "create_file": Gate(FILE_CREATE, MODIFY, file_scoped=False),
     "copy_file": Gate(FILE_CREATE, READ, file_scoped=True),
+    # file lifecycle: all three are MODIFY and file-scoped, and all three are OFF by default
+    # (DEFAULT_DISABLED). Renaming or moving a document somebody else relies on is disruptive
+    # without being destructive; trashing is recoverable for 30 days; sharing is neither -
+    # it is the only capability here that can move data OUT of the organisation, which is why
+    # Google's own MCP server declines to expose it at all. Ours exposes it behind a
+    # capability that must be named explicitly AND a file that must be listed for modify.
+    "update_file_metadata": Gate(FILE_UPDATE, MODIFY),
+    "trash_file": Gate(FILE_TRASH, MODIFY),
+    "create_permission": Gate(FILE_SHARE, MODIFY),
     # comment writes
     "create_comment": Gate(COMMENT_CREATE, MODIFY),
     "create_reply": Gate(_reply_gate, MODIFY),   # reply vs resolve/reopen — see above

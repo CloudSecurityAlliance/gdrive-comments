@@ -257,7 +257,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 27, each with structured output and read-only/destructive annotations
+**Tools** — 30, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
@@ -267,6 +267,7 @@ reviews the configuration and may name people or unannounced work.
 | **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` |
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
+| **File lifecycle** ⚠️ | `update_file` · `trash_file` · `share_file` — each OFF unless an operator names its capability |
 | **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
