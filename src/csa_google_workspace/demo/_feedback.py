@@ -16,9 +16,11 @@ because "we posted your words publicly" is not something to discover afterwards.
 from __future__ import annotations
 
 import shutil
-import subprocess  # nosec B404 - `gh`, resolved to an absolute path, with a list argv and
 
-# no shell. See _gh() for why this is the narrowest way to file an issue.
+# `gh`, resolved to an absolute path, invoked with a list argv and no shell - see _gh(). This
+# is the demonstration filing an issue the person has just read and agreed to, with the
+# credential they already have; the server itself never shells out.
+import subprocess  # nosec B404 - see above
 import urllib.parse
 
 from .._environment import ISSUES_URL, describe_environment

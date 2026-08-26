@@ -6,9 +6,67 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.16.0 (a demonstration that is also the end-to-end test)
+
+    csa-google-workspace-mcp demo           narrated: it explains each step and waits
+    csa-google-workspace-mcp demo --auto    unattended
+
+A demonstration has to touch every feature to be worth watching; an end-to-end test has to
+touch every feature to be worth running. They are the same artifact seen from two sides, so
+this is one list of steps read at two speeds.
+
+For **each** of Doc, Sheet and deck: create the file, add text, edit it, remove it, comment,
+reply, edit the comment, resolve, reopen, delete it, export, read permissions, copy, rename,
+share. Then search for what it made, and clear up after itself. Every operation against every
+file type, because comments are one uniform Drive API across the three and content is three
+separate ones — and that seam is where this library's bugs have actually lived.
+
+Three decisions carry the design:
+
+- **It drives the MCP server, not the library.** Calling `Workspace` directly would be shorter
+  and would prove nothing about the surface a client meets: published schemas, structured
+  output, error translation, annotations, policy gates. That is where the bugs that reached
+  users have lived.
+- **The plan is data.** So the narrated demo and the unattended test are the same list, and the
+  same list runs against `FakeBackend` in CI on every commit — a demonstration nobody runs
+  between releases rots, and a rotted demonstration is the first thing a new person sees.
+- **Coverage is computed from the tool registry**, not from a maintained list. A tool nobody
+  adds to the plan fails the build. What cannot be automated is named with its reason rather
+  than quietly excluded, so `30/30` means what it says.
+
+It ends by asking what you thought, and can file that as a public issue labelled
+`automated-feedback` — shown in full first, skippable with one keypress, and never carrying a
+document name, link or id. Tests assert the *absence*: the whole demonstration runs, then the
+issue body is checked for every id and name it produced.
+
+### Four bugs it found in its first three runs, none of which 660 unit tests caught
+
+- **`delete_comment` reported failure for a comment it had just successfully deleted.** It
+  deletes, then re-fetches to show what Drive now holds — and Drive 404s a soft-deleted comment
+  unless `includeDeleted` is set. `FakeBackend` returned deleted comments happily, which is more
+  forgiving than Drive and therefore useless as a check; it now behaves as Drive does, which is
+  what makes the regression test able to fail.
+- **`trash_file` could not trash a folder.** It routed through `open()`, which MIME-dispatches to
+  a document type and refuses everything else. Rename, trash and share are uniform Drive
+  operations that apply to any file, so they now go through the account axis —
+  `workspace.files.update / trash / share`.
+- **A Drive 400 arrived as an `UnexpectedToolError` with its message suppressed**, so a model
+  that passed free text to `search_files` (which takes Drive's `q` syntax) saw "Error executing
+  tool search_files" and had nothing to correct. `ApiError` is now translated.
+- **The cleanup demonstrated tidying up without doing it** — one file trashed to show what
+  trashing does, then it stopped, leaving the folder behind. That is a demo of cleanup, and the
+  difference is somebody else's Drive.
+
+`FakeBackend` also gained two pieces of fidelity it had always lacked: a newly created deck now
+has a slide with a shape, and a file it created can be exported. Both had made whole operations
+unreachable offline.
+
+Verified on real Google: 74 steps ok, 0 failed, 30 of 30 tools, and a Drive with nothing left in
+it afterwards.
 
 ## 2026-08-25 — v0.15.0 (the file lifecycle, behind two locks)
 
