@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import csv as csvmod
 import io
+import pathlib
 
 import pytest
 
@@ -96,54 +97,79 @@ class TestAGoogleSheet:
 
 
 class TestALocalFile:
-    def test_it_is_refused_when_no_export_directory_is_configured(self):
-        """Fail closed. The operator opts in; a conversation cannot."""
-        with pytest.raises(Exception, match="CSA_GW_EXPORT_DIR"):
-            call(build(), destination="file", filename="register.csv")
+    """The design here CHANGED after the first version, deliberately, and the tests that
+    described the old intent are gone rather than patched.
 
-    def test_it_writes_into_the_configured_directory(self, tmp_path):
+    v0.24.0 was fail-closed: local writing off unless the operator set `CSA_GW_EXPORT_DIR`, and
+    `filename` was a name with any path refused. Two things were wrong with that. It made the
+    feature unusable by default, so it saved nobody the hours it was built to save. And refusing
+    a path breaks the two cases where a file is most useful: a Claude Desktop *project* that can
+    only write inside its own folder, where `~/Downloads` is unreachable, and a Claude Code user
+    who wants the register in the repo they are in.
+
+    So: **Downloads by default, any path honoured, and nothing ever overwritten.** What makes an
+    arbitrary path safe is not validating it but making the failures inert - see
+    `tests/test_export_paths_and_injection.py`, which covers the resolver directly.
+    """
+
+    def test_it_writes_with_no_configuration_at_all(self, tmp_path):
+        """The whole reason the default changed: it has to work out of the box."""
         out = call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
-                   destination="file", filename="register.csv")
-        written = tmp_path / "register.csv"
-        assert written.exists()
-        assert out["written_path"] == str(written)
-        assert "thread_id" in written.read_text()
+                   destination="file", path="register.csv")
+        assert (tmp_path / "register.csv").exists()
+        assert out["written_path"] == str(tmp_path / "register.csv")
 
-    @pytest.mark.parametrize("bad", [
-        "../escape.csv", "sub/dir.csv", "/etc/passwd", "..\\windows.csv", "~/escape.csv"])
-    def test_a_path_is_refused_only_a_filename_is_accepted(self, tmp_path, bad):
-        """The directory is the operator's decision. A model - or a comment influencing one -
-        gets to choose a NAME and nothing else."""
-        with pytest.raises(Exception, match="file ?name|separator|only a name"):
-            call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
-                 destination="file", filename=bad)
+    def test_downloads_is_the_default_when_nothing_is_configured(self):
+        """Asserted against Settings rather than by writing to the real home directory."""
+        from csa_google_workspace.mcp import settings_from_env
+        assert settings_from_env({}).export_dir == "~/Downloads"
+
+    def test_a_full_path_is_honoured(self, tmp_path):
+        target = tmp_path / "repo"
+        target.mkdir()
+        out = call(build({"CSA_GW_EXPORT_DIR": "/nonexistent"}),
+                   destination="file", path=str(target / "review.csv"))
+        assert out["written_path"] == str(target / "review.csv")
+        assert (target / "review.csv").exists()
+
+    def test_no_path_at_all_is_named_after_the_document(self, tmp_path):
+        out = call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}), destination="file")
+        assert "Draft" in out["written_path"]
+        assert out["written_path"].endswith(".csv")
+
+    def test_an_existing_file_is_never_overwritten(self, tmp_path):
+        (tmp_path / "register.csv").write_text("mine")
+        out = call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
+                   destination="file", path="register.csv")
+        assert (tmp_path / "register.csv").read_text() == "mine"
+        assert out["written_path"] != str(tmp_path / "register.csv")
+        assert "already existed" in out["detail"]
+
+    def test_the_result_always_says_where_it_went(self, tmp_path):
+        """A model that reports the name it ASKED for will be wrong whenever a timestamp was
+        appended, so the path has to come back and the detail has to mention it."""
+        out = call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
+                   destination="file", path="register.csv")
+        assert out["written_path"] in out["detail"] or str(tmp_path) in out["detail"]
 
     def test_a_non_csv_extension_becomes_csv(self, tmp_path):
-        """So the worst an influenced name can produce is still a CSV, never a shell profile
-        or a script."""
-        call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
-             destination="file", filename="zshrc")
+        """So even an influenced path writes an inert file, never a shell profile."""
+        call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}), destination="file", path="zshrc")
         assert (tmp_path / "zshrc.csv").exists()
 
-    def test_it_does_not_overwrite_silently(self, tmp_path):
-        (tmp_path / "register.csv").write_text("mine")
-        with pytest.raises(Exception, match="exists|overwrite"):
-            call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
-                 destination="file", filename="register.csv")
-        assert (tmp_path / "register.csv").read_text() == "mine"
-
-    def test_overwrite_is_possible_when_asked_for(self, tmp_path):
-        (tmp_path / "register.csv").write_text("mine")
-        call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
-             destination="file", filename="register.csv", overwrite=True)
-        assert "thread_id" in (tmp_path / "register.csv").read_text()
-
-    def test_a_missing_export_directory_is_reported_not_created(self, tmp_path):
-        """Creating it would mean a typo'd variable silently starts working somewhere
-        unexpected."""
+    def test_a_missing_directory_is_reported_not_created(self, tmp_path):
         with pytest.raises(Exception, match="does not exist|not a directory"):
             call(build({"CSA_GW_EXPORT_DIR": str(tmp_path / "nope")}),
-                 destination="file", filename="register.csv")
+                 destination="file", path="register.csv")
+
+    def test_the_written_csv_is_escaped_against_formula_injection(self, tmp_path):
+        """End to end, not just in the renderer: a hostile comment must not arrive in a file
+        somebody opens in Excel as an executable formula."""
+        out = call(build({"CSA_GW_EXPORT_DIR": str(tmp_path)}),
+                   destination="file", path="register.csv")
+        written = pathlib.Path(out["written_path"]).read_text()
+        for line in written.splitlines()[1:]:
+            assert not line.split(",")[0].startswith(("=", "+", "-", "@"))
 
 
 class TestItIsDiscoverable:

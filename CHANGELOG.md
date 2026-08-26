@@ -6,9 +6,100 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, 0.24.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, 0.24.0, 0.25.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.25.0 (**security:** CSV formula injection; and the export lands where you are)
+
+### CSV formula injection — fixed. v0.24.0 is affected.
+
+**A comment on a shared document can execute when the exported CSV is opened in Excel.**
+
+A cell beginning `=`, `+`, `-` or `@` is read as a **formula**, so a comment reading
+`=cmd|' /C calc'!A0` — the classic DDE payload — arrived in the CSV unescaped:
+
+    thread_id,author,text
+    c1,Attacker,=cmd|' /C calc'!A0
+
+Anyone who can comment on a document we share can plant that, and the entire purpose of the
+feature is that a human opens the result in a spreadsheet. This is the primary risk named in
+`SECURITY.md` — untrusted document content acting as instructions — arriving by a route nobody
+had considered, one release after the route was built.
+
+Fixed with OWASP's remedy: a leading apostrophe, which Excel and Sheets both read as *"the rest
+is text"* while leaving the value legible. `'=cmd|' /C calc'!A0` is inert and still readable.
+
+**`destination="sheet"` was never affected**, and it is worth being clear that this was luck
+rather than foresight: the Sheets write uses `value_input_option="RAW"`, which stores values as
+text instead of parsing them. Escaping is therefore *not* applied to the Sheets grid — doing so
+would put a stray apostrophe into somebody's spreadsheet. There is a test asserting each half.
+
+**Affected:** `0.24.0` only, via `export_comments(destination="csv"|"file")`. Upgrade to
+`0.25.0`. See the note on the yank policy at the end of this entry.
+
+### The export now lands where you are
+
+The first version was fail-closed: local writing off unless the operator set
+`CSA_GW_EXPORT_DIR`, and `filename` was a bare name with any path refused. Two things were wrong
+with that, and both were pointed out before anyone hit them.
+
+It made the feature **unusable by default**, so it saved nobody the hours it exists to save. And
+refusing a path breaks the two cases where a file is *most* useful: a **Claude Desktop project**
+that can only write inside its own folder, where `~/Downloads` is not reachable at all; and a
+**Claude Code** user who wants the register in the repo they are working in.
+
+So:
+
+    path="review.csv"                  -> the user's DOWNLOADS folder
+    path="~/work/aicm/review.csv"      -> exactly there
+    path omitted                       -> "AICM Draft comments 20260826-1527.csv", in Downloads
+
+`~/Downloads` is the default because it is the platform's designated *"a program gave me a
+file"* location: discoverable from the Finder sidebar, persistent, and somewhere nobody keeps
+precious unique files. A temp directory was considered and rejected — on macOS its path
+(`/var/folders/6k/y10zg…/T/`) is one no human can navigate to, and it gets cleared, so a
+register somebody wants for a week disappears.
+
+`CSA_GW_EXPORT_DIR` still overrides where a bare name goes.
+
+### What makes an arbitrary path safe is not validating it
+
+The first design defended a model-supplied filename with five layers of checking. This one makes
+the failure modes inert instead, which is less code and a stronger position:
+
+- **Nothing is ever overwritten.** An existing target gets `-TIMESTAMP` appended, so the worst
+  case is an unexpected file rather than a destroyed one. This is better than refusing, too: a
+  refusal sends the caller round again with `register-2.csv`, `register-3.csv`, and now there is
+  litter and no way to tell which is current. Timestamps also give successive exports a natural
+  order, which is what you want for a review register — *"what changed since Monday"* is a real
+  question.
+- **The extension is forced to `.csv`.** `~/.zshrc` becomes `~/.zshrc.csv`, which no shell reads.
+- **Directories are never created**, so a path cannot conjure a tree, and a typo is reported
+  rather than acted on.
+- **The document title is slugged** before being used as a filename — titles are untrusted, and
+  somebody can name a Doc `../../etc/passwd`.
+- **The resolved absolute path always comes back**, and `detail` says when a timestamp was
+  appended. A model that reports the name it *asked for* would be wrong exactly then, so the tool
+  description says to quote `written_path` and never the requested name.
+
+Also considered and unavailable: writing into the project the user has open. MCP has the right
+concept — `roots/list`, `Root` and `RootsCapability` are all in the SDK's types — but
+`MCPServer` in 2.1.0 exposes no API to request them, so a server cannot ask. Worth revisiting
+when it does.
+
+### A gap in the yank policy, which is the more useful finding
+
+[`PROVENANCE.md`](PROVENANCE.md#yanking) sets the bar at *"installing this by accident is
+harmful"* and lists three categories: a leaked credential or unavoidable exploited dependency; a
+bug that loses or corrupts document data, or causes a write the policy should have refused; an
+artifact that does not match its tag.
+
+**Formula injection matches none of them**, and it should. *"Untrusted document content reaching
+somewhere it executes"* is a class this project is uniquely exposed to — it is the primary risk
+in its own threat model — and it was missing from the list. That omission is a better finding
+than the bug: the categories were written from the failures we had seen rather than from the
+threat model we had already written down.
 
 ## 2026-08-26 — v0.24.0 (`export_comments`: a review register, for people and for other tools)
 

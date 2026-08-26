@@ -157,7 +157,7 @@ def to_csv(columns: list[str], rows: list[dict]) -> str:
     writer = _csv.writer(buf)
     writer.writerow(columns)
     for row in rows:
-        writer.writerow([flatten(row.get(c)) for c in columns])
+        writer.writerow([csv_safe(flatten(row.get(c))) for c in columns])
     return buf.getvalue()
 
 
@@ -166,47 +166,91 @@ def to_grid(columns: list[str], rows: list[dict]) -> list[list[str]]:
     return [list(columns)] + [[flatten(row.get(c)) for c in columns] for row in rows]
 
 
-def safe_export_path(export_dir: str | None, filename: str | None, *, overwrite: bool):
-    """Resolve `filename` inside `export_dir`, or raise `ValueError` saying why not.
+# ── Formula injection ───────────────────────────────────────────────────────────────────
+#
+# A comment on a shared document can begin with `=`, `+`, `-` or `@`, and Excel reads such a
+# cell as a FORMULA when the file is opened - `=cmd|' /C calc'!A0` being the classic DDE
+# payload. Anyone who can comment on a document we share can plant it, and the whole point of
+# this feature is that a human opens the result in a spreadsheet. So this is not a theoretical
+# concern here; it is the primary risk in SECURITY.md arriving by a new route.
+#
+# v0.24.0 shipped the CSV without this escape. The remedy is OWASP's: a leading apostrophe,
+# which Excel and Sheets both read as "the rest is text" while leaving the value legible.
+#
+# NOT applied to `to_grid`: a Sheets write uses RAW, which stores values as text without
+# parsing, so a leading `=` is already inert - and escaping there would put a stray apostrophe
+# into somebody's spreadsheet.
+FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
 
-    This is the only place in the project that writes to the local filesystem, and document
-    content is untrusted input, so the constraints are deliberately blunt:
 
-      * no `export_dir` configured -> refused. The operator opts in; a conversation cannot.
-      * `filename` is a NAME, not a path. Any separator, any `..`, any `~`, anything absolute
-        is refused outright - so the directory cannot be influenced from inside a session.
-      * the extension is forced to `.csv`, so even a successful attempt at influencing the name
-        writes a CSV rather than a shell profile or a script.
-      * no silent overwrite.
-      * containment is re-checked AFTER resolution, so a symlink in the export directory
-        cannot escape it.
+def csv_safe(text: str) -> str:
+    return "'" + text if text[:1] in FORMULA_LEAD else text
+
+
+def _slug(name: str) -> str:
+    """A document title reduced to something usable as a filename.
+
+    Titles are untrusted - somebody can name a Doc `../../etc/passwd` - so this keeps only
+    characters that cannot mean anything to a path, and never returns empty.
+    """
+    keep = [c if (c.isalnum() or c in " -_") else " " for c in (name or "")]
+    slug = " ".join("".join(keep).split())[:60].strip(" .-_")
+    return slug or "comments"
+
+
+def resolve_export_path(path: str | None, *, default_dir: str | None, doc_name: str,
+                        stamp: str):
+    """(target, a sentence saying what happened) — or `ValueError` saying why not.
+
+    A full path is ALLOWED, deliberately. A Claude Desktop *project* may only be able to write
+    inside its own folder, where `~/Downloads` is unreachable; a Claude Code user wants the
+    register in the repo they are working in. Confining to one directory would break exactly
+    the cases where the file is most useful.
+
+    What makes that safe is not validating the path but making every failure mode inert:
+
+      * **nothing is ever overwritten** - an existing target gets `-<stamp>` appended, so the
+        worst case is an unexpected file rather than a destroyed one;
+      * **the extension is forced to `.csv`** - `~/.zshrc` becomes `~/.zshrc.csv`, which no
+        shell will read;
+      * **directories are never created**, so a path cannot conjure a tree;
+      * the caller reports the resolved absolute path, because visibility is the last control.
     """
     from pathlib import Path
-    if not export_dir:
+    given = (path or "").strip()
+    told_where = False
+
+    if not given:
+        given = f"{_slug(doc_name)} comments {stamp}.csv"
+        told_where = True
+    has_dir = any(sep in given for sep in ("/", "\\")) or given.startswith("~")
+    if has_dir:
+        target = Path(given).expanduser()
+    else:
+        if not default_dir:
+            raise ValueError("no default export directory is available; pass a full path")
+        target = Path(default_dir).expanduser() / given
+        told_where = True
+
+    # `.csv` whatever was asked for. A name with no suffix gets one; a name with the wrong
+    # suffix keeps it and gains ours, so `.zshrc` -> `.zshrc.csv` rather than `.csv`, which
+    # would silently rename somebody's intended file.
+    if target.suffix.lower() != CSV_SUFFIX:
+        target = target.with_name(target.name + CSV_SUFFIX)
+
+    parent = target.parent.expanduser()
+    if not parent.is_dir():
         raise ValueError(
-            "writing a local file is off: set CSA_GW_EXPORT_DIR to a directory to enable it. "
-            "Until then, use destination=\"csv\" to get the text back, or "
-            "destination=\"sheet\" to write a Google Sheet.")
-    base = Path(export_dir).expanduser()
-    if not base.is_dir():
-        raise ValueError(f"CSA_GW_EXPORT_DIR is {export_dir!r}, which does not exist or is not "
-                         f"a directory. It is not created automatically, because a typo should "
-                         f"not quietly start writing somewhere unexpected.")
-    name = (filename or "comments").strip()
-    if not name or name in (".", ".."):
-        raise ValueError("filename must be a name, not empty")
-    if any(sep in name for sep in ("/", "\\")) or name.startswith("~") or ".." in name:
-        raise ValueError(
-            f"filename must be ONLY A NAME with no separator, no '..' and no '~' - got "
-            f"{name!r}. The directory is CSA_GW_EXPORT_DIR and is the operator's decision, "
-            f"not something a request can redirect.")
-    if not name.lower().endswith(CSV_SUFFIX):
-        name += CSV_SUFFIX
-    base = base.resolve()
-    target = (base / name).resolve()
-    if target.parent != base:
-        raise ValueError(f"{name!r} resolves outside CSA_GW_EXPORT_DIR; refusing")
-    if target.exists() and not overwrite:
-        raise ValueError(f"{target} already exists. Pass overwrite=true to replace it, or "
-                         f"choose another name.")
-    return target
+            f"{parent} does not exist or is not a directory, and directories are not created "
+            f"automatically. Pass a full path to somewhere that exists, or use "
+            f'destination="csv" to get the text back instead.')
+    target = (parent.resolve() / target.name)
+
+    note = ""
+    if target.exists():
+        target = target.with_name(f"{target.stem}-{stamp}{CSV_SUFFIX}")
+        note = (f"A file of that name already existed, so this was written as "
+                f"{target.name} instead - nothing was overwritten. ")
+    if told_where:
+        note += f"Written to {target}. "
+    return target, note

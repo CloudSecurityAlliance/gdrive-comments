@@ -95,6 +95,13 @@ We would yank for:
   the version cannot avoid;
 - a bug that **loses or corrupts a user's document data**, or one that causes a write where the
   configured policy should have refused it — the policy failing *open* is in this category;
+- **untrusted document content reaching somewhere it executes.** Prompt injection through
+  document and comment text is the primary risk in [`SECURITY.md`](SECURITY.md), and this is the
+  category for when that text stops being *reported* and starts being *run* — added 2026-08-26
+  after `v0.24.0` shipped a comment export that wrote `=cmd|' /C calc'!A0` into a CSV
+  unescaped, where Excel would execute it on open. The three categories above were written from
+  the failures we had already had; this one was in the threat model all along and not in the
+  list;
 - an artifact whose contents do not match its tag.
 
 We would **not** yank for: an outdated tool surface, a superseded API, a bug with an obvious
