@@ -42,6 +42,32 @@ makes it the surface most likely to have been consulted before anyone decided to
 anything. A test asserts all three surfaces agree: three renderings of a version that disagree
 are worse than one that is merely absent, because each looks authoritative alone.
 
+**The comment tools finally describe themselves.** They are the oldest tools here and had
+the thinnest descriptions of all twenty-seven — `reply_comment` was 29 characters, `get_comment`
+30 — while everything written since carried real guidance. That is backwards: comments are what
+this project is *for*, and a description is the only interface documentation a model gets.
+
+Each now states the behaviour that changes how a result should be read, and none of it is
+guessable from the tool's name: a deleted comment loses its **author** as well as its text, so
+it must not be attributed to anybody; resolve and reopen post a **visible action reply** under
+the user's name rather than setting a silent flag, and that reply can be empty of text; a Sheets
+comment's anchor is an **opaque range id** that has to be recovered by exporting XLSX, so an
+empty `comments_by_cell` result means "none found", not "the cell is clean".
+
+**`create_comment` accepts `cell`** for spreadsheets, appending a deep link to that cell. It
+existed in the library and was unreachable through MCP — a differentiator that could not be
+used. It is a link, not an anchor: the Drive API cannot create a cell-anchored comment at all,
+and the description says so rather than implying otherwise.
+
+**A smoke suite over the whole registry** (`tests/test_all_tools_smoke.py`). The per-tool suites
+check behaviour; nothing checked that the *set* was whole, so a registered tool could ship
+having never been called. It walks the registry rather than a hand-kept list — a new tool fails
+the suite until somebody decides how to exercise it — and enforces the three properties every
+tool needs: it runs and returns structured output, it has a non-empty description, and its
+parameters are camelCase literals (a `Field(alias=…)` publishes a correct schema and then fails
+every call). All 26 non-interactive tools verified; `authenticate` is excluded by name, so
+"not smoke-tested" stays a visible decision rather than a silent one.
+
 **Two things the server was saying that were not true.**
 
 - Its instructions told the model "this server has no search tool yet, so ask the user for a
