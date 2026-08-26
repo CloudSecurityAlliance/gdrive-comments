@@ -77,6 +77,9 @@ _TRUE = {"1", "true", "yes", "on"}
 PROFILE_VAR = "CSA_GW_PROFILE"
 
 
+DEFAULT_EXPORT_DIR = "~/Downloads"
+
+
 @dataclass(frozen=True)
 class Settings:
     """Server configuration.
@@ -92,11 +95,17 @@ class Settings:
     client_secrets: str | None = None
     policy: Policy | None = None            # None -> Policy.default()
     profile: str | None = None              # the CSA_GW_PROFILE name, for reporting
-    # The one directory `export_comments(destination="file")` may write a .csv into. `None`
-    # means local writing is OFF, which is the default: this is the only path in the project
-    # that touches the local filesystem, and document content is untrusted input, so the
-    # operator opts in and chooses the directory rather than a conversation choosing it.
-    export_dir: str | None = None
+    # Where `export_comments(destination="file")` puts a .csv when the caller gives only a
+    # NAME. Defaults to ~/Downloads - the platform's designated "a program gave me a file"
+    # location: discoverable in the Finder sidebar, persistent (unlike a temp directory, whose
+    # macOS path no human can navigate to anyway), and somewhere nobody keeps precious unique
+    # files. `CSA_GW_EXPORT_DIR` overrides it.
+    #
+    # A caller may also give a FULL PATH, and that is honoured. A Claude Desktop *project* may
+    # only be able to write inside its own folder, where ~/Downloads is unreachable, and a
+    # Claude Code user wants the register in the repo they are in. What makes that safe is not
+    # validating the path but making the failures inert - see `_export.resolve_export_path`.
+    export_dir: str = DEFAULT_EXPORT_DIR
 
 
 def policy_from_env(env: Mapping[str, str]) -> Policy:
@@ -250,7 +259,7 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         client_secrets=explicit or (default if os.path.exists(default) else None),
         policy=policy_from_env(env),
         profile=_profile_from_env(env),
-        export_dir=(env.get("CSA_GW_EXPORT_DIR") or "").strip() or None,
+        export_dir=(env.get("CSA_GW_EXPORT_DIR") or "").strip() or DEFAULT_EXPORT_DIR,
     )
 
 
