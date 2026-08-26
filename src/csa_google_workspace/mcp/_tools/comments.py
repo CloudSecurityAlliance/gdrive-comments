@@ -27,6 +27,16 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT) ->
         `author` filters by display name. Two behaviours worth knowing before you draw
         conclusions from the result:
 
+        `quoted_text` on each result is THE PASSAGE THE COMMENT IS ABOUT - Drive's own record
+        of what the reviewer selected. It is `None` for a comment left on the file rather than
+        on a passage ("looks good to me"), which is a different thing from an empty one.
+
+        TO BUILD A COMMENT REGISTER - "put the open comments in a spreadsheet so we can work
+        through them" - no other tool is needed: the columns are all here (`id`, `author`,
+        `quoted_text`, `content`, `resolved`, `created_time`, and `replies` nested so a thread
+        stays one row), and `create_file(kind="spreadsheet")` plus `update_cells` writes it.
+        Put `quoted_text` in early; it is the column that makes the register usable.
+
         DELETED comments are ABSENT unless you pass `includeDeleted`. That is Drive's own
         behaviour, and it has an audit consequence worth stating: without the flag, "was there
         ever a comment here?" cannot be answered, because a deleted top-level thread is missing

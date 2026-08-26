@@ -38,6 +38,15 @@ class CommentOut(TypedDict):
     created_time: str | None
     cell: str | None          # where DRIVE anchored it: A1 for anything created via the API
     linked_cell: str | None   # the cell its deep link points at, if it has one
+    # The passage the comment is attached to, from Drive's `quotedFileContent`. `None` means
+    # the comment is on the FILE rather than on a passage - a real and common state ("looks
+    # good to me") - which is why it is not an empty string.
+    #
+    # It was modelled in the library and NOT exposed here, which is how a comment register
+    # ended up missing the column somebody actually wants: a model could list twenty comments
+    # on a draft and not say which paragraph any of them referred to. It stayed hidden because
+    # `_inline.py` consumes it for read_file_content(includeComments), so the field looked used.
+    quoted_text: str | None
     replies: list[ReplyOut]
 
 
@@ -230,6 +239,7 @@ def comment_out(comment: Any) -> CommentOut:
         # at, which is what somebody asked for.
         "cell": getattr(location, "cell", None) if location else None,
         "linked_cell": linked.group(1) if linked else None,
+        "quoted_text": getattr(comment, "quoted_text", None),
         "replies": [reply_out(r) for r in (comment.replies or [])],
     }
 
