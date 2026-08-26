@@ -383,3 +383,52 @@ def test_commas_still_separate_when_there_are_no_comments():
 @pytest.mark.parametrize("separator", ["\t", "\n", " ", ",", ";", ",\n\t "])
 def test_every_separator_shape_works_without_comments(separator):
     assert len(parse_setting(f"{DOC_URL}{separator}{OTHER_URL}", variable="V").entries) == 2
+
+
+class TestTheHostIsActuallyChecked:
+    """The host rung existed and was unreachable.
+
+    Extraction returned "usable" for any URL containing a `/d/<id>/` segment, so the check
+    below it never ran and `https://evil.example.com/document/d/<real-id>/edit` was accepted.
+    Then the check itself used a bare `endswith`, which blesses `evildocs.google.com` - the
+    incomplete-substring family CodeQL flags as `py/incomplete-url-substring-sanitization`.
+
+    Neither was an escalation: the id extracted from such a URL is a real Drive id, so the
+    entry granted exactly what listing that id would have granted. What was lost was the check
+    - somebody pasting a lookalike domain, or a link-tracker wrapper, had it silently blessed,
+    and a reviewer reading the config saw a non-Google URL the tool had apparently approved.
+    """
+
+    ID = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
+
+    def url(self, host):
+        return f"https://{host}/document/d/{self.ID}/edit"
+
+    @pytest.mark.parametrize("host", ["docs.google.com", "drive.google.com",
+                                      "sheets.google.com", "slides.google.com",
+                                      "docs.google.com."])
+    def test_googles_own_hosts_are_accepted(self, host):
+        assert len(parse_allowlist(self.url(host)).entries) == 1
+
+    @pytest.mark.parametrize("host", [
+        "evil.example.com",              # plainly not Google
+        "docs.google.com.evil.net",      # Google as a prefix of somebody else's domain
+        "evildocs.google.com",           # the endswith trap: a suffix, not a subdomain
+        "notdrive.google.com",
+    ])
+    def test_everything_else_is_refused_and_says_why(self, host):
+        with pytest.raises(AllowlistError, match="not a Google Docs or Drive address"):
+            parse_allowlist(self.url(host))
+
+    def test_a_real_subdomain_is_still_accepted(self):
+        """Equality OR a dot boundary - so Google can add a subdomain without a code change,
+        while a lookalike registered next door cannot walk in."""
+        assert len(parse_allowlist(self.url("eu.docs.google.com")).entries) == 1
+
+    def test_a_bare_id_and_a_path_still_reach_their_own_diagnoses(self):
+        """The host rung was hoisted above extraction, so these had to keep working: both parse
+        to an empty netloc and must fall through rather than being called bad hosts."""
+        with pytest.raises(AllowlistError, match="bare file id"):
+            parse_allowlist(self.ID)
+        with pytest.raises(AllowlistError, match="file path"):
+            parse_allowlist("/Users/someone/allowlist.txt")

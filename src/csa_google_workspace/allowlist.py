@@ -115,6 +115,23 @@ GOOGLE_HOSTS = ("docs.google.com", "drive.google.com", "sheets.google.com",
                 "slides.google.com")
 
 
+def _is_google_host(host: str) -> bool:
+    """Is `host` one of Google's document hosts, or a real subdomain of one?
+
+    Equality or a dot-boundary suffix, never a bare `endswith`. `"evildocs.google.com"
+    .endswith("docs.google.com")` is True, so the obvious version accepted
+    `https://evildocs.google.com/document/d/<id>/edit` - the same incomplete-substring family
+    CodeQL flags as `py/incomplete-url-substring-sanitization`, and one this project had
+    already been warned about elsewhere.
+
+    Not an escalation either way: the id extracted from such a URL is a real Drive id, so the
+    entry granted exactly what listing that id would have. What it cost was the check itself -
+    a reviewer reading the config saw a lookalike domain that the tool had apparently blessed.
+    """
+    host = host.lower().rstrip(".")
+    return any(host == g or host.endswith("." + g) for g in GOOGLE_HOSTS)
+
+
 def diagnose_url(text: str) -> str | None:
     """Why `text` is not a usable document URL — or `None` if it is fine.
 
@@ -134,10 +151,27 @@ def diagnose_url(text: str) -> str | None:
                 "traversal, shortcut and TOCTOU questions settled first — see TODO.md, "
                 "'Folders in the allowlist')")
 
-    # Extraction is attempted *before* the placeholder check, and the order is load-bearing:
-    # a genuine 44-character Drive id is random base64url and will occasionally contain a
-    # sequence like "AAA". Diagnosing a working URL as a placeholder would be worse than any
-    # message it replaced.
+    # The host is checked BEFORE extraction, and that ordering was wrong until now: extraction
+    # returned "usable" for any URL containing a `/d/<id>/` segment, so the host rung below was
+    # unreachable and `https://evil.example.com/document/d/<real-id>/edit` was accepted.
+    #
+    # Not an escalation - the id extracted is a real Drive id, so the entry granted exactly
+    # what listing that id would have granted. The cost is that a documented check never fired:
+    # somebody pasting a lookalike domain, a link-tracker wrapper, or a URL from an unrelated
+    # system with the same path shape had it silently blessed, and a reviewer reading the
+    # config saw a non-Google URL that the tool had apparently approved.
+    #
+    # Safe to hoist because the host rung has no false positives to worry about: a bare id and
+    # a filesystem path both parse to an empty netloc and fall through to their own rungs.
+    host = (urlparse(candidate).netloc or "").lower()
+    if host and not _is_google_host(host):
+        return (f"the host is {host!r}, which is not a Google Docs or Drive address. Expected "
+                f"one of: {', '.join(GOOGLE_HOSTS)}")
+
+    # Extraction is attempted *before* the placeholder check, and that order is also
+    # load-bearing: a genuine 44-character Drive id is random base64url and will occasionally
+    # contain a sequence like "AAA". Diagnosing a working URL as a placeholder would be worse
+    # than any message it replaced.
     if _ID_IN_PATH.search(candidate) or _ID_IN_QUERY.search(candidate):
         return None                                    # usable
 
@@ -158,16 +192,13 @@ def diagnose_url(text: str) -> str | None:
                 "full URL — a link can be opened and checked by whoever reviews it, and a "
                 "bare id cannot be told apart from a typo")
 
-    host = (urlparse(candidate).netloc or "").lower()
-    if any(host.endswith(g) for g in GOOGLE_HOSTS):
+    if _is_google_host(host):
         if re.search(r"/d/?$", candidate):
             return ("the URL stops after '/d/', so the file id is missing. It should look "
                     "like .../document/d/<long-id>/edit")
         return ("it is a Google URL but has no '/d/<id>' segment. Copy the whole address "
                 "from your browser while the document is open")
-    if host:
-        return (f"the host is {host!r}, which is not a Google Docs or Drive address. Expected "
-                f"one of: {', '.join(GOOGLE_HOSTS)}")
+    # A non-Google host was already rejected above, so anything still here has no host at all.
     return ("it is not a Google document URL. Expected something like "
             "https://docs.google.com/document/d/<id>/edit")
 
