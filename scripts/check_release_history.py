@@ -32,12 +32,24 @@ PROJECT = "csa-google-workspace"
 SRC = ROOT / "src" / "csa_google_workspace" / "__init__.py"
 HEADING = re.compile(r"^## \d{4}-\d{2}-\d{2} — v([0-9]+(?:\.[0-9]+)*)(.*)$", re.M)
 UNRELEASED = "not released"
+YANKED = "YANKED"
 
 
 def changelog_versions() -> dict[str, bool]:
     """version -> was it claimed as released."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     return {m.group(1): UNRELEASED not in m.group(2) for m in HEADING.finditer(text)}
+
+
+def changelog_yanked() -> set[str]:
+    """Versions whose changelog HEADING says YANKED.
+
+    The heading rather than the body, because the body of a yank notice necessarily mentions
+    the version people should move TO, and matching on that would mark the healthy version as
+    yanked as well.
+    """
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    return {m.group(1) for m in HEADING.finditer(text) if YANKED in m.group(2)}
 
 
 def current_version() -> str:
@@ -79,6 +91,35 @@ def pypi_versions() -> set[str] | None:
     except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as e:
         print(f"  ! could not reach PyPI ({e}); skipping that comparison")
         return None
+
+
+def pypi_yanked() -> set[str] | None:
+    """Versions PyPI reports as yanked, from the SIMPLE index rather than the JSON API.
+
+    Two reasons for the simple index. It is what pip actually resolves against, so it is the
+    authority on whether a yank is in effect. And it updates first — after the project's first
+    yank the JSON API still reported `yanked: false` for several minutes while the simple index
+    already carried the reason string, so a checker reading JSON would have called a real yank
+    a discrepancy.
+    """
+    request = urllib.request.Request(  # noqa: S310 - fixed https URL, not user input
+        f"https://pypi.org/simple/{PROJECT}/",
+        headers={"Accept": "application/vnd.pypi.simple.v1+json"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            files = json.load(response)["files"]
+    except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as e:
+        print(f"  ! could not read the simple index ({e}); skipping the yank comparison")
+        return None
+    out = set()
+    for f in files:
+        # `yanked` is False when not yanked, and either True or the REASON STRING when it is.
+        if f.get("yanked"):
+            match = re.search(rf"{re.escape(PROJECT.replace('-', '_'))}-([0-9.]+?)(?:-py3|\.tar)",
+                              f["filename"])
+            if match:
+                out.add(match.group(1))
+    return out
 
 
 def main() -> int:
@@ -135,6 +176,21 @@ def main() -> int:
             problems.append(
                 f"v{version}: the changelog claims it was released, but it is not on PyPI. "
                 f"`pip install {PROJECT}=={version}` will fail.")
+
+    # Yanks, both directions. PROVENANCE.md requires a yank to be announced in the changelog,
+    # and an announcement nobody checks is how the changelog came to claim releases that were
+    # never published in the first place.
+    yanked_on_pypi = pypi_yanked()
+    if yanked_on_pypi is not None:
+        said = changelog_yanked()
+        for version in sorted(yanked_on_pypi - said, key=_key):
+            problems.append(
+                f"v{version}: YANKED on PyPI, and the changelog heading does not say so. "
+                f"PROVENANCE.md requires a yank to be announced with its reason.")
+        for version in sorted(said - yanked_on_pypi, key=_key):
+            problems.append(
+                f"v{version}: the changelog says YANKED, but PyPI still offers it normally. "
+                f"Either the yank did not take, or the notice is wrong.")
 
     if problems:
         print(f"{len(problems)} discrepancy/ies:\n")
