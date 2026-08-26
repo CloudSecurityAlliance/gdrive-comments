@@ -77,6 +77,45 @@ class Document(CommentsMixin, PermissionsMixin):
         if self.read_only:
             raise exc.ReadOnlyError("workspace is read_only; content writes are disabled")
 
+    # ── File lifecycle ────────────────────────────────────────────────────────────────
+    #
+    # Metadata only, which is what Drive calls an update and what Google's and Claude's MCP
+    # servers mean by `update_file`. Changing a file's CONTENT is per-type and lives on the
+    # subclasses (`replace_text`, `update`, `insert_text`).
+
+    def rename(self, name: str) -> dict:
+        """Change the file's name. Requires the `file.update` capability."""
+        if not name or not name.strip():
+            raise ValueError("a file name cannot be empty")
+        self._require_writable()
+        return self._backend.update_file_metadata(self.id, name=name)
+
+    def move(self, parent_id: str, *, from_parent_id: str | None = None) -> dict:
+        """Move the file into `parent_id`. Requires the `file.update` capability.
+
+        Drive moves a file by editing its parent list rather than by taking a destination, so
+        without `from_parent_id` this ADDS a parent and the file then lives in both places -
+        which is a real Drive state, not a bug, and occasionally what you want. Pass the old
+        parent to move rather than to add; a file's current parents are on its metadata.
+        """
+        self._require_writable()
+        return self._backend.update_file_metadata(
+            self.id, add_parent=parent_id, remove_parent=from_parent_id)
+
+    def trash(self) -> dict:
+        """Move the file to the trash. Requires the `file.trash` capability.
+
+        Recoverable: Drive keeps a trashed file for 30 days and `untrash()` restores it.
+        There is deliberately no permanent-delete anywhere in this library.
+        """
+        self._require_writable()
+        return self._backend.trash_file(self.id, trashed=True)
+
+    def untrash(self) -> dict:
+        """Restore a trashed file. Requires the `file.trash` capability."""
+        self._require_writable()
+        return self._backend.trash_file(self.id, trashed=False)
+
 
 def subclass_for_mime(mime: str) -> type[Document]:
     if mime not in MIME_TO_TYPE:
