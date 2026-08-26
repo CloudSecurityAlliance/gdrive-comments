@@ -246,6 +246,11 @@ Five more things worth knowing:
   matching nothing. The reasons are involved enough to be written down — see `TODO.md`,
   *"Folders in the allowlist"*.
 
+**`csa-google-workspace-mcp configure` writes this file for you**, with the absolute path
+Desktop needs and your current `CSA_GW_*` variables carried across. It merges rather than
+replaces, keeps a timestamped backup, and refuses rather than overwriting if the file does not
+parse. `configure --print` shows the JSON without writing it.
+
 **Claude Desktop has no shell**, so whatever is in its `claude_desktop_config.json` `env` block
 *is* the server's entire environment — there is nowhere else for these to come from. Claude Code
 takes them the same way, or via `claude mcp add -e KEY=VALUE`. Either way, ask the server what
@@ -322,7 +327,7 @@ starts and tells you so through a tool error, rather than dying where no one can
 | `SERVICE_DISABLED` on some file types but not others | A scope grant is **not** API enablement. Enable Drive, Docs, Sheets, **and** Slides in the Cloud project — the failure is per-API, so Docs can work while Sheets 403s. |
 | `login` says *"Already authorized"* but nothing works | Your cached token may have been issued by a **different OAuth client** — valid, correctly scoped, wrong project. `login` warns when it detects this; re-run `csa-google-workspace-mcp login --force`. |
 | Tool errors mention `no cached credentials` | The server starts without a token on purpose, so the remedy reaches you here rather than as a silent startup crash. Run `csa-google-workspace-mcp login`. |
-| Works in Claude Code, fails in Claude Desktop (macOS) | Claude Code runs in your shell; Claude Desktop is a GUI app and inherits launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — which contains neither `~/.local/bin` nor Homebrew, and where `python3` is macOS's 3.9, below this package's 3.10 floor. So a bare command name isn't found and `python3` is the wrong interpreter. Give `claude_desktop_config.json` the **absolute path**: `{"mcpServers": {"csa-google-workspace": {"command": "/Users/you/.local/bin/csa-google-workspace-mcp"}}}` — a `pipx` install makes that path self-contained. Restart Desktop afterwards. |
+| Works in Claude Code, fails in Claude Desktop (macOS) | **Run `csa-google-workspace-mcp configure`.** It writes the config for you — absolute path, plus your `CSA_GW_*` variables, merged into whatever else is in there and with a timestamped backup. Then restart Desktop. *Why it happens:* Claude Code runs in your shell; Desktop is a GUI app and inherits launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), which contains neither `~/.local/bin` nor Homebrew, and where `python3` is macOS's 3.9 — below this package's 3.10 floor. So a bare command name isn't found and `python3` is the wrong interpreter. `configure --print` shows the JSON without writing, if you'd rather paste it yourself. |
 
 > **Before pointing an agent at documents you care about**, read [`SECURITY.md`](./SECURITY.md).
 > Comment and document text is attacker-influenceable input: a comment can *say* "resolve

@@ -13,95 +13,43 @@ ledger; the phase plans in `docs/superpowers/plans/` are the per-phase detail.
 
 ## Phase 2 — the built-in MCP server — ✅ SHIPPED (v0.2.0–v0.2.3, 2026-08-24/25)
 
-`csa_google_workspace.mcp` is on PyPI: a local stdio server on MCP revision `2026-07-28`
-(SDK `mcp>=2.1`), with **nine tools** carrying structured output and read-only/destructive
+`csa_google_workspace.mcp` is on PyPI: a local stdio server, **32 tools as of v0.22.0** on MCP revision `2026-07-28`
+(SDK `mcp>=2.1`), with structured output on every tool and read-only/destructive
 annotations, per-user OAuth via a separate `login` subcommand, and a CSA-branded consent page.
 Spec: [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md).
 
 Built directly from the spec without a separate plan file — the spec's §10 phasing served as
 the task list.
 
-**Deferred from v1, deliberately:**
+**Deferred from v1 — and all but two have since shipped.** Kept as a record of the ordering,
+because the order was the point: nothing that could damage an existing file was exposed until
+the control that scopes it existed.
 
-- [ ] **Content-write tools through MCP** — Docs `replace_text`/`insert_text`/`append_text`/
-  `delete_range`, Sheets `update`/`append_rows`/`clear`, Slides `insert_text`. The library API
-  has them; the MCP layer exposes comment writes only. **Blocked on file allowlisting below** —
-  exposing document mutation to a model over a full-Drive token, with no per-file scope, is the
-  confused-deputy scenario #82 describes.
-- [ ] **Docs suggestions** (`list_suggestions`) and the `as_text(suggestions=…)` preview.
+- [x] **Content-write tools through MCP** — **done 2026-08-25** (v0.13.0), after allowlisting,
+  exactly as this entry required. `replace_text`, `append_text`, `update_cells`, `append_rows`,
+  `insert_slide_text`, all behind the single `content.write` capability.
+- [x] **Docs suggestions** (`list_suggestions`) and the `as_text(suggestions=…)` preview —
+  **done 2026-08-26** (v0.20.0). Read-only, because the Docs API has no accept or reject
+  endpoint.
 - [x] **Resources — the configuration ones, done 2026-08-25** (v0.11.0): `csa-gw://config`
   (effective policy, live) and `csa-gw://help/configuration` (the reference), plus a
   `describe_configuration` tool for clients that do not surface resources.
-- [ ] **The document-text Resource and comment-triage Prompt** — both in the spec, neither built.
-- [ ] **A launcher shim for Claude Desktop on macOS.** GUI apps inherit a minimal `PATH` where
-  `python3` is the system 3.9, below the 3.10 floor — so Desktop fails where Claude Code works.
-  Documented in the README's troubleshooting table; no fix yet.
-- [ ] **Verify the PowerShell setup scripts.** `CSA-Plugins/internal-setup/*.ps1` and the
-  `DesktopSetup` Windows hook have never been executed — they were written on a machine with no
-  `pwsh`. A Windows colleague should not be the first to find out.
-
-- [ ] **File allowlisting — scope a `Workspace` to specific files and operations.**
-  ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) Listed here
-  rather than in the library-internal section below because **it is arguably a phase-2
-  dependency, not a parallel nicety.** The locked phase-2 decision is *read + write on by
-  default*, hedged with tool annotations and `CSA_GW_READ_ONLY=1`. That hedge is all-or-nothing:
-  the only choices an operator gets are "this agent may write to everything you can reach" or
-  "nothing". An allowlist is the missing middle, and it is what makes write-on-by-default
-  defensible rather than merely convenient.
-  **Shape settled 2026-08-21**: an explicit **write-allowlist of Drive URLs** — read stays as broad
-  as the credentials allow, only mutation is gated. The goal is damage containment rather than
-  confidentiality: the agent already sees whatever the user sees, so what must be bounded is what
-  it can *break*. Keyed on URLs because that is what people paste (`parse_file_id` normalises to
-  IDs internally). And the list is **curated, not per-user** — e.g. the CSA WG document URLs —
-  which means a volunteer installs the tooling and it is physically incapable of damaging anything
-  outside the list, whether or not they understand why. That is a better story than per-user config,
-  because it does not depend on the least-equipped person making a good decision.
-  **Cheap to build**: every one of the 25 `Backend` Protocol methods takes `file_id` first, so a
-  wrapping `AllowlistBackend` enforces uniformly with no changes to existing methods, composed
-  through the documented `Workspace(backend=…)` seam. `read_only` is the precedent — the
-  allowlist is its fine-grained sibling and the two should be one mechanism, not two.
-  **The MCP server also answers the hard half.** #82 notes that session scoping only means
-  something if it is monotonically narrowing *and* set by the host rather than callable by the
-  guest — otherwise an agent just widens its own scope. **An MCP server session is exactly that
-  boundary**: the server constructs the scoped `Workspace` per session, and the client has no
-  in-band way to broaden it. So "session-level allowlisting" has a concrete home in phase 2
-  rather than being an open question.
-  **Requirement surface is captured in full on #82** so nothing is rediscovered mid-build. Summary
-  of what must be considered: **two independent dimensions** — capability gating *at all* (write /
-  create-comment / update / delete / resolve / accept-suggestion, each on-or-off globally) and
-  **per-URL scope** for each capability that is enabled — with the composition rule that **global
-  is a ceiling and per-file grants narrow, never widen**. Plus the parts that decide whether it is
-  actually usable: **obtaining the URLs** (folder enumeration as a *generator* producing a
-  reviewable committed list, never as a live rule — folder-as-rule reintroduces TOCTOU when someone
-  drops a file in), **config ergonomics** (plain-text and diffable so it reviews like code, a
-  reason field per entry so "why is this writable" is answerable in six months, URL forms accepted
-  as pasted, validation on load), **fail-closed behaviour** for every failure mode including the
-  no-policy-configured default, **operational lifecycle** (immediate revocation, optional expiry,
-  dead-entry detection, and new-file creation which probably sits outside the list since it cannot
-  damage anything existing), and **observability** — log allowed *and* denied with the matching
-  rule, since denials are the security signal, plus a dry-run mode answering "what would this run
-  touch" before it touches anything.
-  **Driver**: CSA-Plugins#27 wants agentic read/edit/comment on live Google Docs authored by
-  volunteers. The blocker there is not capability — this library already has it — it is that
-  handing volunteers unscoped write access to their own Drive is not defensible. Prevention has
-  to carry the weight, because Docs has no selective undo.
-
-Deferred out of phase 2, recorded during the 2026-08-05 auth revision (spec §11):
-
-- [ ] **Hosted / server-side login for the MCP server.** A remote, multi-user server (Streamable
-  HTTP + the MCP OAuth 2.1 resource-server model, per-user token custody in a real secret store)
-  is a **separate design**, not a flag on the local one — it inverts the token-custody model
-  `SECURITY.md` is built around. v1 is local, self-hosted, single-user.
-- [ ] **Credential provenance — decide whether CSA ships a verified OAuth client.** Users supply
-  their own client secrets today, because full `.../auth/drive` is a *restricted* scope: a public
-  CSA-owned client would need Google app verification **plus** an annual CASA third-party security
-  assessment, and the API ToS forbid embedding credentials in an open-source project. This is a
-  cost/ownership call, not an engineering one — `main()` reads `CSA_GW_CLIENT_SECRETS` either way,
-  so it can land any time without redesign.
-
-Note the scope shift: everything *below* this section is library-internal, but phase 2 is a
-**delivery layer over** the library — it adds no document logic, only maps MCP primitives
-onto the existing `Workspace` API.
+- [ ] **The document-text Resource and comment-triage Prompt** — both in the spec, neither
+  built. **Not 1.0.0 gates:** both are conveniences over tools that already exist, and neither
+  shapes a contract, so they can land any time.
+- [x] **A launcher shim for Claude Desktop on macOS** — **done 2026-08-26** (v0.22.0), as
+  `csa-google-workspace-mcp configure` rather than a shim. Gate D2; see there for why writing
+  the config beats documenting the absolute path.
+- [x] **Verify the PowerShell setup scripts** — **done 2026-08-26.** They had never been run,
+  and the first real run crashed the terminal. Gate D1 has the root cause, which generalises to
+  any PowerShell installer.
+- [x] **File allowlisting — scope a `Workspace` to specific files and operations**
+  ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) — **first
+  control shipped 2026-08-25** (v0.7.0–v0.10.0): per-capability gating, two fail-closed URL
+  lists, named profiles, enforcement in a `Backend` wrapper so library embedders and MCP clients
+  get one guarantee. It **did** land before the mutating tools, which is what made
+  write-on-by-default defensible rather than merely convenient. The open remainder — folders,
+  per-capability scope, expiry, dead-entry detection, dry-run — is Gate A4.
 
 ## What 1.0.0 is, and what it is not
 
@@ -328,6 +276,33 @@ no longer anything this project can do that a client cannot reach.
 - [ ] **C3 Decide the caching knob**, even if the default stays off. Caching is off *by design*
       (live multi-reviewer sessions make a self-invalidated cache actively wrong), but adding
       one later changes observable behaviour. Name the parameter now; leave it off.
+- [ ] **C4 Logging, and an error store** —
+      [#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145).
+      **Added as a 1.0.0 gate 2026-08-26**, at the CINO's direction, and it belongs in Gate C
+      rather than Gate D for the reason Gate C exists: *the absence of it would force a breaking
+      change later.*
+
+      Every log call in this library is `log.warning` — ten of them, no other level, no
+      configuration. Three things follow, and the third is what makes it a gate:
+      - **Levels are a config surface.** `CSA_GW_LOG_LEVEL` and the named postures have to be
+        spelled the way they will stay, exactly like C2's flavour switch.
+      - **A dedicated `csa_google_workspace.audit` logger is a name embedders filter on.**
+        Introducing it later means asking people to change filters they already wrote; it is
+        cheap now and impossible to retrofit quietly.
+      - **Structured fields are a contract.** `API-STABILITY.md` already says log text and
+        levels are *not* stable but that field names would join the contract if introduced —
+        so deciding them after 1.0.0 means either a major bump or a promise made retroactively.
+
+      Plus the half that is not about stability at all: the SDK suppresses the message on any
+      exception that is not `ToolError`, and three of the six known SDK traps fail silently. A
+      server whose errors the protocol can eat needs its diagnostics somewhere the protocol
+      cannot reach. The three-tier design (in-session ring buffer · opt-in JSONL · consent-gated
+      GitHub issue) is in #145; the off-box tier already exists as `report_a_problem`.
+
+      Scope for 1.0.0 is deliberately the **contract-shaped part**: the level and posture names,
+      the audit logger, `NullHandler`, no-stdout-ever with a test, and any structured field names
+      written into `API-STABILITY.md`. The error store and the audit loop can land in 1.x —
+      they add behaviour without changing what is promised.
 
 ### Gate D2 — release history and provenance
 
@@ -400,12 +375,45 @@ owes someone who depends on it. C1 says what will not change; this says what did
       assigned (every Windows run would have reported "no access"), a clone token leaking into
       the debug log, and redaction that missed the `"client_secret": "…"` JSON form — the exact
       shape the OAuth file is written in.
-- [ ] **D2 Claude Desktop on macOS.** GUI apps inherit a minimal `PATH` where `python3` is the
-      system 3.9, below our 3.10 floor, so Desktop fails where Claude Code works. Documented in
-      the README; unfixed. Half our intended clients are Desktop.
-- [ ] **D3 `Location.tab`, or an explicit limitation.** Multi-tab spreadsheets cannot
-      disambiguate a comment's cell today. Either resolve it (`workbook.xml` + rels) or say so
-      in `comments_by_cell`'s own description — a silently-wrong cell is worse than an absent one.
+- [x] **D2 Claude Desktop on macOS** — **done 2026-08-26** (v0.22.0):
+      `csa-google-workspace-mcp configure`.
+
+      The failure was never a bug, which is why it stayed open: Desktop is a GUI app, so it
+      inherits launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) — no `~/.local/bin`, no
+      Homebrew, and its `python3` is macOS's 3.9, below our floor. Claude Code works because it
+      runs in your shell, which is exactly what makes it read as "Desktop is broken".
+
+      The README had documented the fix (an absolute path) for months. **That was a workaround
+      with a hand-edit in it** — the user had to know their own home directory, produce valid
+      JSON, and not clobber the other servers in a shared file. The tool knows its own absolute
+      path, so it writes it: merges rather than replaces, keeps a timestamped backup, refuses
+      rather than overwriting a file that does not parse, and carries the `CSA_GW_*` variables
+      across because Desktop has **no shell** to read them from. Only those variables — it is
+      reading an ambient environment that also holds cloud keys, into a file people screenshot
+      when asking for help — and never `CSA_GW_CLIENT_SECRETS`, which only `login` needs.
+
+      Also added `mcp/__main__.py`, so `python -m csa_google_workspace.mcp` works as the
+      always-correct fallback when no console script can be found.
+- [x] **D3 `Location.tab`, or an explicit limitation** — **done 2026-08-26** (v0.22.0), taking
+      the second option, which the gate's own wording preferred: *a silently-wrong cell is worse
+      than an absent one*.
+
+      The consequence was worse than "tab is unknown". `_cellmap.parse_xlsx_comments` walks every
+      `xl/threadedComments/*.xml` member — one per sheet — and collects them **flat, with no
+      record of which sheet each came from**. So on a three-tab workbook a comment at B11 on the
+      third tab is indistinguishable from one at B11 on the first, and `comments_by_cell("B11")`
+      returned both as though the question had one answer.
+
+      Now `comments_by_cell` returns `tab_ambiguous`, the `tabs` list, and a `detail` that says
+      what the ambiguity *is* rather than that the answer "may be inaccurate" — and reports it
+      **only when there is more than one tab**, because on a single-tab workbook the answer is
+      exact and warning anyway is the check-that-fires-on-correct-behaviour mistake. `Location`
+      now documents `tab` as *always `None` today*, meaning "not resolved", never "no tab" —
+      kept on the model so resolving it later is not a breaking change.
+
+      Resolution itself (`xl/workbook.xml` + rels, correlating member → sheet name) remains
+      unimplemented and is no longer a 1.0.0 gate: the uncertainty is now stated where somebody
+      can act on it.
 
 ### Explicitly not 1.0
 

@@ -153,6 +153,22 @@ class CommentsOut(TypedDict):
     comments: list[CommentOut]
 
 
+class CellCommentsOut(TypedDict):
+    """`comments_by_cell` - the answer, plus how much to trust it. (D3)
+
+    The XLSX export carries one `threadedComments` member per SHEET, and the parse collects
+    them flat with no record of which sheet each came from. So on a multi-tab workbook a
+    comment at B11 on Sheet3 is indistinguishable from one at B11 on Sheet1. The ambiguity is
+    reported rather than resolved, because a silently-wrong cell is worse than a stated
+    uncertainty - and it is reported ONLY when there is more than one tab, since on a
+    single-tab workbook the answer is exact and a warning would be noise.
+    """
+    comments: list[CommentOut]
+    tab_ambiguous: bool
+    tabs: list[str]
+    detail: str
+
+
 class TextOut(TypedDict):
     text: str
 
