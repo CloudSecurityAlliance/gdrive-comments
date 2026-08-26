@@ -178,3 +178,56 @@ class TestTheTools:
     def test_share_file_warns_that_it_sends_data_outside(self):
         tools = {t.name: (t.description or "") for t in asyncio.run(self.server().list_tools())}
         assert "OUT OF THE ORGANISATION" in tools["share_file"]
+
+
+class TestDeletedCommentVisibility:
+    """A successful delete used to report failure, and every unit test passed.
+
+    `delete_comment` deletes, then re-fetches so the caller sees what Drive now holds. Drive
+    404s a soft-deleted comment unless `includeDeleted` is set, so the re-fetch failed and the
+    tool reported "Comment not found" for a comment it had just successfully deleted.
+
+    It survived because `FakeBackend.get_comment` returned deleted comments happily — more
+    forgiving than Drive, and therefore useless as a check. The fake now behaves as Drive does,
+    which is what makes these tests able to fail.
+
+    Found by running the demonstration against real Google. Nothing offline could have.
+    """
+
+    def _doc(self):
+        backend = FakeBackend({DOC: {"id": DOC, "name": "D",
+                                     "mimeType": "application/vnd.google-apps.document"}})
+        return Workspace(backend).open(DOC)
+
+    def test_a_deleted_comment_is_hidden_from_get_by_default(self):
+        document = self._doc()
+        comment = document.create_comment("bye")
+        comment.delete()
+        with pytest.raises(exc.NotFoundError):
+            document.comments.get(comment.id)
+
+    def test_and_reachable_when_asked_for(self):
+        document = self._doc()
+        comment = document.create_comment("bye")
+        comment.delete()
+        fetched = document.comments.get(comment.id, include_deleted=True)
+        assert fetched.id == comment.id
+        # Drive strips both, which is why the models allow both to be absent.
+        assert fetched.content is None
+        assert fetched.author is None
+
+    def test_the_tool_reports_the_deletion_rather_than_failing(self):
+        """The regression itself, at the layer that had it."""
+        settings = settings_from_env({"CSA_GW_ALLOWLIST_READ": "*",
+                                      "CSA_GW_ALLOWLIST_MODIFY": "*",
+                                      "CSA_GW_PROFILE": "full"})
+        backend = FakeBackend({DOC: {"id": DOC, "name": "D",
+                                     "mimeType": "application/vnd.google-apps.document"}})
+        server = create_server(lambda: Workspace(backend), settings=settings)
+        made = asyncio.run(server.call_tool(
+            "create_comment", {"fileId": DOC, "content": "bye"})).structured_content
+        comment_id = made.get("commentId") or made["id"]
+        out = asyncio.run(server.call_tool(
+            "delete_comment", {"fileId": DOC, "commentId": comment_id})).structured_content
+        assert out["id"] == comment_id
+        assert out["content"] is None

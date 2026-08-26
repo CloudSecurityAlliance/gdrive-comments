@@ -211,8 +211,11 @@ class CommentCollection:
         return [self._wrap(d) for d in self._backend.list_comments(
             self._file_id, include_deleted=include_deleted)]
 
-    def get(self, comment_id: str) -> Comment:
-        return self._wrap(self._backend.get_comment(self._file_id, comment_id))
+    def get(self, comment_id: str, *, include_deleted: bool = False) -> Comment:
+        """One comment thread. `include_deleted` is needed to fetch a soft-deleted one, which
+        Drive otherwise reports as missing - the record survives, the visibility does not."""
+        return self._wrap(self._backend.get_comment(self._file_id, comment_id,
+                                                    include_deleted=include_deleted))
 
     def filter(self, *, resolved: bool | None = None, author: str | None = None,
                since: datetime | None = None, include_deleted: bool = False) -> list[Comment]:

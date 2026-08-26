@@ -46,6 +46,13 @@ def _errors(fn):
             raise ToolError(str(e)) from e
         except exc.UnsupportedOperation as e:
             raise ToolError(str(e)) from e
+        except exc.ApiError as e:
+            # A Google 4xx that is not one of the typed cases above - most often a malformed
+            # Drive query, which `search_files` accepts as a raw `q` string. Without this it
+            # became an UnexpectedToolError with the message suppressed, so the model saw
+            # "Error executing tool search_files" and had nothing to correct. Found by the
+            # demonstration, which passed free text where Drive syntax was required.
+            raise ToolError(f"Google rejected the request: {e}") from e
         except ValueError as e:
             # The library raises plain ValueError for a bad argument value (an unknown
             # `order_by`, an empty query, `as_text(suggestions="maybe")`). Without this
