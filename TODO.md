@@ -113,9 +113,12 @@ The point of a 1.0 is a *promise*: this API will not change under you without a 
 the gate list is not "everything good" — it is **everything whose absence would force a
 breaking change later**, plus the minimum that makes calling it 1.0 honest.
 
-### Gate A — parity, because a reader will check
+### Gate A — parity, because a reader will check — ✅ CLOSED 2026-08-25
 
-The eight tools the other two servers have and we do not. Split by the #82 correction above:
+The eight tools the other two servers had and we did not. **All eight ship**; every tool either
+server offers is now here under the same name and argument shapes. Kept in full rather than
+collapsed to a tick, because the order these landed in was the point: the destructive three
+arrived *after* the gate that turns them off.
 
 - [x] **A1** `search_files`, `list_recent_files` — **done 2026-08-25** (v0.5.0). The account
       axis exists: `workspace.files` is a `FileCollection` returning `FileRef`s, per the
@@ -125,8 +128,14 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
       beside `CommentsMixin`, since permissions are the same shape as comments: one Drive API,
       identical across all three types. Adds `public` / `writers` roll-ups so the model does
       not have to derive them. Live-verified.
-- [ ] **A3** `create_file`, `copy_file` — not gated (nothing existing to damage). `create_file`
-      takes `text/markdown` and lets Drive convert. → **this completes Google's 8.**
+- [x] **A3** `create_file`, `copy_file` — **done 2026-08-25** (v0.13.0). Gated on
+      `file.create`, which is in the default `editor` profile: there is nothing existing to
+      damage, and the *new* file is not in the modify allowlist either, so `create_file`
+      followed by `append_text` is still refused unless an operator lists it. `create_file`
+      takes Markdown in `content` and lets Drive convert it into real structure. `copy_file`
+      checks the **read** scope, not modify, because it reads a source — and the copy it
+      produces has a new id, so copying cannot manufacture a writable duplicate of something
+      unwritable. → **completed Google's 8.**
 - [~] **A4** **#82 allowlisting** — **dimension 1 done 2026-08-25** (v0.7.0), dimension 2 open.
       - [x] **Capability gating.** `policy.py`: named capabilities, a `Policy`, and a
             `PolicyBackend` wrapper that **fails closed** — a `Backend` method with no declared
@@ -150,14 +159,12 @@ The eight tools the other two servers have and we do not. Split by the #82 corre
             in the MCP server; `*` is the typed escape hatch. The library keeps a permissive
             default, because `from_credentials` is called by a developer who has made a
             decision while the server is configuration handed to a model.
-      - [ ] **Superseded by the broader model, eventually.** Today an unset `CSA_GW_ALLOWLIST`
-            with no default file means no file restriction, because that is what this library
-            has always done and flipping it silently would break every existing user. #82's
-            requirement surface asks for fail-closed *including the no-policy-configured
-            default*. **Recommendation: flip it at 1.0.0** — a public release whose selling
-            point is scoped write access should not default to unscoped. The escape hatch
-            already exists (`CSA_GW_ALLOWLIST=any`, shipped v0.8.0), so the flip is a
-            one-line change to a default plus a CHANGELOG note, and nobody ends up stuck.
+      - [x] **~~Superseded by the broader model, eventually.~~** ✅ **Resolved by the item two
+            above**, and the recommendation it made ("flip it at 1.0.0") was overtaken by
+            actually flipping it in v0.9.0. Struck rather than deleted because it named a
+            variable that no longer exists — `CSA_GW_ALLOWLIST=any` — and anyone who read this
+            file earlier may still be looking for it. The current spelling is
+            `CSA_GW_ALLOWLIST_READ` / `CSA_GW_ALLOWLIST_MODIFY`, and the escape hatch is `*`.
       - [ ] **Folders** — see the next section. Deliberately not attempted yet.
 
 ### What shipped is a first control, not the design
@@ -235,9 +242,23 @@ cost moves to a process problem — the list must be regenerated when the folder
 is a much better problem than a silent grant.
 
 None of that is built. The questions above are the work.
-- [ ] **A5** `update_file`, `trash_file`, `share_file`, behind A4. → **completes Claude's 11.**
+- [x] **A5** `update_file`, `trash_file`, `share_file` — **done 2026-08-25** (v0.15.0), behind
+      A4 as planned. Each has its **own** capability (`file.update`, `file.trash`,
+      `file.share`), none is in any profile but `full`, and each also requires the file in the
+      modify allowlist — so a default install cannot reach any of them. `update_file` is
+      metadata only; `trash_file` is recoverable and there is no permanent delete anywhere in
+      this library; `share_file` is the one call that can move data out of the organisation,
+      which is why Google's own server declines to offer it. All three go through the **account
+      axis** rather than `open()`, so they work on folders too. → **completed Claude's 11.**
 
-**Deliberately excluded from "parity":** their `read_file_content` covers 13 mime types
+      Two policy questions this raised and did not answer, both live:
+      - `editor` has `file.create` and not `file.trash`, so it **cannot clear up after itself** —
+        an end-to-end run under the default profile leaves its files behind. Deliberate (trash
+        is destructive) but surprising enough that `demonstration_plan` now says so up front.
+      - `comment.delete` sits in `editor`. Whether tidying a thread belongs beside creating one,
+        or with the `full` set, has not been argued.
+
+**Still deliberately excluded from "parity":** their `read_file_content` covers 13 mime types
 including PDF, Office and PNG/JPEG; ours covers the three Google-native types. Closing that
 means parsing untrusted binary formats in-process, which is new attack surface and new
 dependencies on the read path SECURITY.md calls the primary risk. Document the difference
@@ -246,13 +267,15 @@ is not a read.)
 
 ### Gate B — the differentiator has to be reachable
 
-- [ ] **B1 Content writes through MCP.** `Doc.replace_text`, `Sheet.update`,
-      `Slides.replace_text` and the `batch_update`s are shipped, live-verified, and **not
-      exposed as tools.** "The only one of the three that can edit an existing document" is
-      currently true of the library and false of the server. A 1.0 whose headline capability is
-      invisible in the product is not a 1.0. Blocked on A4.
+- [x] **B1 Content writes through MCP** — **done 2026-08-25** (v0.13.0), after A4 as required.
+      `replace_text`, `append_text`, `update_cells`, `append_rows` and `insert_slide_text`, all
+      behind the single `content.write` capability. "The only one of the three that can edit an
+      existing document" is now true of the server as well as the library.
 - [ ] **B2 Docs suggestions through MCP** — `list_suggestions`, and `read_file_content`'s
-      accepted/rejected preview. Read-only, the library already has it, cheap.
+      accepted/rejected preview. Read-only, the library already has it, cheap. **The only
+      functional gap left between the library and the server**, and therefore the last of Gate
+      B: with B1 closed this is the one row in README's comparison table still marked
+      *library only*.
 
 ### Gate C — the part that literally *is* 1.0
 
@@ -359,6 +382,10 @@ follows with the rest of #82.
 
 ## Roadmap — nine subsystems, in order
 
+**Six of the nine are done** (1, 3, 4a, 4b, 5a, 5b), and #2 shipped its first control. What is
+left is #7 (approvals, revisions, changes+watch), #8 (Docs `batchUpdate` breadth), #9 (hosted
+server), and the open remainder of #2.
+
 Everything below this line was one item called "feature parity" until a code review showed it
 is nine independent pieces with real dependencies between them. Each is its own spec → plan →
 implement cycle; **do not try to plan them together.** At the granularity this project uses
@@ -368,12 +395,12 @@ several hundred steps and nobody executes it.
 | # | Subsystem | Touches | Blocked on | Notes |
 |---|---|---|---|---|
 | ~~**1**~~ | ~~**Tool alignment**~~ — their names, argument shapes, and Claude's model-facing guidance | MCP layer only | — | ✅ **done 2026-08-25** (v0.4.0). |
-| **2** | **File allowlisting** ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) | `Backend` wrapper | — | Do it **before** 4 and 5. See below. |
-| **3** | **Discovery** — `search_files`, `list_recent_files` | library: new axis on `Workspace` | — *(**not** 2 — see below)* | Biggest usability win. Reads, so the write-narrow allowlist does not gate them. |
-| **4a** | **File creation** — `create_file`, `copy_file` | library: new axis | 3 | Neither can damage an existing file, so neither is gated. `create_file` should accept `text/markdown` and let Drive convert — that closes the document-pipeline loop. |
-| **4b** | **File mutation** — `update_file`, `trash_file` | library: new axis | **2** | Rename/move and trash an *existing* file. Gated. |
-| **5a** | **Permissions read** — `get_file_permissions` | library | — | A read. Not gated. |
-| **5b** | **Sharing** — `share_file` | library | **2** | An exfiltration primitive, and one Google's own server declines to ship. |
+| **2** | **File allowlisting** ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)) | `Backend` wrapper | — | 🟡 **first control shipped** 2026-08-25 (v0.7.0–v0.10.0): capability gating, two fail-closed URL lists, profiles. It **did** land before 4 and 5, as required. Open: folders, per-capability scope, expiry, dead-entry detection, dry-run. See A4. |
+| ~~**3**~~ | ~~**Discovery**~~ — `search_files`, `list_recent_files` | library: new axis on `Workspace` | — *(**not** 2 — see below)* | ✅ **done 2026-08-25** (v0.5.0). Biggest usability win: a session no longer begins with a pasted URL. Reads, so the write-narrow allowlist does not gate them — but `search_files` results **are** filtered to the read scope. |
+| ~~**4a**~~ | ~~**File creation**~~ — `create_file`, `copy_file` | library: new axis | 3 | ✅ **done 2026-08-25** (v0.13.0). Gated on `file.create` after all — cheap, and it makes "may this install create files?" answerable. `create_file(content=…)` takes Markdown and lets Drive convert, which closes the document-pipeline loop. |
+| ~~**4b**~~ | ~~**File mutation**~~ — `update_file`, `trash_file` | library: new axis | **2** | ✅ **done 2026-08-25** (v0.15.0), after 2. Rename/move and trash an *existing* file, each behind its own capability, neither in any profile but `full`. |
+| ~~**5a**~~ | ~~**Permissions read**~~ — `get_file_permissions` | library | — | ✅ **done 2026-08-25** (v0.6.0). A read, so not gated. Adds `public` / `writers` roll-ups. |
+| ~~**5b**~~ | ~~**Sharing**~~ — `share_file` | library | **2** | ✅ **done 2026-08-25** (v0.15.0), after 2. Still an exfiltration primitive and still one Google's own server declines to ship — which is why it needs `file.share` named explicitly, defaults to notifying the recipient, and refuses ownership transfer. |
 | ~~**6**~~ | ~~**Format breadth**~~ — Markdown, PDF, Office, ODF, EPUB (**not** images) | `export` plumbing + a format table | — | ✅ **done 2026-08-25** (v0.4.0), with `_formats.py` and `download_file_content`. |
 | **7** | **Differentiators** — `approvals`, `revisions`, `changes`+`watch` | 3 new API surfaces | — | Own brainstorm each. `approvals` is the most on-mission thing found. |
 | **8** | **Docs `batchUpdate` breadth** — 37 unused request types | library | — | A programme, not a plan. Tables first. |
