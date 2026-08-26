@@ -1,0 +1,186 @@
+"""Every registered tool is callable, described, and declared.
+
+The per-tool suites check behaviour. This checks the thing none of them can: that the *set* is
+whole. A tool can be registered and never exercised anywhere, and the failure is silent — it
+ships, a model calls it, and it raises. So this walks the registry itself rather than a list
+somebody maintained, and a new tool is a test failure until it has smoke arguments here.
+
+It also enforces the three properties every tool needs regardless of what it does:
+
+  * it runs and returns structured output
+  * it has a non-empty description — the only interface documentation a model gets, and
+    previously missing entirely from one tool because an f-string cannot be a docstring
+  * its parameters are camelCase literals — `Field(alias=...)` publishes a correct schema and
+    then fails EVERY call, because the SDK dumps by alias and calls fn(**kwargs)
+"""
+from __future__ import annotations
+
+import asyncio
+import re
+
+import pytest
+
+from csa_google_workspace import Workspace
+from csa_google_workspace.backend import FakeBackend
+from csa_google_workspace.mcp import settings_from_env
+from csa_google_workspace.mcp.server import create_server
+
+DOC, SHEET, DECK = "doc1", "sheet1", "deck1"
+
+# `authenticate` opens a browser or elicits a URL from the client. Excluded deliberately, and
+# named here rather than skipped silently, so "not smoke-tested" stays a visible decision.
+INTERACTIVE = {"authenticate"}
+
+ARGS: dict[str, dict] = {
+    "search_files":          {"query": "Doc"},
+    "list_recent_files":     {},
+    "get_file_metadata":     {"fileId": DOC},
+    "get_file_permissions":  {"fileId": DOC},
+    "read_file_content":     {"fileId": DOC},
+    "download_file_content": {"fileId": DOC, "exportMimeType": "text/markdown"},
+    "list_slides":           {"fileId": DECK},
+    "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
+    "list_comments":         {"fileId": DOC},
+    "create_comment":        {"fileId": DOC, "content": "a comment"},
+    "get_comment":           {"fileId": DOC, "commentId": "<made>"},
+    "reply_comment":         {"fileId": DOC, "commentId": "<made>", "content": "a reply"},
+    "resolve_comment":       {"fileId": DOC, "commentId": "<made>"},
+    "reopen_comment":        {"fileId": DOC, "commentId": "<made>"},
+    "edit_comment":          {"fileId": DOC, "commentId": "<made>", "content": "edited"},
+    "delete_comment":        {"fileId": DOC, "commentId": "<made>"},
+    "replace_text":          {"fileId": DOC, "find": "hello", "replace": "goodbye"},
+    "append_text":           {"fileId": DOC, "text": "\nmore"},
+    "insert_slide_text":     {"fileId": DECK, "objectId": "sh1", "text": "x"},
+    "update_cells":          {"fileId": SHEET, "a1Range": "Tab1!A1", "values": [["z"]]},
+    "append_rows":           {"fileId": SHEET, "a1Range": "Tab1!A1", "values": [["z"]]},
+    "create_file":           {"name": "New", "kind": "document"},
+    "copy_file":             {"fileId": DOC, "name": "Copy"},
+    "describe_configuration": {},
+    "read_server_resource":  {},
+    "report_a_problem":      {},
+}
+
+
+def _shape() -> dict:
+    return {"objectId": "sh1",
+            "shape": {"text": {"textElements": [{"textRun": {"content": "slide text"}}]}}}
+
+
+@pytest.fixture
+def server():
+    """One backend for the whole run.
+
+    The provider is called per invocation, so a fresh fake each time would discard whatever the
+    previous tool created — which made six comment tools look broken when the harness was the
+    thing losing state. Against real Google the state lives at Google; a shared instance is the
+    faithful model.
+    """
+    backend = FakeBackend(
+        {DOC: {"id": DOC, "name": "A Doc",
+               "mimeType": "application/vnd.google-apps.document"},
+         SHEET: {"id": SHEET, "name": "A Sheet",
+                 "mimeType": "application/vnd.google-apps.spreadsheet"},
+         DECK: {"id": DECK, "name": "A Deck",
+                "mimeType": "application/vnd.google-apps.presentation"}},
+        documents={DOC: {"body": {"content": [
+            {"paragraph": {"elements": [{"textRun": {"content": "hello world\n"}}]}}]}}},
+        spreadsheets={SHEET: {"sheets": [{"properties": {"title": "Tab1", "sheetId": 0}}]}},
+        values={(SHEET, "Tab1"): [["a", "b"]]},
+        presentations={DECK: {"slides": [{"objectId": "s1", "pageElements": [_shape()]}]}},
+        exports={(DOC, "text/plain"): b"hello world", (DOC, "text/markdown"): b"# hello"},
+        permissions={DOC: [{"id": "p1", "type": "user", "role": "writer"}]},
+    )
+    return create_server(lambda: Workspace(backend), settings=settings_from_env(
+        {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",
+         "CSA_GW_PROFILE": "full"}))
+
+
+def test_every_tool_has_smoke_arguments(server):
+    """A new tool fails here until somebody decides how to exercise it."""
+    names = {tool.name for tool in asyncio.run(server.list_tools())}
+    undefined = names - set(ARGS) - INTERACTIVE
+    assert undefined == set(), (
+        f"no smoke arguments for: {sorted(undefined)}. Add them to ARGS, or to INTERACTIVE with "
+        f"a reason. A registered tool nothing calls is a tool that ships untested.")
+
+
+def test_every_tool_runs_and_returns_structured_output(server):
+    """The whole set, in one pass, in an order where the comment tools have a comment."""
+    tools = {t.name: t for t in asyncio.run(server.list_tools())}
+    ordered = [n for n in ARGS if n in tools]          # ARGS is ordered: create before use
+    made: str | None = None
+    failures = []
+    for name in ordered:
+        args = {k: (made if v == "<made>" else v) for k, v in ARGS[name].items()}
+        if any(value is None for value in args.values()):
+            failures.append(f"{name}: needed a comment id and none had been created")
+            continue
+        try:
+            result = asyncio.run(server.call_tool(name, args))
+        except Exception as error:                     # noqa: BLE001 - report, do not stop
+            failures.append(f"{name}: {type(error).__name__}: {error}")
+            continue
+        if result.structured_content is None:
+            failures.append(f"{name}: returned no structured content")
+            continue
+        if name == "create_comment":
+            made = result.structured_content.get("commentId") or \
+                   result.structured_content.get("id")
+    assert failures == [], "tools failed:\n  " + "\n  ".join(failures)
+
+
+def test_every_tool_is_described(server):
+    """The description is the only interface documentation a model gets.
+
+    One tool once shipped with none, because an f-string was used as a docstring and `__doc__`
+    came back None.
+    """
+    undescribed = [t.name for t in asyncio.run(server.list_tools())
+                   if not (t.description or "").strip()]
+    assert undescribed == []
+
+
+def test_parameters_are_camelcase_literals(server):
+    """`Field(alias=...)` publishes the right schema and then fails every call.
+
+    The SDK dumps the validated model *by alias* and calls `fn(**kwargs)`, so the handler
+    receives `fileId=` for a parameter named `file_id` and raises TypeError — surfacing as an
+    UnexpectedToolError with the message suppressed. A camelCase wire name must therefore be
+    the literal Python parameter name, which also means no snake_case survives in a schema.
+    """
+    offenders = []
+    for tool in asyncio.run(server.list_tools()):
+        for parameter in tool.input_schema.get("properties", {}):
+            if "_" in parameter:
+                offenders.append(f"{tool.name}.{parameter}")
+    assert offenders == [], f"snake_case in a published schema: {offenders}"
+
+
+def test_comment_descriptions_carry_the_behaviour_that_surprises(server):
+    """The comment tools are this project's reason to exist, and were its thinnest docs.
+
+    Each fact below changes how a model should read a result, and none is guessable from the
+    tool's name: a deleted comment loses its author as well as its text, resolving posts a
+    visible reply rather than setting a flag, and a Sheets anchor cannot be decoded to A1.
+    """
+    tools = {t.name: (t.description or "") for t in asyncio.run(server.list_tools())}
+    assert re.search(r"deleted", tools["list_comments"], re.I)
+    assert re.search(r"untrusted", tools["list_comments"], re.I)
+    assert re.search(r"repl(y|ies)", tools["resolve_comment"], re.I)
+    assert re.search(r"opaque|export", tools["comments_by_cell"], re.I)
+
+
+def test_a_sheets_comment_can_carry_a_cell_deep_link(server):
+    """`cell` was reachable in the library and not through MCP - a differentiator that existed
+    and could not be used. It is a LINK, not an anchor: the API cannot anchor a comment to a
+    cell at all, which the description says rather than implying otherwise."""
+    result = asyncio.run(server.call_tool(
+        "create_comment", {"fileId": SHEET, "content": "about B11", "cell": "B11"}))
+    assert "range=B11" in result.structured_content["content"]
+
+
+def test_the_cell_argument_is_ignored_for_documents(server):
+    """Docs and Slides have no cells. Passing one is a model's mistake, not a reason to fail."""
+    result = asyncio.run(server.call_tool(
+        "create_comment", {"fileId": DOC, "content": "plain", "cell": "B11"}))
+    assert result.structured_content["content"] == "plain"
