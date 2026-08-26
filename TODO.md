@@ -265,17 +265,30 @@ dependencies on the read path SECURITY.md calls the primary risk. Document the d
 instead. (Drive's own PDF/image → Doc conversion is not an option: it *creates a file*, so it
 is not a read.)
 
-### Gate B — the differentiator has to be reachable
+### Gate B — the differentiator has to be reachable — ✅ CLOSED 2026-08-26
 
 - [x] **B1 Content writes through MCP** — **done 2026-08-25** (v0.13.0), after A4 as required.
       `replace_text`, `append_text`, `update_cells`, `append_rows` and `insert_slide_text`, all
       behind the single `content.write` capability. "The only one of the three that can edit an
       existing document" is now true of the server as well as the library.
-- [ ] **B2 Docs suggestions through MCP** — `list_suggestions`, and `read_file_content`'s
-      accepted/rejected preview. Read-only, the library already has it, cheap. **The only
-      functional gap left between the library and the server**, and therefore the last of Gate
-      B: with B1 closed this is the one row in README's comparison table still marked
-      *library only*.
+- [x] **B2 Docs suggestions through MCP** — **done 2026-08-26** (v0.20.0). `list_suggestions`
+      returns them as objects (id, `insertion`/`deletion`, text) and `read_file_content` gained
+      `suggestions="accepted"|"rejected"|"inline"`, which is the one that gets used: *"what would
+      this document say if the edits were taken"* is the review question, and Google renders that
+      preview server-side rather than us applying edits in our head.
+
+      **Read-only, and the wording is the control.** The Docs API has no accept or reject
+      endpoint, so the risk is not an exception - it is a model answering "done" to *"accept
+      these"* when nothing happened. So the refusal is stated in the tool description, again in a
+      `can_accept_or_reject` field of the result, and again in the `detail` string; a test asserts
+      all three, because there is no API call to get wrong and therefore nothing else to check.
+      Two smaller decisions: `tab` and `suggestions` together are **refused** rather than
+      resolved (one is Sheets-only, one Docs-only, so honouring either would answer a different
+      question), and there is deliberately **no `author` field** - Google exposes none, and a
+      permanently-null field invites attributing an edit to nobody.
+
+**Gate B is closed.** The library and the MCP server now expose the same capabilities; there is
+no longer anything this project can do that a client cannot reach.
 
 ### Gate C — the part that literally *is* 1.0
 

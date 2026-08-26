@@ -259,13 +259,13 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 31, each with structured output and read-only/destructive annotations
+**Tools** — 32, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
 |---|---|
 | **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
-| **Read** | `read_file_content` · `download_file_content` · `list_slides` · `comments_by_cell` |
+| **Read** | `read_file_content` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
 | **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` |
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
@@ -364,14 +364,15 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **31** |
+| MCP tools | 8 | 11 | **32** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **20** |
+| Tools they do not have | — | — | **21** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
-The twenty they do not have: nine comment tools, five content-write tools, `list_slides`, four
-in which the server accounts for itself (`describe_configuration`, `read_server_resource`,
-`authenticate`, `report_a_problem`), and `demonstration_plan`.
+The twenty-one they do not have: nine comment tools, five content-write tools, `list_slides`
+and `list_suggestions`, four in which the server accounts for itself
+(`describe_configuration`, `read_server_resource`, `authenticate`, `report_a_problem`), and
+`demonstration_plan`.
 
 **Counting tools is the wrong way to compare these three**, though, and that row is here mainly
 to retire the question. The three that actually distinguish them are the ones Google
@@ -411,11 +412,11 @@ accepting a share URL, which neither of theirs does.
 | `get_file_permissions` | Who it is shared with, and at what role | ✅ | ✅ | ✅ ¹ |
 | `read_file_content` | A file's text, optionally with comments inlined | ✅ | ✅ | ⚠️ ² |
 | `download_file_content` | Raw bytes as base64, converted on the way out | ✅ | ✅ | ✅ |
-| `create_file` | Create or upload a **new** file | ✅ | ✅ | ✅ ⁷ |
+| `create_file` | Create or upload a **new** file | ✅ | ✅ | ✅ ⁶ |
 | `copy_file` | Duplicate a file | ✅ | ✅ | ✅ |
-| `update_file` | Rename and move. **Metadata only** | ✗ | ✅ | ✅ ⁸ |
-| `share_file` | Grant an address `reader`/`commenter`/`writer` | ✗ | ✅ | ✅ ⁸ |
-| `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✅ ⁸ |
+| `update_file` | Rename and move. **Metadata only** | ✗ | ✅ | ✅ ⁷ |
+| `share_file` | Grant an address `reader`/`commenter`/`writer` | ✗ | ✅ | ✅ ⁷ |
+| `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✅ ⁷ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
@@ -423,29 +424,31 @@ accepting a share URL, which neither of theirs does.
 | `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
 | `read_file_content(includeComments)` | Fold threads into the text where they were left | ✗ | ✅ | ✅ |
 | `replace_text` · `append_text` · `update_cells` · `append_rows` · `insert_slide_text` | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ✅ |
-| — | Preview a Doc as if suggestions were accepted/rejected | ✗ | ✗ | ⚠️ ³ |
+| `list_suggestions` · `read_file_content(suggestions=)` | Read suggestions, and preview a Doc as if they were accepted/rejected | ✗ | ✗ | ✅ ⁸ |
 | `describe_configuration` + resources | The server explaining its own limits | ✗ | ✗ | ✅ |
 | `report_a_problem` | A bug report that assembles itself, safe to publish | ✗ | ✗ | ✅ |
 | `authenticate` | Browser consent from inside the MCP client | n/a *hosted* | n/a *built in* | ✅ |
-| — | Scope which files may be **read** | ⚠️ ⁴ | ✗ | ✅ |
-| — | Scope which files may be **changed** | ⚠️ ⁵ | ✗ | ✅ |
-| — | Turn individual **mutation kinds** off | ⚠️ ⁶ | ✗ | ✅ |
+| — | Scope which files may be **read** | ⚠️ ³ | ✗ | ✅ |
+| — | Scope which files may be **changed** | ⚠️ ⁴ | ✗ | ✅ |
+| — | Turn individual **mutation kinds** off | ⚠️ ⁵ | ✗ | ✅ |
 
 ¹ Plus `public` / `writers` roll-ups.
 ² Google-native types only — Docs, Sheets, Slides — not their 13 mime types. See below.
-³ The Python library only. Docs suggestions are the last thing here with no MCP tool —
-tracked as gate **B2** in [`TODO.md`](./TODO.md), and the only functional gap left before 1.0.0.
-⁴ Not configurable, but bounded by the **`drive.file`** scope, so Google enforces the
+³ Not configurable, but bounded by the **`drive.file`** scope, so Google enforces the
 equivalent upstream — where it cannot be misconfigured.
-⁵ Not configurable, but its only writes create *new* files, so there is nothing to scope.
-⁶ Not configurable, but enforced instead by the tools it does not ship.
-⁷ Creates Google-native files — Doc, Sheet, deck or folder — with an optional **Markdown** body
+⁴ Not configurable, but its only writes create *new* files, so there is nothing to scope.
+⁵ Not configurable, but enforced instead by the tools it does not ship.
+⁶ Creates Google-native files — Doc, Sheet, deck or folder — with an optional **Markdown** body
 that Drive converts into real headings, lists and tables. Not arbitrary media upload: Google's
 `drive.files.create` takes bytes, and this does not.
-⁸ Present, and **off in every profile but `full`**. Each needs its own capability named
+⁷ Present, and **off in every profile but `full`**. Each needs its own capability named
 (`file.update`, `file.share`, `file.trash`) *and* the file listed for modify. The default
 `editor` profile therefore cannot rename, share or trash anything — including files it created
 itself, which is a real consequence rather than an oversight.
+⁸ `list_suggestions` returns them as objects; `read_file_content(suggestions="accepted")`
+renders what the document would say. **Neither accepts nor rejects** — the Docs API has no
+endpoint for either, which is a Google limitation rather than a scoping decision, and the only
+thing here reserved for a future UI-automation backend.
 
 ### The same table, by underlying API
 

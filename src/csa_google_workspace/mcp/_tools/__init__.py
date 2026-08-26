@@ -13,6 +13,8 @@ from .content_write import register_content_write_tools
 from .demo import register_demo_tools
 from .feedback import register_feedback_tools
 from .files import register_file_tools
+from .suggestions import register_suggestion_tools
 
 __all__ = ["register_auth_tools", "register_comment_tools", "register_config_tools", "register_content_tools",
-           "register_content_write_tools", "register_demo_tools", "register_feedback_tools", "register_file_tools"]
+           "register_content_write_tools", "register_demo_tools", "register_feedback_tools", "register_file_tools",
+           "register_suggestion_tools"]

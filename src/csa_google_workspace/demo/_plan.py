@@ -122,6 +122,12 @@ def per_type(kind: str) -> list[Step]:
                  "Remove it again",
                  "Deleting text is replacing it with nothing. There is no separate delete "
                  "tool, because there is no separate Google API.", group=kind),
+            Step("list_suggestions", lambda s: {"fileId": s["document_id"]},
+                 "Look for tracked-change suggestions",
+                 "Empty here, because a suggestion can only be MADE in the editor - which is "
+                 "the point worth seeing: this reads them and previews what they would do, "
+                 "and nothing can accept or reject one, because the Docs API has no endpoint "
+                 "for either.", group=kind),
         ]
     elif kind == "spreadsheet":
         steps += [

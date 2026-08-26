@@ -23,12 +23,14 @@ from ._tools import (
     register_demo_tools,
     register_feedback_tools,
     register_file_tools,
+    register_suggestion_tools,
 )
 from ._tools._base import WorkspaceProviderT
 
 __all__ = ["INSTRUCTIONS", "create_server", "register_auth_tools",
            "register_comment_tools", "register_config_tools", "register_content_tools",
-           "register_content_write_tools", "register_demo_tools", "register_feedback_tools", "register_file_tools",
+           "register_content_write_tools", "register_demo_tools", "register_feedback_tools",
+           "register_file_tools", "register_suggestion_tools",
            "register_resources"]
 
 INSTRUCTIONS = """Read and triage comments and content on Google Docs, Sheets, and Slides.
@@ -85,6 +87,7 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     register_file_tools(app, get_workspace)
     register_content_write_tools(app, get_workspace)
     register_comment_tools(app, get_workspace)
+    register_suggestion_tools(app, get_workspace)
     if settings is not None:
         register_auth_tools(app, settings)
         # Both need Settings, and both are about the server rather than about Google — so a
