@@ -23,9 +23,11 @@ import shutil
 import subprocess  # nosec B404 - see above
 import urllib.parse
 
-from .._environment import ISSUES_URL, describe_environment
+from .._environment import DEMO_FEEDBACK_LABEL, ISSUES_URL, describe_environment
 
-LABEL = "automated-feedback"
+# The module-local name is kept: it reads better at the four call sites below, and the
+# value is the shared one so there is still only one place to change it.
+LABEL = DEMO_FEEDBACK_LABEL
 
 CONSENT = """
   This posts a PUBLIC issue on {repo}, from your GitHub account, with your

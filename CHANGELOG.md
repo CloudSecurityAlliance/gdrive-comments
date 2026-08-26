@@ -6,9 +6,48 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.20.1 (two feedback paths, two labels — and both labels now exist)
+
+A one-line bug with a disproportionate consequence, found by asking how the feedback mechanism
+is actually surfaced.
+
+Two paths reach this tracker, and only one of them labelled anything:
+
+    demo/_feedback.py:75      urlencode({..., "labels": LABEL})   -> automated-feedback
+    mcp/_tools/feedback.py:96 urlencode({...})                    -> no label at all
+
+So an issue filed from a demonstration run arrived tagged, and one filed because a model helped
+a user describe a real problem arrived indistinguishable from a hand-written report. That is not
+a cosmetic gap: it left the label unable to answer the only question it is good for — **is
+anybody actually blocked?** — and [#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145)'s
+audit loop assumes machine-assisted reports can be filtered.
+
+**Fixed with two labels rather than one**, because the two are not the same kind of thing and
+want opposite triage:
+
+| Label | What it means | How to read it |
+|---|---|---|
+| `automated-feedback` | a demonstration run reporting on **itself** | unprompted, nobody blocked; the signal is in the **aggregate** — twenty runs skipping the same step is a design problem, one run skipping it is a policy |
+| `assisted-report` | a **person** hit something and a model helped them describe it | somebody is stuck. Read these first |
+
+Both constants now live in `_environment.py` beside `ISSUES_URL`, because where feedback goes and
+under what name is one fact rather than two. `report_a_problem` also returns the label in a
+`label` field, so a model can tell the user which kind of report it just prepared.
+
+**And both labels now exist on the repository.** Neither did. `automated-feedback` had been
+referenced in code and in the README since v0.16.0 without ever being created, so the prefilled
+`?labels=` URL silently dropped it and `gh issue create --label` fell back to filing without one
+— the fallback that exists precisely so a missing label cannot lose somebody's feedback, quietly
+doing its job for ten days. The fallback stays, because a fork or a fresh clone will hit the
+same thing.
+
+Worth naming as a pattern: a label referenced only in code is a label nobody notices is missing,
+because every consumer of it degrades gracefully. The same shape as v0.19.2's stale comparison
+table — the failure is invisible from inside the system that has the bug.
 
 ## 2026-08-26 — v0.20.0 (Docs suggestions reach the server; gate B2 closed)
 
