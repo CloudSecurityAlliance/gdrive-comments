@@ -162,6 +162,24 @@ class CommentsOut(TypedDict):
     comments: list[CommentOut]
 
 
+class CommentExportOut(TypedDict):
+    """A bulk comment register: flat rows, ordered columns, and what not to trust.
+
+    `columns` is ordered so writing a spreadsheet is a loop. `rows` is one row per comment AND
+    per reply with `reply_to` naming the thread - the lossless shape, since one-row-per-thread
+    is a group-by away and the reverse is not. `caveats` is where the multi-tab ambiguity is
+    stated rather than papered over.
+    """
+    columns: list[str]
+    rows: list[dict]
+    caveats: list[str]
+    thread_count: int
+    row_count: int
+    file_id: str
+    file_name: str
+    file_type: str
+
+
 class CellCommentsOut(TypedDict):
     """`comments_by_cell` - the answer, plus how much to trust it. (D3)
 

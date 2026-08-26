@@ -52,6 +52,7 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     # A read, and it stays a read: accept/reject would need a capability, and the Docs API
     # has no endpoint for either, so there is nothing to gate.
     "list_suggestions": None,
+    "export_comments": None,
     # comment writes
     "create_comment": COMMENT_CREATE,
     "reply_comment": COMMENT_REPLY,

@@ -227,6 +227,15 @@ def per_type(kind: str) -> list[Step]:
              "and its author. Not 'author unknown' - the record is gone.", group=kind),
     ]
 
+    # Every type, because the whole point is that one call covers a file whatever it is - and
+    # the column that makes it useful differs per type, which is worth seeing three times.
+    steps.append(
+        Step("export_comments", lambda s, key=key: {"fileId": s[key]},
+             f"Export every comment on the {label} as rows",
+             "One call for a whole file: flat rows with ordered columns, the shape you write to "
+             "a spreadsheet or hand to another tool. For a Doc the useful column is the passage "
+             "each comment is about; for a Sheet it is what the CELL holds.", group=kind))
+
     if kind == "spreadsheet":
         steps.append(
             Step("comments_by_cell", lambda s: {"fileId": s["spreadsheet_id"], "cell": "A1"},

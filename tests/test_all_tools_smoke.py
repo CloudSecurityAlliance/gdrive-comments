@@ -41,6 +41,7 @@ ARGS: dict[str, dict] = {
     "list_slides":           {"fileId": DECK},
     "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
     "list_suggestions":      {"fileId": DOC},
+    "export_comments":       {"fileId": DOC},
     "list_comments":         {"fileId": DOC},
     "create_comment":        {"fileId": DOC, "content": "a comment"},
     "get_comment":           {"fileId": DOC, "commentId": "<made>"},
