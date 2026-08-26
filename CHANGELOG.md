@@ -6,9 +6,37 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.18.0 (two things the tools reported misleadingly)
+
+Both found by somebody running the demonstration against their own Drive and writing up what
+they saw. Neither was a crash. Both were a tool reporting something a reader would repeat back
+incorrectly — the failure mode that survives a green suite, because nothing throws.
+
+**`create_comment(cell=…)` reported the wrong cell.** Asked for `B2`, the result said
+`cell: "A1"`. Probing it settled which reading was right: Drive really does file the comment at
+A1 — the XLSX anchor says `ref="A1"` — because the Drive API cannot anchor a comment to a cell
+at all. So `A1` was *true*, and the fault was one field name carrying two different facts. The
+result now returns both: `cell` is where Drive filed it, `linked_cell` is the cell the deep link
+points at, and the description says outright which one to quote to a user. `comments_by_cell`
+now explains the consequence — it searches by *anchor*, so a comment made this way is found
+under A1 and not under the cell it links to, which is why searching for the linked cell comes
+back empty.
+
+**A deleted comment thread could not be found at all, and the documentation said otherwise.**
+`list_comments` claimed a deleted comment "keeps its id and its place in the thread". That is
+true of Drive *with* `includeDeleted` — and the tool never passed it, so a deleted top-level
+thread was absent from the listing and `get_comment` reported it missing. The audit consequence
+is the part that matters: "was there ever a comment here?" had no answer through the tool
+surface, while `comment.delete` is on in the default `editor` profile.
+
+`list_comments` and `get_comment` now take `includeDeleted`, so the tombstone is reachable —
+id and timestamp survive, text and author do not — and the description no longer implies deleted
+comments are shown by default. Verified against real Google: 0 threads by default, 1 with the
+flag, and `get_comment` finds it.
 
 ## 2026-08-26 — v0.17.0 (the demonstration is findable from inside a session)
 

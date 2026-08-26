@@ -231,3 +231,80 @@ class TestDeletedCommentVisibility:
             "delete_comment", {"fileId": DOC, "commentId": comment_id})).structured_content
         assert out["id"] == comment_id
         assert out["content"] is None
+
+
+class TestFromTheEndToEndReport:
+    """Two findings from a real run against Google, both about saying the true thing.
+
+    Neither was a crash. Both were a tool reporting something a person would repeat back
+    incorrectly, which is the failure mode that survives a green test suite.
+    """
+
+    def _sheet(self):
+        backend = FakeBackend(
+            {DOC: {"id": DOC, "name": "S",
+                   "mimeType": "application/vnd.google-apps.spreadsheet"}},
+            spreadsheets={DOC: {"sheets": [{"properties": {"title": "Sheet1", "sheetId": 0}}]}})
+        settings = settings_from_env({"CSA_GW_ALLOWLIST_READ": "*",
+                                      "CSA_GW_ALLOWLIST_MODIFY": "*",
+                                      "CSA_GW_PROFILE": "full"})
+        return create_server(lambda: Workspace(backend), settings=settings)
+
+    def test_the_requested_cell_comes_back_as_linked_cell(self):
+        """The report's finding: it asked for B2 and the response said cell=A1.
+
+        A1 is TRUE - Drive anchors an API-created comment there, confirmed by reading the
+        anchor out of the XLSX - so the fix is not to lie about `cell` but to also return the
+        cell the link points at, which is what a user actually asked about.
+        """
+        out = asyncio.run(self._sheet().call_tool(
+            "create_comment", {"fileId": DOC, "content": "about B2", "cell": "B2"}
+        )).structured_content
+        assert out["linked_cell"] == "B2"
+        assert "range=B2" in out["content"]
+
+    def test_a_comment_with_no_link_has_no_linked_cell(self):
+        out = asyncio.run(self._sheet().call_tool(
+            "create_comment", {"fileId": DOC, "content": "plain"})).structured_content
+        assert out["linked_cell"] is None
+
+    def test_create_comment_says_which_cell_to_quote(self):
+        """The description has to resolve the ambiguity, because the data alone cannot."""
+        tools = {t.name: (t.description or "")
+                 for t in asyncio.run(self._sheet().list_tools())}
+        text = tools["create_comment"]
+        assert "linked_cell" in text and "quote this" in text
+        assert "A1" in text, "it has to say where Drive actually files it"
+
+    def test_a_deleted_thread_is_findable_with_include_deleted(self):
+        """The audit finding: a deleted top-level thread vanished from both listing and
+        lookup, so "was there ever a comment here?" had no answer through the tool surface."""
+        server = self._sheet()
+        made = asyncio.run(server.call_tool(
+            "create_comment", {"fileId": DOC, "content": "bye"})).structured_content
+        comment_id = made.get("commentId") or made["id"]
+        asyncio.run(server.call_tool("delete_comment",
+                                     {"fileId": DOC, "commentId": comment_id}))
+
+        listed = asyncio.run(server.call_tool(
+            "list_comments", {"fileId": DOC})).structured_content["comments"]
+        assert listed == [], "deleted threads should be absent by default, as Drive has them"
+
+        with_deleted = asyncio.run(server.call_tool(
+            "list_comments", {"fileId": DOC, "includeDeleted": True})
+        ).structured_content["comments"]
+        assert [c["id"] for c in with_deleted] == [comment_id]
+        assert with_deleted[0]["content"] is None
+        assert with_deleted[0]["author"] is None
+
+        fetched = asyncio.run(server.call_tool(
+            "get_comment", {"fileId": DOC, "commentId": comment_id, "includeDeleted": True})
+        ).structured_content
+        assert fetched["id"] == comment_id
+
+    def test_list_comments_no_longer_claims_deleted_ones_are_shown(self):
+        """The doc said a deleted comment "keeps its place in the thread". True with the flag,
+        false without it - and it was written without the flag existing."""
+        tools = {t.name: (t.description or "")
+                 for t in asyncio.run(self._sheet().list_tools())}
+        assert "ABSENT unless you pass `includeDeleted`" in tools["list_comments"]

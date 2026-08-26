@@ -9,6 +9,7 @@ redacted repr protects logs, not tool output.
 """
 from __future__ import annotations
 
+import re
 import sys
 from typing import Any
 
@@ -35,7 +36,8 @@ class CommentOut(TypedDict):
     content: str | None
     resolved: bool
     created_time: str | None
-    cell: str | None
+    cell: str | None          # where DRIVE anchored it: A1 for anything created via the API
+    linked_cell: str | None   # the cell its deep link points at, if it has one
     replies: list[ReplyOut]
 
 
@@ -169,15 +171,27 @@ def reply_out(reply: Any) -> ReplyOut:
     }
 
 
+# `...range=B2` at the end of a deep link this library appended. Read back out rather than
+# remembered, so a comment fetched in a later session reports the same thing as one just made.
+_LINKED_CELL = re.compile(r"[?&#]range=([A-Z]+[0-9]+)\b")
+
+
 def comment_out(comment: Any) -> CommentOut:
     location = getattr(comment, "location", None)
+    linked = _LINKED_CELL.search(comment.content or "")
     return {
         "id": comment.id,
         "author": getattr(comment.author, "display_name", None) if comment.author else None,
         "content": comment.content,
         "resolved": bool(comment.resolved),
         "created_time": _iso(comment.created_time),
+        # Two different facts, and conflating them under one name misled an end-to-end run
+        # into reporting the wrong cell to a user. `cell` is where DRIVE anchored the comment
+        # -- which for anything created through the API is A1, always, because the API cannot
+        # anchor a comment to a cell at all. `linked_cell` is the cell the deep link points
+        # at, which is what somebody asked for.
         "cell": getattr(location, "cell", None) if location else None,
+        "linked_cell": linked.group(1) if linked else None,
         "replies": [reply_out(r) for r in (comment.replies or [])],
     }
 
