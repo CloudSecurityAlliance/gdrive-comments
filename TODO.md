@@ -378,9 +378,28 @@ owes someone who depends on it. C1 says what will not change; this says what did
 
 ### Gate D — the unglamorous ones that will bite a colleague
 
-- [ ] **D1 Run the PowerShell scripts on real Windows.** `CSA-Plugins/internal-setup/*.ps1` and
-      the `DesktopSetup` hook have **never been executed** — written on a machine with no
-      `pwsh`. A colleague should not be the first to find out.
+- [x] **D1 Run the PowerShell scripts on real Windows** — **done 2026-08-26.** They had never
+      been executed, having been written on a machine with no `pwsh`, and the concern was exactly
+      right: the first real run **crashed the terminal outright** at the pipx step.
+
+      Three stacked faults, and the root one is worth knowing for any PowerShell installer.
+      Under `$ErrorActionPreference='Stop'`, a native command that writes to **stderr** raises a
+      terminating `NativeCommandError` *even when it succeeded* — and inside
+      `& ([ScriptBlock]::Create(...))` invoked from a `Stop` parent, **all six** redirection
+      forms (bare call, `| Out-Null`, assignment, `2>$null`, `*> $null`, `2>&1 | Out-String`)
+      kill the script **and its caller**. Standalone the same error is only statement-terminating,
+      which is why isolated tests show everything surviving and the deployed shape dies. Fixed
+      with an `Invoke-CsaNative` wrapper that sets `Continue`, plus a static analyser asserting
+      every native call is wrapped — an analyser that then had to be fixed itself, because a
+      six-line lookahead exempted exactly the region the wrappers live in and it found none of
+      three deliberate violations.
+
+      Verified on the real machine under the exact failing condition (3 MCP + 11 `claude`
+      processes holding the venv), with a debug-log mode added so a failure arrives as a report
+      rather than a description. Also fixed en route: a `$ghGate` variable read but never
+      assigned (every Windows run would have reported "no access"), a clone token leaking into
+      the debug log, and redaction that missed the `"client_secret": "…"` JSON form — the exact
+      shape the OAuth file is written in.
 - [ ] **D2 Claude Desktop on macOS.** GUI apps inherit a minimal `PATH` where `python3` is the
       system 3.9, below our 3.10 floor, so Desktop fails where Claude Code works. Documented in
       the README; unfixed. Half our intended clients are Desktop.
