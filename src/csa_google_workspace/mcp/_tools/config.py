@@ -14,6 +14,7 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from ... import __version__
+from ..._environment import describe_environment
 from ...policy import ALL_CAPABILITIES, Policy
 from .._capabilities import reachable_capabilities
 from .._config import Settings
@@ -40,6 +41,7 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
 
         Reasons recorded beside allowlist entries are not returned; they are for whoever
         reviews the configuration."""
+        env = describe_environment()
         policy = settings.policy or Policy.default()
         blocked = next((s.reason for s in (policy.read, policy.modify)
                         if s.reason and not s.all_files and not s.ids), None)
@@ -62,6 +64,10 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
             # pyproject.toml in a checkout. A model that cannot say which version it is
             # talking to cannot tell "this tool does not exist" from "this build is old".
             "server_version": __version__,
+            "os": env.os,
+            "architecture": env.architecture,
+            "python_version": env.python_version,
+            "installed_via": env.installed_via,
             "help_resource": HELP_URI,
             "help_tool": "read_server_resource",
         }

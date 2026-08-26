@@ -108,6 +108,14 @@ class ConfigOut(TypedDict):
     read_only: bool
     blocked_reason: str | None         # why something permits nothing, when it does
     server_version: str                # csa-google-workspace's own version
+    # The environment, carried here and not only in `report_a_problem`, because this is the
+    # tool a model calls after any refusal — so the facts a bug report needs end up in the
+    # transcript as a side effect of ordinary use, rather than only when somebody thinks to
+    # ask for a report. A conversation pasted into an issue then arrives complete.
+    os: str                            # named as a person would: "macOS 26.6.2", "Windows 11"
+    architecture: str
+    python_version: str
+    installed_via: str                 # pipx | pip (venv) | pip (shared environment) | source
     help_resource: str                 # the resource URI, for clients that surface resources
     help_tool: str                     # ...and the tool, for clients that do not
 

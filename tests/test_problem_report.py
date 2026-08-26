@@ -153,3 +153,53 @@ class TestEnvironment:
         with pytest.raises(dataclasses.FrozenInstanceError):
             env.server_version = "9.9.9"    # type: ignore[misc]
         assert isinstance(env, Environment)
+
+
+class TestEnvironmentIsEverywhereItIsNeeded:
+    """The environment has to be reachable without anyone deciding to ask for it.
+
+    `report_a_problem` is the deliberate route, and it only helps somebody who already knows to
+    use it. `describe_configuration` is the tool a model calls after ANY refusal, so putting the
+    same facts there means they land in the transcript as a side effect of ordinary use - and a
+    conversation pasted into an issue then arrives complete.
+    """
+
+    def test_describe_configuration_reports_version_and_platform(self):
+        settings = settings_from_env({"CSA_GW_ALLOWLIST_READ": "*"})
+        server = create_server(lambda: Workspace(FakeBackend()), settings=settings)
+        out = asyncio.run(server.call_tool("describe_configuration", {})).structured_content
+        assert out["server_version"] == __version__
+        assert out["os"] == describe_environment().os
+        assert out["python_version"] == platform.python_version()
+        assert out["architecture"] and out["installed_via"]
+
+    def test_the_config_resource_names_them_in_its_first_lines(self):
+        """Above the policy, because it is the first question asked of any report and the
+        cheapest one to answer wrongly from memory."""
+        from csa_google_workspace.mcp._resources import render_config
+        head = "\n".join(render_config(settings_from_env(
+            {"CSA_GW_ALLOWLIST_READ": "*"})).split("\n")[:4])
+        env = describe_environment()
+        assert env.server_version in head and env.os in head
+
+    def test_the_three_surfaces_agree(self):
+        """One source of truth. Three renderings of a version that disagree is worse than one
+        that is merely absent, because each looks authoritative on its own."""
+        from csa_google_workspace.mcp._resources import render_config
+        settings = settings_from_env({"CSA_GW_ALLOWLIST_READ": "*"})
+        server = create_server(lambda: Workspace(FakeBackend()), settings=settings)
+        report = asyncio.run(server.call_tool("report_a_problem", {})).structured_content
+        config = asyncio.run(server.call_tool("describe_configuration", {})).structured_content
+        resource = render_config(settings)
+        assert report["os"] == config["os"]
+        assert report["server_version"] == config["server_version"] == __version__
+        assert config["os"] in resource and config["server_version"] in resource
+
+    def test_config_still_carries_no_paths(self):
+        """It lists file ids by design, but a filesystem path is a username and is never wanted."""
+        settings = settings_from_env({"CSA_GW_ALLOWLIST_READ": "*"})
+        server = create_server(lambda: Workspace(FakeBackend()), settings=settings)
+        out = asyncio.run(server.call_tool("describe_configuration", {})).structured_content
+        for key in ("os", "architecture", "python_version", "installed_via"):
+            assert "/Users/" not in str(out[key]) and "C:\\Users" not in str(out[key])
+

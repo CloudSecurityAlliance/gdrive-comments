@@ -251,7 +251,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 |---|---|
 | `csa-gw://config` | the **effective** policy right now: what may be read, what may be changed, which mutation kinds are on, and — when something permits nothing — the diagnosis of why |
 | `csa-gw://help/configuration` | the reference: every variable, the accepted forms, what each kind of mistake looks like, and the limits worth knowing before you hit them |
-| `describe_configuration` | the same facts as structured output, for clients that do not surface resources. Needs no credentials, so it answers even when nothing else does |
+| `describe_configuration` | the same facts as structured output, for clients that do not surface resources — plus the version, OS, architecture, Python and install route. Needs no credentials, so it answers even when nothing else does |
 | `report_a_problem` | assembles a bug report — version, OS, Python, install route, active policy — with **no file ids, titles or paths**, so it can be pasted into a public issue. The opposite choice from `describe_configuration`, which does list ids: same facts, different destination |
 
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
