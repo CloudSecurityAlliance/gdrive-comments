@@ -60,6 +60,12 @@ def _folder(state: State) -> dict:
 def account_opening() -> list[Step]:
     """Before any file exists: what the server is, and where the work will go."""
     return [
+        Step("demonstration_plan", lambda s: {},
+             "Ask the server for the plan we are about to follow",
+             "The same list a model gets when somebody asks for a demonstration - it reports "
+             "what the current policy will refuse, so a walkthrough can say up front what it "
+             "will have to skip rather than hitting the refusal halfway through.",
+             group="account"),
         Step("describe_configuration", lambda s: {},
              "Ask the server what it is allowed to do",
              "Every refusal later is explained by this. It reports the version, the OS, which "

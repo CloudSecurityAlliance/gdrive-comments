@@ -62,6 +62,7 @@ ARGS: dict[str, dict] = {
     "describe_configuration": {},
     "read_server_resource":  {},
     "report_a_problem":      {},
+    "demonstration_plan":    {},
 }
 
 

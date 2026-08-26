@@ -253,3 +253,65 @@ def test_the_demo_sends_drive_syntax_not_free_text():
     steps = {s.tool: s for s in build("my-prefix", "f", "a@b.c", keep=True)}
     args = steps["search_files"].args({"prefix": "my-prefix"})
     assert args["query"] == "name contains 'my-prefix'"
+
+
+class TestDiscoverableFromMcp:
+    """Asked "do you have a demo or end-to-end tests to run?", a connected model answered NO.
+
+    It was right: the demonstration was a CLI command, invisible from inside a session, which
+    is the one place people actually ask. These pin the fix, and the thing the same session
+    got right without being told - that a default profile cannot clear up after itself.
+    """
+
+    def plan(self, profile="editor"):
+        server = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(
+            {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",
+             "CSA_GW_PROFILE": profile}))
+        return asyncio.run(server.call_tool("demonstration_plan", {})).structured_content
+
+    def test_a_model_can_find_the_demonstration(self):
+        out = self.plan()
+        assert out["steps"], "no plan came back, so a model still has nothing to offer"
+        assert out["unattended_command"].endswith("demo --auto")
+
+    def test_the_instructions_point_at_it(self):
+        """A tool nobody looks for is a tool nobody finds. The server has to volunteer it."""
+        from csa_google_workspace.mcp.server import INSTRUCTIONS
+        assert "demonstration_plan" in INSTRUCTIONS
+        assert "demo" in INSTRUCTIONS.lower()
+
+    def test_it_returns_a_plan_rather_than_running_anything(self):
+        """Running 75 steps inside one call would block a conversation for minutes and would
+        demonstrate nothing - the tool would have done the work, not the model."""
+        before = self.plan()
+        after = self.plan()
+        assert before == after, "calling it twice changed something, so it is not inert"
+
+    def test_it_says_the_files_are_real(self):
+        assert self.plan()["creates_real_files"] is True
+
+    def test_a_default_profile_is_told_it_cannot_clear_up(self):
+        """The case the session hit. `editor` has no file.trash, so the demonstration leaves
+        artefacts - and that changes what you say BEFORE creating anything, not after."""
+        out = self.plan("editor")
+        assert out["cleanup_possible"] is False
+        assert any("file.trash" in reason for reason in out["unavailable"])
+        assert any("by hand" in reason for reason in out["unavailable"])
+
+    def test_a_full_profile_has_nothing_to_warn_about(self):
+        out = self.plan("full")
+        assert out["cleanup_possible"] is True
+        assert out["unavailable"] == []
+
+    def test_gated_steps_are_marked_unavailable_individually(self):
+        """So a walkthrough can skip precisely, rather than stopping at the first refusal."""
+        out = self.plan("editor")
+        blocked = [s for s in out["steps"] if not s["available"]]
+        assert blocked
+        assert {s["tool"] for s in blocked} <= {"update_file", "share_file", "trash_file"}
+
+    def test_every_step_says_what_it_applies_to(self):
+        """A model narrating "now the same thing on a Sheet" needs to know which is which."""
+        out = self.plan("full")
+        assert {s["applies_to"] for s in out["steps"]} >= {
+            "account", "document", "spreadsheet", "presentation"}

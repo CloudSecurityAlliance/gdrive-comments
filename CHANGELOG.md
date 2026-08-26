@@ -6,9 +6,37 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.17.0 (the demonstration is findable from inside a session)
+
+Asked *"do you have a demo or end-to-end tests to run?"*, a model connected to this server
+answered **no** — and was right. The demonstration shipped in 0.16.0 as a command-line
+command, which makes it invisible from inside a conversation, and a conversation is the one
+place people actually ask.
+
+**`demonstration_plan`** returns the ordered plan; the model carries it out by calling the
+tools it names. Returning a plan rather than running one is the design, not a shortcut: a tool
+that ran seventy-five steps would block a conversation for minutes and would have demonstrated
+nothing, because the tool would have done the work. Handing back the plan makes the model use
+the real tool surface, which is also the only test of whether the tool descriptions are good
+enough to work from cold.
+
+The server now volunteers it in its instructions too. A tool nobody looks for is a tool nobody
+finds.
+
+**It reports what the current policy will refuse, before anything is created.** The same
+session got this right unaided — it noticed that `editor` has no `file.trash` and warned that
+it could create test files but not clean them up. That should not depend on the model being
+careful: `cleanup_possible` and a per-step `available` flag now say so outright, so a
+walkthrough can skip precisely and can tell somebody they will be deleting files by hand
+*before* it makes any.
+
+The demonstration's own first step is now to ask for the plan, which is what a model does
+anyway — and it keeps the coverage guard honest, since `demonstration_plan` is itself a
+registered tool that something has to exercise.
 
 ## 2026-08-26 — v0.16.0 (a demonstration that is also the end-to-end test)
 

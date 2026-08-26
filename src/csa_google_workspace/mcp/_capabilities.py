@@ -76,6 +76,9 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.
     "report_a_problem": None,
+    # Returns a plan; carrying it out is the model calling the tools it names,
+    # each of which is gated on its own.
+    "demonstration_plan": None,
     "read_server_resource": None,
     "authenticate": None,
 }
