@@ -16,7 +16,9 @@ because "we posted your words publicly" is not something to discover afterwards.
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 - `gh`, resolved to an absolute path, with a list argv and
+
+# no shell. See _gh() for why this is the narrowest way to file an issue.
 import urllib.parse
 
 from .._environment import ISSUES_URL, describe_environment
@@ -72,12 +74,26 @@ def new_issue_url(the_title: str, body: str) -> str:
     return f"{ISSUES_URL}/new?{query}"
 
 
+def _gh() -> str | None:
+    """The absolute path to `gh`, or None.
+
+    Resolved rather than invoked by name: a bare "gh" is looked up on PATH at exec time, so a
+    directory earlier on PATH decides what runs. This costs nothing and removes that question.
+
+    The server itself never shells out - this is the demonstration, filing an issue the person
+    has just read and agreed to, using the credential they already have.
+    """
+    return shutil.which("gh")
+
+
 def can_file_directly() -> bool:
     """Is `gh` present AND authenticated? Both, because an unauthenticated `gh` fails at the
     end of a flow the person has already agreed to, which is the worst place to find out."""
-    if not shutil.which("gh"):
+    executable = _gh()
+    if not executable:
         return False
-    result = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
+    result = subprocess.run([executable, "auth", "status"],   # nosec B603 - absolute path,
+                            capture_output=True, text=True)   # list argv, no shell
     return result.returncode == 0
 
 
@@ -87,8 +103,13 @@ def file_issue(the_title: str, body: str, repo: str) -> tuple[bool, str]:
     The label is applied here rather than asked for: every issue this produces is the same
     kind of thing, and a label somebody has to remember is a label that goes missing.
     """
-    result = subprocess.run(
-        ["gh", "issue", "create", "--repo", repo, "--title", the_title, "--body", body,
+    executable = _gh()
+    if not executable:
+        return False, "gh is not installed"
+    # A list argv with no shell, so the title and body - which contain the person's own words -
+    # are arguments and cannot become commands however they are punctuated.
+    result = subprocess.run(                                  # nosec B603
+        [executable, "issue", "create", "--repo", repo, "--title", the_title, "--body", body,
          "--label", LABEL],
         capture_output=True, text=True)
     if result.returncode == 0:
@@ -96,8 +117,9 @@ def file_issue(the_title: str, body: str, repo: str) -> tuple[bool, str]:
     # A missing label is the common failure on a fresh repo, and it should not lose the
     # feedback: retry once without it rather than making the person paste it by hand.
     if "label" in (result.stderr or "").lower():
-        retry = subprocess.run(
-            ["gh", "issue", "create", "--repo", repo, "--title", the_title, "--body", body],
+        retry = subprocess.run(                               # nosec B603 - as above
+            [executable, "issue", "create", "--repo", repo, "--title", the_title,
+             "--body", body],
             capture_output=True, text=True)
         if retry.returncode == 0:
             return True, retry.stdout.strip() + f"  (the '{LABEL}' label does not exist yet)"
