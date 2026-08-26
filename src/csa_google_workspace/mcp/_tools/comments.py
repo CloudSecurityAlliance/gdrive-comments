@@ -11,7 +11,7 @@ from mcp.server import MCPServer
 
 from ... import exceptions as exc
 from ...documents.sheet import Sheet
-from .._schemas import CommentOut, CommentsOut, comment_out
+from .._schemas import CellCommentsOut, CommentOut, CommentsOut, comment_out
 from ._base import DESTRUCTIVE, READ, WRITE, WorkspaceProviderT, _errors, _require
 
 
@@ -68,8 +68,14 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT) ->
 
     @app.tool(annotations=READ)
     @_errors
-    def comments_by_cell(fileId: str, cell: str) -> CommentsOut:
+    def comments_by_cell(fileId: str, cell: str) -> CellCommentsOut:
         """Which comments are about a given Sheets cell (e.g. "B11"). Spreadsheets only.
+
+        ON A MULTI-TAB WORKBOOK THE ANSWER IS AMBIGUOUS, and the result says so:
+        `tab_ambiguous` is true and `tabs` lists them. A cell reference alone does not name a
+        tab, and the export this reads carries no record of which sheet each comment came
+        from - so a comment at B11 on the third tab is indistinguishable from one at B11 on
+        the first. Report the ambiguity when it is flagged; do not pick a tab.
 
         Best-effort, and worth knowing why: the Drive API reports a spreadsheet comment's
         anchor as an OPAQUE range id that cannot be decoded to A1 notation. Recovering the
@@ -85,7 +91,21 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT) ->
         searched."""
         doc = get_workspace().open(fileId)
         found = _require(doc, "comments_by_cell", "cell-mapped comments")(cell)
-        return {"comments": [comment_out(c) for c in found]}
+        # One extra call, on a tool that already exports the whole file as XLSX, to turn a
+        # silent wrongness into a stated uncertainty.
+        tabs = list(getattr(doc, "tabs", []) or [])
+        ambiguous = len(tabs) > 1
+        if ambiguous:
+            detail = (f"{len(found)} comment(s) anchored at {cell}, but this workbook has "
+                      f"{len(tabs)} tabs ({', '.join(tabs)}) and the export gives no way to "
+                      f"tell WHICH tab each comment is on. A result may be about a different "
+                      f"tab than the one intended - say so rather than naming a tab.")
+        else:
+            detail = (f"{len(found)} comment(s) anchored at {cell}. "
+                      + (f"One tab ({tabs[0]}), so the cell is unambiguous."
+                         if tabs else "Tab list unavailable."))
+        return {"comments": [comment_out(c) for c in found], "tab_ambiguous": ambiguous,
+                "tabs": tabs, "detail": detail}
 
     @app.tool(annotations=WRITE)
     @_errors

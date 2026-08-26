@@ -6,9 +6,102 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.22.0 (Claude Desktop works; a multi-tab answer says it is uncertain)
+
+The last two Gate D items, both of which had been *documented* rather than fixed.
+
+### `csa-google-workspace-mcp configure` — Claude Desktop on macOS (D2)
+
+The failure was never a bug, which is exactly why it stayed open. Claude Desktop is a **GUI
+app**, so on macOS it inherits launchd's `PATH` — `/usr/bin:/bin:/usr/sbin:/sbin`. That has
+neither `~/.local/bin`, where `pipx` puts the console script, nor Homebrew; and the `python3` it
+*does* have is macOS's system 3.9, below this package's 3.10 floor. So a bare command name is not
+found and `python3` is the wrong interpreter. Claude Code works because it runs in your shell,
+which is what makes this read as *"Desktop is broken"* rather than *"GUI apps have a different
+environment"*.
+
+The README had documented the fix — put the absolute path in `claude_desktop_config.json` — for
+months. **That was a workaround with a hand-edit in it.** It asked the user to know their own home
+directory, produce valid JSON, and not clobber the other MCP servers already in a shared file.
+Half the intended clients are Desktop.
+
+The tool knows its own absolute path, which is the one thing the user was being asked to supply,
+so it writes the config itself:
+
+    csa-google-workspace-mcp configure          # write it
+    csa-google-workspace-mcp configure --print  # show the JSON, write nothing
+
+- **Merges, never replaces.** Other servers and unrelated top-level keys are preserved. Tested
+  against a real config with `preferences` and trusted-folder lists in it.
+- **Keeps a timestamped backup** of what it replaced — timestamped rather than a single `.bak`,
+  so a second run cannot destroy the copy the user actually hand-wrote.
+- **Refuses a file that does not parse**, rather than overwriting it. A config with a trailing
+  comma is most likely one somebody is part-way through editing, and being wrong about that costs
+  them every other server they had configured.
+- **Carries the `CSA_GW_*` variables into the `env` block**, because Desktop has no shell and
+  that is the only place it reads them. **Only** those variables: it is reading an ambient
+  environment that also holds cloud keys and tokens, into a file people screenshot when asking
+  for help. And never `CSA_GW_CLIENT_SECRETS` — `login` needs it, the running server does not,
+  because a cached token carries its own client id and secret.
+- **Says what it did**, including the case where nothing was carried: with no `CSA_GW_*` set,
+  both allowlists fail closed and nothing is reachable, which is better said than discovered.
+
+The command it writes is resolved in three steps, ordered by how self-contained the answer is:
+the console script beside the running interpreter (a `pipx` install ends here — the shebang pins
+the right Python, so the config needs no interpreter and no `PATH`), then the script on the
+current `PATH` resolved to absolute, then `sys.executable -m csa_google_workspace.mcp`. The last
+is why this release also adds `mcp/__main__.py`: it is always available and always right about
+the interpreter, which makes it a real fallback rather than a guess.
+
+### `comments_by_cell` now says when the answer is ambiguous (D3)
+
+`Location.tab` has always been `None` — nothing populates it. That is the same always-empty-field
+defect as v0.21.0's `update_file` `parents`, with a worse consequence, because here **the answer
+can be wrong rather than merely absent.**
+
+`_cellmap.parse_xlsx_comments` walks every `xl/threadedComments/*.xml` member in the export — one
+per sheet — and collects them **flat, with no record of which sheet each came from.** So on a
+three-tab workbook, a comment anchored at B11 on the third tab is indistinguishable from one at
+B11 on the first, and `comments_by_cell("B11")` returned both as though the question had a single
+answer.
+
+The gate offered two resolutions and preferred the second in its own wording: *a silently-wrong
+cell is worse than an absent one.* So the tool now returns `tab_ambiguous`, the `tabs` list, and
+a `detail` that says what the ambiguity **is** — not that the answer "may be inaccurate" — and
+the tool description tells a model to report the ambiguity rather than pick a tab.
+
+Reported **only when there is more than one tab.** On a single-tab workbook the answer is exact,
+and warning anyway would be the check-that-fires-on-correct-behaviour mistake — whose fix is
+never to mute it later.
+
+`Location.tab` keeps its place on the model, now documented as *always `None` today*, meaning
+**"not resolved", never "no tab"** — so resolving it later (`xl/workbook.xml` plus its rels,
+correlating member → sheet name) is not a breaking change. That resolution is no longer a 1.0.0
+gate, because the uncertainty is now stated where somebody can act on it.
+
+### Logging is now a 1.0.0 gate (C4)
+
+Added at the CINO's direction, and it belongs in Gate C rather than Gate D for the reason Gate C
+exists: **its absence would force a breaking change later.** Three parts of
+[#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145) are
+contract-shaped rather than behavioural — the level and posture names are a config surface like
+C2's flavour switch; a dedicated `csa_google_workspace.audit` logger is a name embedders will
+filter on; and `API-STABILITY.md` already says structured field names *would* join the contract
+if introduced, so deciding them after 1.0.0 means a major bump or a retroactive promise.
+
+Scope for 1.0.0 is deliberately that contract-shaped part. The error store and the audit loop can
+land in 1.x — they add behaviour without changing what is promised.
+
+### Also
+
+`TODO.md`'s phase-2 "deferred from v1" block is reconciled: of its seven items, five had shipped
+and were still unticked — content writes, suggestions, the Desktop shim, the PowerShell
+verification, and allowlisting. It is now a record of the *ordering*, which was the point:
+nothing able to damage an existing file was exposed until the control that scopes it existed.
 
 ## 2026-08-26 — v0.21.0 (profiles regrouped on one question: can this be undone?)
 

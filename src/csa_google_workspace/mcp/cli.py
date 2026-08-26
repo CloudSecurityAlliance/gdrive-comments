@@ -22,6 +22,8 @@ USAGE = """usage: csa-google-workspace-mcp [login [--force]]
   login --force   authorize again even if a cached token looks usable
   demo            create real files and walk every operation, narrated
   demo --auto     the same, unattended - it is also the end-to-end test
+  configure       write a working Claude Desktop config (absolute path + policy)
+  configure --print   show the JSON without writing anything
   --version       print the installed version and exit
 
 Clients that support MCP URL elicitation (Claude Code) can authorize in-session via
@@ -80,6 +82,49 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         # "which version is actually on this machine?" without an MCP client in the loop.
         from .. import __version__
         print(__version__, file=sys.stderr)
+        return 0
+    if argv and argv[0] in ("configure", "configure-desktop"):
+        # D2. Claude Desktop is a GUI app, so on macOS it inherits launchd's PATH -
+        # /usr/bin:/bin:/usr/sbin:/sbin - which has neither ~/.local/bin nor Homebrew, and
+        # whose `python3` is macOS's 3.9, below our floor. The README documented the fix (an
+        # absolute path) for months, which asked the user to know their own home directory and
+        # hand-edit shared JSON. This writes it instead.
+        from ._desktop import config_path, configure, launch_command
+        rest = argv[1:]
+        show_only = bool(rest) and rest[0] in ("--print", "--dry-run", "-n")
+        if rest and not show_only:
+            print(f"unknown argument: {rest[0]}\n\n{USAGE}", file=sys.stderr)
+            return 2
+        command, how = launch_command()
+        try:
+            result = configure(env=env, dry_run=show_only)
+        except ValueError as e:
+            print(f"csa-google-workspace: {e}", file=sys.stderr)
+            return 1
+        out = sys.stderr                     # stderr for the same reason as USAGE
+        print(f"command: {' '.join(command)}\n  ({how})", file=out)
+        if show_only:
+            print(f"\nwould write to {config_path(env)}:\n{result.rendered}", file=out)
+            return 0
+        if result.created:
+            print(f"created {result.path}", file=out)
+        elif result.changed:
+            print(f"updated {result.path}", file=out)
+            if result.backup:
+                print(f"previous version kept at {result.backup}", file=out)
+        else:
+            print(f"{result.path} was already correct", file=out)
+        from ._desktop import carried_env
+        carried = carried_env(env)
+        if carried:
+            print(f"carried {len(carried)} CSA_GW_* variable(s) into the env block "
+                  f"({', '.join(carried)}) - Claude Desktop has no shell, so this is the "
+                  f"only place it reads them", file=out)
+        else:
+            print("no CSA_GW_* variables set here, so none were carried - Desktop will use "
+                  "the defaults, and BOTH allowlists fail closed, so nothing is reachable "
+                  "until you set CSA_GW_ALLOWLIST_READ", file=out)
+        print("restart Claude Desktop for this to take effect", file=out)
         return 0
     if argv and argv[0] == "demo":
         # A guided demonstration that is also this project's end-to-end test - see
