@@ -118,3 +118,95 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
 
 def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None and hasattr(value, "isoformat") else None
+
+
+# ── Destinations ────────────────────────────────────────────────────────────────────────
+#
+# "Here are some rows" saves nobody an hour. The two things a person actually wants are a CSV
+# they can open and a Sheet they can share, so both are first-class rather than left to the
+# caller to assemble.
+
+CSV_SUFFIX = ".csv"
+
+
+def flatten(value: Any) -> str:
+    """One CSV cell's worth of text.
+
+    `cell_text_by_tab` is a dict, and a CSV cell reading `{'Summary': '42'}` is not something a
+    person can read - so it renders as `Summary=42 | Detail=Q3 revenue`, which is legible in a
+    spreadsheet column and still says which tab held what.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, dict):
+        return " | ".join(f"{k}={v}" for k, v in value.items())
+    return str(value)
+
+
+def to_csv(columns: list[str], rows: list[dict]) -> str:
+    """RFC 4180 via the stdlib, so quoting and embedded newlines are somebody else's problem.
+
+    `\r\n` because that is what `csv` writes by default and what Excel expects; Sheets and
+    every other reader cope with it.
+    """
+    import csv as _csv
+    import io
+    buf = io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(columns)
+    for row in rows:
+        writer.writerow([flatten(row.get(c)) for c in columns])
+    return buf.getvalue()
+
+
+def to_grid(columns: list[str], rows: list[dict]) -> list[list[str]]:
+    """Header row plus data, for a Sheets `values.update`."""
+    return [list(columns)] + [[flatten(row.get(c)) for c in columns] for row in rows]
+
+
+def safe_export_path(export_dir: str | None, filename: str | None, *, overwrite: bool):
+    """Resolve `filename` inside `export_dir`, or raise `ValueError` saying why not.
+
+    This is the only place in the project that writes to the local filesystem, and document
+    content is untrusted input, so the constraints are deliberately blunt:
+
+      * no `export_dir` configured -> refused. The operator opts in; a conversation cannot.
+      * `filename` is a NAME, not a path. Any separator, any `..`, any `~`, anything absolute
+        is refused outright - so the directory cannot be influenced from inside a session.
+      * the extension is forced to `.csv`, so even a successful attempt at influencing the name
+        writes a CSV rather than a shell profile or a script.
+      * no silent overwrite.
+      * containment is re-checked AFTER resolution, so a symlink in the export directory
+        cannot escape it.
+    """
+    from pathlib import Path
+    if not export_dir:
+        raise ValueError(
+            "writing a local file is off: set CSA_GW_EXPORT_DIR to a directory to enable it. "
+            "Until then, use destination=\"csv\" to get the text back, or "
+            "destination=\"sheet\" to write a Google Sheet.")
+    base = Path(export_dir).expanduser()
+    if not base.is_dir():
+        raise ValueError(f"CSA_GW_EXPORT_DIR is {export_dir!r}, which does not exist or is not "
+                         f"a directory. It is not created automatically, because a typo should "
+                         f"not quietly start writing somewhere unexpected.")
+    name = (filename or "comments").strip()
+    if not name or name in (".", ".."):
+        raise ValueError("filename must be a name, not empty")
+    if any(sep in name for sep in ("/", "\\")) or name.startswith("~") or ".." in name:
+        raise ValueError(
+            f"filename must be ONLY A NAME with no separator, no '..' and no '~' - got "
+            f"{name!r}. The directory is CSA_GW_EXPORT_DIR and is the operator's decision, "
+            f"not something a request can redirect.")
+    if not name.lower().endswith(CSV_SUFFIX):
+        name += CSV_SUFFIX
+    base = base.resolve()
+    target = (base / name).resolve()
+    if target.parent != base:
+        raise ValueError(f"{name!r} resolves outside CSA_GW_EXPORT_DIR; refusing")
+    if target.exists() and not overwrite:
+        raise ValueError(f"{target} already exists. Pass overwrite=true to replace it, or "
+                         f"choose another name.")
+    return target

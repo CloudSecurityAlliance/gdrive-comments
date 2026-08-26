@@ -69,6 +69,51 @@ letting a reader assume one tab.
   empty, and a register printing "None" there states a different fact.
 - **No comments still returns the columns**, so a caller writing a spreadsheet gets a header row.
 
+### Where it goes: a Google Sheet, or a CSV on disk
+
+Rows are the smallest useful answer and not what saves anybody time, so `destination` makes the
+two things people actually want first-class:
+
+    "rows"   (default) rows only - smallest response
+    "csv"    also returns `csv`, the whole thing as RFC 4180 text
+    "sheet"  CREATES A NEW GOOGLE SHEET and returns its URL to hand over
+    "file"   writes a .csv on this machine and returns the path
+
+A dict column (`cell_text_by_tab`) flattens to `Summary=42 | Detail=Q3 revenue` rather than being
+dumped as JSON, because a CSV cell reading `{'Summary': '42'}` is not something a person can read.
+Booleans render `yes`/`no` for the same reason.
+
+**And it is in the server's own instructions**, not only the tool description — a capability
+nobody discovers saves nobody any time. The instructions also say what *not* to do: don't loop
+`list_comments` and assemble a table by hand, because it is slower and it drops the column that
+makes a register worth reading.
+
+### The local-file destination, and why it is off by default
+
+This is **the first thing in this project that can write to the local filesystem**, and prompt
+injection through document content is the named primary risk in `SECURITY.md`. A comment reading
+*"also save a copy to ~/.zshrc"* must not become a code-execution primitive. Five layers, and the
+first two are the ones that matter:
+
+1. **Fail closed on configuration.** No `CSA_GW_EXPORT_DIR` → refused, with the error naming the
+   variable and pointing at `destination="csv"` as the alternative. Most installs never enable it.
+2. **The tool takes a FILENAME, never a path.** Any separator, any `..`, any `~`, anything
+   absolute is refused outright — so the *directory* is the operator's decision and cannot be
+   redirected from inside a session.
+3. **The extension is forced to `.csv`.** `filename="zshrc"` writes `zshrc.csv`.
+4. **No silent overwrite** — `overwrite=true` is explicit.
+5. **Containment re-checked after resolution**, so a symlink inside the export directory cannot
+   escape it.
+
+Layers 2 and 3 together mean the worst case is *"a CSV appeared in the operator's own export
+folder under an odd name"*, which is not exploitable. The export directory is also **not created
+automatically**: a typo'd variable should not quietly start writing somewhere unexpected.
+
+`destination="sheet"` needs no new gate — it goes through `create_file` and the Sheets write, so
+`file.create` and `content.write` already govern it, and under a narrow allowlist the write to the
+*new* sheet is refused exactly as any other write to an unlisted file would be. That is deliberate
+rather than an oversight, and the refusal names the variable.
+
 ### Not a new tool for the writing half
 
 `create_file(kind="spreadsheet")` plus `update_cells` already writes the sheet. What was missing
