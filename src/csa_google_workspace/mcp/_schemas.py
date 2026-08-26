@@ -249,3 +249,23 @@ class TrashOut(TypedDict):
     name: str | None
     trashed: bool             # false after untrash, so one shape serves both directions
 
+
+class DemonstrationStepOut(TypedDict):
+    step: int
+    tool: str
+    do: str                    # what happens, in a sentence
+    why: str | None            # worth saying out loud while doing it
+    available: bool            # false when the current policy will refuse it
+    applies_to: str            # document | spreadsheet | presentation | account | cleanup
+
+
+class DemonstrationOut(TypedDict):
+    """A plan to carry out, not a result. See `_tools/demo.py` for why it does not just run."""
+    steps: list[DemonstrationStepOut]
+    unavailable: list[str]     # what this policy refuses, said once per reason
+    cleanup_possible: bool     # false -> the user deletes the files by hand; say so FIRST
+    creates_real_files: bool
+    unattended_command: str
+    narrated_command: str
+    advice: str
+

@@ -257,7 +257,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 30, each with structured output and read-only/destructive annotations
+**Tools** — 31, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
@@ -268,7 +268,7 @@ reviews the configuration and may name people or unannounced work.
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
 | **File lifecycle** ⚠️ | `update_file` · `trash_file` · `share_file` — each OFF unless an operator names its capability |
-| **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` |
+| **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
 connector, so habits transfer; `fileId` also accepts a share URL, which neither of theirs does.
