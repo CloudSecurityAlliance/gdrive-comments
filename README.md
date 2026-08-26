@@ -98,7 +98,9 @@ misconfigured. And its only writes *create new files*, so there is nothing to sc
 knobs because it does not need them.
 
 The claude.ai connector is the one that differs in substance: full `drive` access, plus
-`update_file`, `trash_file` and `share_file`, with no way to narrow any of it.
+`update_file`, `trash_file` and `share_file`, with no way to narrow any of it. This server has
+those three as well — the difference is that each is off until an operator names it, and refuses
+for any file the modify allowlist does not list.
 
 This library needs full `drive` scope by design — it opens arbitrary files the user names, which
 `drive.file` cannot reach (`SECURITY.md`, *Scope breadth*). Having given up Google's upstream
@@ -362,16 +364,23 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | 13 (+ `authenticate`) |
-| **Of their tools, we have** | **6 of 8** | **6 of 11** | — |
-| Tools they do not have | — | — | **7** — every one a comment tool |
+| MCP tools | 8 | 11 | **31** |
+| **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
+| Tools they do not have | — | — | **20** |
 
-**Not parity yet; what remains is file lifecycle.** The five of theirs we still lack:
-`create_file`, `copy_file`, `update_file`, `share_file`, `trash_file`. The first two would
-complete Google's 8. Google deliberately omits the last three — the mutating, exfiltration and
-destructive ones — and here they are gated on
-[#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82) file allowlisting,
-itself a 1.0.0 gate.
+**Every tool either of them ships is here**, under the same name and the same argument shapes.
+The twenty they do not have: nine comment tools, five content-write tools, `list_slides`, four
+in which the server accounts for itself (`describe_configuration`, `read_server_resource`,
+`authenticate`, `report_a_problem`), and `demonstration_plan`.
+
+**Counting tools is the wrong way to compare these three**, though, and that row is here mainly
+to retire the question. The three that actually distinguish them are the ones Google
+deliberately declines to offer — `update_file`, `share_file`, `trash_file`: the mutating, the
+exfiltrating, the destructive. They exist here, and **each is off until an operator turns it on
+by name**, with the file also listed for modify
+([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)). *Having* a
+tool and *being permitted to call it* are separate facts in this server, and that is the
+difference a tool count cannot show.
 
 **Discovery landed 2026-08-25**, which was the gap that actually cost users something: a session
 no longer has to begin with a pasted URL.
@@ -390,8 +399,9 @@ Where all three do the same thing they should use the same tool name and argumen
 prompts and habits transfer. Verified against live schemas: Google's and Claude's shared tools
 are identical in name *and* parameters; Claude's descriptions add model-facing guidance.
 
-The last column is our current tool name — **where it differs from the shared name, that is
-work still to do**, tracked in [`TODO.md`](./TODO.md).
+Every shared tool now uses the shared name and the shared parameters, so a prompt written
+against Google's server or the claude.ai connector works here unchanged — with `fileId` also
+accepting a share URL, which neither of theirs does.
 
 | Tool | What it does | Google | Claude | Ours |
 |---|---|---|---|---|
@@ -401,18 +411,18 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 | `get_file_permissions` | Who it is shared with, and at what role | ✅ | ✅ | ✅ ¹ |
 | `read_file_content` | A file's text, optionally with comments inlined | ✅ | ✅ | ⚠️ ² |
 | `download_file_content` | Raw bytes as base64, converted on the way out | ✅ | ✅ | ✅ |
-| `create_file` | Create or upload a **new** file | ✅ | ✅ | ✗ *planned* |
-| `copy_file` | Duplicate a file | ✅ | ✅ | ✗ *planned* |
-| `update_file` | Rename and move. **Metadata only** | ✗ | ✅ | ✗ *planned* |
-| `share_file` | Grant an address `reader`/`commenter`/`writer` | ✗ | ✅ | ✗ *planned* |
-| `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✗ *planned* |
+| `create_file` | Create or upload a **new** file | ✅ | ✅ | ✅ ⁷ |
+| `copy_file` | Duplicate a file | ✅ | ✅ | ✅ |
+| `update_file` | Rename and move. **Metadata only** | ✗ | ✅ | ✅ ⁸ |
+| `share_file` | Grant an address `reader`/`commenter`/`writer` | ✗ | ✅ | ✅ ⁸ |
+| `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✅ ⁸ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
 | `resolve_comment`, `reopen_comment` | Close or reopen a thread | ✗ | ✗ | ✅ |
 | `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
 | `read_file_content(includeComments)` | Fold threads into the text where they were left | ✗ | ✅ | ✅ |
-| — | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ⚠️ ³ |
+| `replace_text` · `append_text` · `update_cells` · `append_rows` · `insert_slide_text` | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ✅ |
 | — | Preview a Doc as if suggestions were accepted/rejected | ✗ | ✗ | ⚠️ ³ |
 | `describe_configuration` + resources | The server explaining its own limits | ✗ | ✗ | ✅ |
 | `report_a_problem` | A bug report that assembles itself, safe to publish | ✗ | ✗ | ✅ |
@@ -423,11 +433,19 @@ work still to do**, tracked in [`TODO.md`](./TODO.md).
 
 ¹ Plus `public` / `writers` roll-ups.
 ² Google-native types only — Docs, Sheets, Slides — not their 13 mime types. See below.
-³ In the Python library today; not yet an MCP tool.
+³ The Python library only. Docs suggestions are the last thing here with no MCP tool —
+tracked as gate **B2** in [`TODO.md`](./TODO.md), and the only functional gap left before 1.0.0.
 ⁴ Not configurable, but bounded by the **`drive.file`** scope, so Google enforces the
 equivalent upstream — where it cannot be misconfigured.
 ⁵ Not configurable, but its only writes create *new* files, so there is nothing to scope.
 ⁶ Not configurable, but enforced instead by the tools it does not ship.
+⁷ Creates Google-native files — Doc, Sheet, deck or folder — with an optional **Markdown** body
+that Drive converts into real headings, lists and tables. Not arbitrary media upload: Google's
+`drive.files.create` takes bytes, and this does not.
+⁸ Present, and **off in every profile but `full`**. Each needs its own capability named
+(`file.update`, `file.share`, `file.trash`) *and* the file listed for modify. The default
+`editor` profile therefore cannot rename, share or trash anything — including files it created
+itself, which is a real consequence rather than an oversight.
 
 ### The same table, by underlying API
 
@@ -492,12 +510,13 @@ loop closes:
 ```
 Google Doc --export markdown--> document-pipeline --> branded, accessible PDF/UA-1
      ^                                                              |
-     +------- import markdown (planned: create_file) <-- revised ---+
+     +------- import markdown (create_file content=) <-- revised ---+
 ```
 
 Draft and review where the comments are, typeset where the brand rules are, put the result back
-where it can be reviewed again. The export half ships today; the import half arrives with
-`create_file`.
+where it can be reviewed again. **Both halves ship today**: out through
+`download_file_content(exportMimeType="markdown")`, back in through `create_file(content=…)`,
+which hands Drive Markdown and gets a Doc with real structure rather than one long text run.
 
 **Formats differ by file type**, and the table is probed rather than assumed
 ([`experiments/export-formats/RESULTS.md`](./experiments/export-formats/RESULTS.md)):

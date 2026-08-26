@@ -6,9 +6,74 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1. `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2. `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.19.2 (the comparison table said "planned" about five shipped tools)
+
+No code change. A documentation correction, and the check that would have caught it.
+
+**What was wrong.** README's tool-by-tool comparison marked `create_file`, `copy_file`,
+`update_file`, `share_file` and `trash_file` as `✗ planned`. The first two shipped in v0.13.0
+and the last three in v0.15.0 — six releases and eleven days earlier. The counting table above
+it said **13 tools** where the server registers **31**, and claimed *"6 of Google's 8, 6 of
+Claude's 11"* where the real numbers are **8 of 8 and 11 of 11**. It also still said *"not
+parity yet; what remains is file lifecycle"*, and that the Markdown round-trip's import half
+*"arrives with `create_file`"* — which it did, in v0.13.0, as `create_file(content=…)`.
+
+Every one of those errors ran in the same direction: the project describing itself as less
+capable than it is, in the one document most readers will ever look at.
+
+**Why the existing test did not catch it.** `tests/test_readme_tools.py` deliberately bounds
+itself to the manifest table — *"only the table that claims to be the list is the list"* — which
+was the right call for that test and left 200 lines of comparison prose unguarded. Widening its
+window would not work either: the comparison table legitimately contains rows that are not tools.
+
+So a second check, with a different rule and both directions covered:
+
+- a **registered** tool may never be marked planned (undersell — what happened)
+- an **unregistered** tool may never be marked shipped (oversell — the worse failure)
+- the three stated counts must be arithmetic that holds, computed against the registry and
+  against Google's 8 and Claude's 11 written out as literals
+
+That last one is what makes the parity *claim* checkable rather than decorative: renaming one of
+our tools away from the shared name would now fail a test, because transferable prompts are the
+whole point of using their names.
+
+Each of the three was verified to fail on the mutation it exists to catch, and to pass when the
+mutation was reverted. A check that has never failed is not yet a check.
+
+**What the corrected table now says**, and it is a more interesting claim than "parity":
+
+    MCP tools                  Google 8    Claude 11    ours 31
+    Of their tools, we have    8 of 8      11 of 11
+    Tools they do not have                              20
+
+Twenty: nine comment tools, five content-write tools, `list_slides`, four in which the server
+accounts for itself, and `demonstration_plan`. But the count is the least of it. The three tools
+that actually distinguish these servers are the ones Google deliberately declines to offer —
+`update_file`, `share_file`, `trash_file` — and here **having** a tool and **being permitted to
+call it** are separate facts: each needs its capability named by an operator *and* the file
+listed for modify. A tool count cannot express that, so the table now says so in prose instead
+of implying breadth is the difference.
+
+**Also reconciled**, because they carried the same stale claim:
+
+- `TODO.md` — Gate A closed (A3 and A5 were still unticked), B1 closed, and six of the nine
+  roadmap subsystems struck through. The obsolete "flip the allowlist default at 1.0.0" bullet
+  is struck rather than deleted, because it named `CSA_GW_ALLOWLIST=any`, a variable that no
+  longer exists; anyone who read the old text needs to find out what replaced it.
+- `CLAUDE.md` — "nine tools" (it shipped with nine; it has 31), and the test-count line, which
+  said *"318 passed, 10 skipped … 7 integration + 3 oauth"* against an actual 12 skips from 9
+  integration tests. That number is load-bearing: the file tells the next agent that a skip
+  count of **0** means a gate leaked and the live suite ran against somebody's real Drive, and
+  advice like that has to have the right number in it.
+
+Two policy questions surfaced by the file-lifecycle work are now written down in `TODO.md`
+rather than living in a session: `editor` has `file.create` without `file.trash`, so it cannot
+clear up after itself; and whether `comment.delete` belongs in `editor` or `full` has never been
+argued.
 
 ## 2026-08-26 — v0.19.1 (the allowlist accepts four hostnames, and only four)
 
