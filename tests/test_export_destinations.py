@@ -63,10 +63,13 @@ def call(app, **args):
 
 class TestCsvText:
     def test_it_returns_parseable_csv(self):
+        """Counted against `row_count`, not against `rows` - which is now empty for every
+        destination but "rows", because a response that carries the payload it just wrote
+        blew the limit on a 205-comment document. See tests/test_export_payload_and_xlsx.py."""
         out = call(build(), destination="csv")
         rows = list(csvmod.reader(io.StringIO(out["csv"])))
         assert rows[0] == out["columns"]
-        assert len(rows) == 1 + len(out["rows"])
+        assert len(rows) == 1 + out["row_count"]
 
     def test_the_header_row_is_the_columns(self):
         out = call(build(), destination="csv")

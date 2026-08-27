@@ -6,9 +6,76 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-27 — v0.27.0 (the export stops returning what it just wrote; and Excel)
+
+Both found by pointing v0.26.0 at a real document: a CSA paper in review with **205 comment
+threads from 42 reviewers, none resolved**. Exactly the document the feature exists for, and
+exactly where it broke.
+
+### A file destination returned the payload as well
+
+`export_comments(destination="file")` wrote the CSV correctly and then returned **every row** in
+the response: 171,707 characters, over the limit. So the call *failed after doing its work*, and
+the caller had to go and look at the filesystem to discover it had succeeded.
+
+The entire point of a file destination is that the payload does **not** come back through the
+response — and it failed on precisely the large documents worth exporting. A 20-comment doc
+would never have shown it.
+
+**`rows` is now populated only for `destination="rows"`.** Everything else returns `columns`,
+the counts, and a pointer — `csv`, `sheet_url` or `written_path`. Same export, same file:
+
+    response 171,707 chars  ->  667 chars
+    rows in body       221  ->  0
+    thread_count / row_count      205 / 221   (unchanged)
+
+The counts stay in every case on purpose: *"how many comments does this have?"* must not need a
+second call. `columns` stays because it is small and the caller needs it to read the file.
+
+### `destination="xlsx"`
+
+Asked for an Excel file, the honest answer was "CSV, a Google Sheet, or rows". Converting by
+hand then hit two things the tool should have handled, so now it does:
+
+- **Control characters.** openpyxl raises `IllegalCharacterError` on them, and one reviewer's
+  comment in that document contained some — pasted from a terminal or a mail client. They are
+  stripped. A register that refuses to be written because of how somebody pasted is no register.
+- **Columns that do not apply.** `cell`, `cell_text` and `cell_text_by_tab` are Sheets-only, and
+  three empty columns on a document register suggest the export failed to fill them rather than
+  that they are not applicable. Omitted when empty for every row — computed from the data, so it
+  stays right for a file type that has neither.
+
+It writes a register meant to be *worked through*: frozen header, autofilter, sized columns,
+wrapped text, and the tab named after the document.
+
+**No formulas, deliberately.** openpyxl writes them with no cached values, so anything reading
+cached values — a thumbnail previewer, pandas — sees blanks until Excel opens the file and
+recalculates. A faithful register needs none, so it has none and the problem cannot arise.
+Whoever wants a pivot can build one on top.
+
+`openpyxl` joins the `[mcp]` extra rather than staying opt-in: *"can you give me that as an
+Excel file?"* is the first thing asked of a comment export, and *"not unless you install
+something"* is not an answer. It is also its own `[xlsx]` extra for a library-only embedder, and
+the import lives inside the one function that needs it, so nothing else pays for it.
+
+### Choosing between them
+
+    "xlsx"   a person is going to read it        formatted, filterable, opens on a double-click
+    "file"   a tool is going to read it          plain CSV, no dependency
+    "sheet"  it needs to be shared               a real Google Sheet, with a link
+    "csv"    you will write the file yourself    the text, in the response
+    "rows"   you are going to summarise it       the only one that returns rows
+
+### The path rules are unchanged
+
+`resolve_export_path` now takes the suffix rather than hard-coding `.csv`, and every safety
+property is the same because the extension is still **forced** — only the value differs.
+`destination="xlsx"` with `path="zshrc"` writes `zshrc.xlsx`; nothing is ever overwritten;
+directories are never created.
 
 ## 2026-08-26 — v0.26.0 (`describe`, because a notice about permissions must be generated from them)
 

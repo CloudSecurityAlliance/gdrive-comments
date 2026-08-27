@@ -48,9 +48,14 @@ dependencies = [
 # The MCP server is an optional delivery layer; the core library never imports it.
 # Floor is 2.1: `mcp.server.fastmcp` was removed in 2.0 (FastMCP -> MCPServer) and 2.x
 # is where sync tool handlers run on a worker thread. Pinning lower would be fiction.
-mcp = ["mcp>=2.1", 'typing_extensions>=4.0; python_version < "3.12"']
+mcp = ["mcp>=2.1", 'typing_extensions>=4.0; python_version < "3.12"', "openpyxl>=3.1"]
+# `export_comments(destination="xlsx")` only. Included in `mcp` rather than left as an
+# opt-in, because "can you give me that as an Excel file?" is the first thing asked of a
+# comment export and an answer of "not unless you install something" is not an answer.
+# Still its own extra for a library-only embedder who wants the export without the server.
+xlsx = ["openpyxl>=3.1"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "mcp>=2.1",
-       'typing_extensions>=4.0; python_version < "3.12"']
+       'typing_extensions>=4.0; python_version < "3.12"', "openpyxl>=3.1"]
 
 [project.scripts]
 csa-google-workspace-mcp = "csa_google_workspace.mcp:main"
@@ -99,9 +104,11 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 check_untyped_defs = true
 
-# The google-api-python-client / google-auth stack ships no type stubs.
+# The google-api-python-client / google-auth stack ships no type stubs. Nor does openpyxl,
+# which is optional anyway - it is imported inside the one function that needs it.
 [[tool.mypy.overrides]]
-module = ["googleapiclient.*", "google.*", "google_auth_oauthlib.*", "defusedxml.*"]
+module = ["googleapiclient.*", "google.*", "google_auth_oauthlib.*", "defusedxml.*",
+          "openpyxl.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]
