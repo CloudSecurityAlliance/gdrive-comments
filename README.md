@@ -4,9 +4,50 @@ A **Python library** for managing **comments** and **content** on Google **Docs,
 
 It's designed to be **embedded**: a clean, typed Python surface for building AI tooling on top of Google Workspace — **MCP servers, agent/LLM plugins, review bots, and automation services** that need to read documents, triage and reply to comments, and write edits back. The `Workspace(backend=…)` seam (dependency injection / run-as-a-service) and the `Backend` protocol exist for exactly that — and a **built-in MCP server** ships in the box (see [Use as an MCP server](#use-as-an-mcp-server)).
 
-> **Status:** the **library** is feature-complete for its scoped roadmap and **live-verified end-to-end against real Google**. Shipped across Docs/Sheets/Slides: comment management, content read/write, Sheets comment→cell mapping, and Docs suggestions read. See [`CHANGELOG.md`](./CHANGELOG.md); design + phased plans under [`docs/superpowers/`](./docs/superpowers/).
->
-> **Built-in MCP server** (since 0.2.0) (`csa_google_workspace.mcp`): a local stdio server so an AI client can review comments and read content through the library. Install with the `[mcp]` extra; see below. Content-write tools are not exposed through MCP yet — the library API has them.
+## Status: beta — pre-1.0.0, and moving fast
+
+**This is pre-1.0.0 software under active daily development. Expect rough edges, and expect
+current releases to contain bugs.**
+
+The pace is real and it is deliberate: **32 releases since 22 July**, fourteen of them on a single
+day, one [yanked](./PROVENANCE.md#yanking). It is being used on real CSA documents and fixed as
+things surface, which is the fastest way to find what actually breaks — and it means the version
+you install today is newer and less weathered than most software you install.
+
+What to expect while it is pre-1.0.0:
+
+- **Known bugs, in the current release.** The
+  [open issues](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues) list is the
+  live and authoritative one; this file cannot be, because the README shipped to PyPI is frozen at
+  each release. **Read the tracker before relying on anything unusual.**
+- **Breaking changes before 1.0.0.** Nothing is frozen yet. What *will* be stable, and what
+  deliberately will not, is written down in [`API-STABILITY.md`](./API-STABILITY.md).
+- **Docs that can lag the code.** Two stale claims in this very file were found and corrected on
+  2026-08-27, one of them describing a capability that had shipped fifteen releases earlier. If the
+  code and the prose disagree, **the code is right** — and please report it.
+
+Practical advice, none of it hypothetical:
+
+- **Every destructive capability is off until an operator names it**, and the file allowlists
+  [fail closed](#capability-boundaries). That design is load-bearing here, not decoration.
+- **`apply_comment_actions` defaults to a dry run.** Read what it says it would do before passing
+  `apply`. This posts under your name to a document your colleagues are reading.
+- **Try the write path on a document you can afford to break first.** Then use it in anger.
+- **Report anything odd** — ask your AI client to *"report a problem with csa-google-workspace"* and
+  the server assembles the version, platform and effective policy for you, with no document content
+  in it.
+
+None of which is to undersell what works: the library is **feature-complete for its scoped
+roadmap** and **live-verified end-to-end against real Google**, behind **963 offline tests**, with
+`ruff` and `mypy` clean in CI across Python 3.10–3.14. Shipped across Docs/Sheets/Slides: comment
+management, content read/write, Sheets comment→cell mapping, and Docs suggestions read. See
+[`CHANGELOG.md`](./CHANGELOG.md); design and phased plans under
+[`docs/superpowers/`](./docs/superpowers/).
+
+**Built-in MCP server** (since 0.2.0) (`csa_google_workspace.mcp`): a local stdio server, **34
+tools**, so an AI client can read documents, triage and write comments, and edit content through
+the library. Content writes landed in 0.13.0 and Docs suggestions in 0.20.0, so the server now
+reaches everything the library does. Install with the `[mcp]` extra; see below.
 
 ## Install
 
