@@ -6,11 +6,11 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0, 0.28.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0, 0.28.0, 0.29.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
-## 2026-08-27 — v0.29.0 (a spreadsheet's FALSE is a boolean, and it meant the opposite) — not released yet; pending, not abandoned
+## 2026-08-27 — v0.29.0 (a spreadsheet's FALSE is a boolean, and it meant the opposite)
 
 Two defects in v0.28.0's `apply_comment_actions`, found in review, and they are two halves of
 one hazard — the same one this feature was built to design against.
