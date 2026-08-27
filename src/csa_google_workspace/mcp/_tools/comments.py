@@ -107,7 +107,14 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         return comment_out(get_workspace().open(fileId).comments.get(
             commentId, include_deleted=includeDeleted))
 
-    @app.tool(annotations=READ)
+    # WRITE, not READ. Three of that annotation's fields were false: destination="file" and
+    # "xlsx" write to a model-chosen absolute path, destination="sheet" creates a Drive file,
+    # and because resolve_export_path appends -TIMESTAMP rather than overwriting, a retry makes
+    # a SECOND file - so it is not idempotent either. The MCP spec maps readOnlyHint to "skip
+    # the confirmation dialog" for a trusted server, which a locally-installed one is, so the
+    # annotation drives the client's approval decision and was wrong in the permissive
+    # direction. (#184)
+    @app.tool(annotations=WRITE)
     @_errors
     def export_comments(fileId: str, destination: str = "rows",
                         path: str | None = None, sheetName: str | None = None,

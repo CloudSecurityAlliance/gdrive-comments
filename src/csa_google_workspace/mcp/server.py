@@ -58,7 +58,7 @@ IF ASKED FOR THE COMMENTS IN A SPREADSHEET, A CSV, A TABLE, OR "ALL THE COMMENTS
 review register, a comment log, or comments to analyse elsewhere - use `export_comments`. One
 call per file, and it goes where the user wants it:
   destination="sheet"  creates a Google Sheet and returns a link to hand over
-  destination="file"   writes a .csv on this machine (only if the operator enabled it)
+  destination="file"   writes a .csv on this machine, under CSA_GW_EXPORT_DIR if set
   destination="csv"    returns the text, if you would rather write the file yourself
 Do NOT loop `list_comments` and assemble a table by hand - it is slower, and it drops the column
 that makes a register worth reading: what each comment is ABOUT. That is the passage for a

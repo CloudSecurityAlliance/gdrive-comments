@@ -2,7 +2,7 @@
 audit_id: 2026-08-27-01
 remediation_started: 2026-08-27T19:20Z
 remediation_status: in-progress
-fixed_in_version: 0.30.0
+fixed_in_version: 0.30.0, 0.30.1
 ---
 
 # Remediation — audit 2026-08-27-01
@@ -109,3 +109,127 @@ Whether T15 warrants disclosure beyond a release note. The audit records the pre
 applying it: 0.24.0 was yanked for the CSV variant of the same class, which required a human to
 open a file and click through a warning, where this required neither. That decision is the
 maintainer's and is not taken in this file.
+
+---
+
+## T35 / #182 — the `.xlsx` export wrote untrusted content as a live formula
+
+**Status:** fixed · **Landed:** 0.30.1
+
+### Mechanism, chosen empirically as the issue asked
+
+The finding said to verify the mechanism against openpyxl 3.1.5 rather than trusting
+documentation, *"because the behaviour here is inference, not configuration."* Probed:
+
+| approach | result |
+|---|---|
+| plain assignment (today) | `data_type='f'` — a formula |
+| assign, then `cell.data_type = 's'` | `data_type='s'`, value intact |
+| `set_explicit_value(v, 's')` | **`AttributeError`** — does not exist in 3.1.5 |
+
+And verified one level deeper, at the XLSX XML, because *"openpyxl reads it back as a string"* is
+a different claim from *"Excel treats it as text"*:
+
+    before   <c r="A2"><f>IMPORTXML(...)</f><v /></c>
+    after    <c r="A2" t="inlineStr"><is><t>=IMPORTXML(...)</t></is></c>
+
+The first is a formula element, with the `=` stripped because XLSX formulas do not carry it. The
+second is an inline string with the `=` inside `<t>`.
+
+### Why not an apostrophe
+
+The CSV sibling prefixes `'`. Here that would be gratuitous: forcing the type already works and
+leaves the value **byte-identical**, and a register that mangles what a reviewer wrote is wrong
+about the record it exists to be. Asserted by a test.
+
+The escape sets stay **per-format**, and a test asserts `+ - @` are left alone in `.xlsx`: openpyxl
+infers from `=` alone, Excel reading a *CSV* also acts on the other three, a `RAW` Sheets write
+needs none. One shared helper would under-escape the CSV or mangle the other two.
+
+### The docstring read as an assurance
+
+`to_xlsx` said *"No formulas, deliberately"* — which was about the register having no computed
+columns of its own, and about cached values being blank for thumbnail previewers. It never
+contemplated untrusted content being *inferred* as a formula, and as written it read as a promise
+the path was formula-free. Rewritten to give both reasons and to point at the enforcement.
+
+---
+
+## T34 / #183 — attribution inside the untrusted-content fence was forgeable
+
+**Status:** fixed · **Landed:** 0.30.1
+
+Bodies were interpolated raw into a layout where a line is `    author: content`, so a newline
+plus `    Someone Trusted: approved` was byte-identical to a real reply from that person. The
+display name had the same hole, since the commenter controls it.
+
+`one_line()` now collapses every character `str.splitlines()` treats as a break — `\r` alone and
+the Unicode separators included — into a visible `⏎`. **Not dropped and not joined:** a model has
+to report on this text, so "first line" and "second line" must not become "first linesecond
+line". The quoted-text anchor description gets the same treatment, being document text.
+
+The author field additionally has `:` neutralised to `∶` and is capped at 80 characters. Both are
+structural rather than cosmetic: a colon in the author field fakes the delimiter, and an unbounded
+name pushes the content off the end of whatever renders the line — the same forgery by other
+routes.
+
+**The no-footer property is preserved and now asserted.** Everything after `HEADER` is untrusted
+to end-of-string, which is stronger than a paired delimiter an attacker can close early. The issue
+asked for this explicitly and a test now enforces it.
+
+### Where the achievable line is, having asserted the impossible twice
+
+Two versions of one test asserted something unattainable, and the corrections are worth recording
+because the distinction is the finding's real boundary:
+
+1. *"the forged name must not appear in the block"* — wrong. A comment may legitimately mention
+   any name; nothing can or should stop somebody writing "Kurt said X" in a comment.
+2. *"the author field must not contain the forged name"* — also wrong. If somebody's Google
+   display name genuinely is `Trusted Person: approved`, reporting it is **correct**. That is a
+   display-name problem at Google, not here.
+
+What is achievable, and is what the tests now assert: the line **cannot be split**, and the author
+field **cannot contain a `: ` delimiter**. Together those make the content unambiguously
+attributable to exactly one field, however that field reads.
+
+An earlier version of the same test also passed while the forgery worked — counting attributed
+lines missed it, because splitting the real author line leaves the first half unmatched and the
+total stays at one.
+
+---
+
+## T7 / #184 — `export_comments` was annotated read-only, and the server invented a control
+
+**Status:** fixed · **Landed:** 0.30.1
+
+`READ` is `read_only_hint=True, destructive_hint=False, idempotent_hint=True`. All three were
+false: the tool writes a file to a model-chosen absolute path, creates Drive files on
+`destination="sheet"`, and appends `-TIMESTAMP` rather than overwriting, so a retry makes a second
+file. Now `WRITE`.
+
+The annotation is not cosmetic — the MCP spec maps `readOnlyHint` to *"skip the confirmation
+dialog"* for a trusted server, which a locally-installed stdio server is.
+
+And `INSTRUCTIONS` claimed `destination="file"` works *"only if the operator enabled it"*. No such
+enablement exists. **An imaginary control is worse than an absent one**, because it stops both a
+model and an operator looking for the real gap. Replaced with where the file actually goes.
+
+Adding an `export.file` capability is explicitly **not** this fix — it is #195's territory, and
+the annotation was wrong independently of whether a gate ever exists.
+
+### Guarded structurally, because both were claims that drifted from behaviour
+
+`tests/test_annotations_and_claims.py`: nothing touching storage may be annotated read-only or
+idempotent, and every capability named in `INSTRUCTIONS` must exist. **Verified to fail against
+the pre-fix tree** — four of its seven assertions do — so they are guards and not decoration.
+
+Two counterweights in the same file, because a guard that can be satisfied by over-broadening is
+not a guard: a genuinely read-only tool must still be annotated read-only, and the
+storage-touching list must still name tools that exist, or a rename silently empties it.
+
+### A pattern worth naming across all three fixes in this batch
+
+**Two more existing tests asserted the vulnerable behaviour** — one required `export_comments` to
+be read-only, and 0.30.0's required `USER_ENTERED` as the default. Both were rewritten rather than
+deleted, keeping the legitimate half of each. Three of the four findings fixed so far had a test
+defending them, which is the concrete reason a green suite proved nothing here.
