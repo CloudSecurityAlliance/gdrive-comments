@@ -366,10 +366,19 @@ def used_columns(columns: list[str], rows: list[dict]) -> list[str]:
 def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None:
     """Write a formatted, immediately usable register.
 
-    **No formulas, deliberately.** openpyxl writes them with no cached values, so anything
-    reading cached values - a thumbnail previewer, pandas - sees blanks until Excel opens the
-    file and recalculates. A faithful register needs no formulas, so it has none and the
-    problem does not arise. Somebody wanting a pivot can build one on top.
+    **No formulas, and that is now enforced rather than merely intended.** Two separate
+    reasons, and the second was missing until #182:
+
+    *The register has no computed columns of its own.* openpyxl writes formulas with no cached
+    values, so anything reading cached values - a thumbnail previewer, pandas - sees blanks
+    until Excel opens the file and recalculates. A faithful register needs none, so it has
+    none. Somebody wanting a pivot can build one on top.
+
+    *And openpyxl INFERS cell type from value*, which the sentence above never contemplated: a
+    comment body beginning `=` was written as a live formula element without anybody asking for
+    one. Every data cell is therefore typed as text explicitly - see the comment on the write
+    loop. The value is preserved byte for byte; the CSV path's apostrophe remedy would mangle
+    the record to defend a reader that this format does not have.
     """
     try:
         from openpyxl import Workbook
@@ -389,6 +398,22 @@ def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None
     ws.append(keep)
     for row in rows:
         ws.append([_sheet_safe(row.get(c)) for c in keep])
+        # FORCE TEXT TYPING on every data cell. openpyxl INFERS type from value, so a comment
+        # body beginning `=` was written as `<f>...</f>` - a live formula element - and a
+        # spreadsheet opening the register evaluated it. Verified at the XLSX XML level rather
+        # than by openpyxl's own re-read, since "reads back as a string" is a different claim
+        # from "Excel treats it as text":
+        #
+        #   inferred          <c r="A2"><f>IMPORTXML(...)</f><v /></c>
+        #   data_type='s'     <c r="A2" t="inlineStr"><is><t>=IMPORTXML(...)</t></is></c>
+        #
+        # Not an apostrophe prefix, unlike the CSV path: forcing the type leaves the value
+        # byte-identical, and a register that mangles what somebody wrote is wrong about the
+        # record. `set_explicit_value` does not exist in openpyxl 3.1.5 - assignment followed
+        # by `data_type` is the mechanism that works there. (#182)
+        for cell in ws[ws.max_row]:
+            if isinstance(cell.value, str):
+                cell.data_type = "s"
 
     font = "Arial"
     fill = PatternFill("solid", fgColor=HEADER_FILL)

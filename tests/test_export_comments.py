@@ -197,7 +197,18 @@ class TestItIsUsableInBulk:
         assert out["thread_count"] == 1
         assert out["row_count"] == 2
 
-    def test_it_is_a_read_only_tool(self):
+    def test_it_is_NOT_a_read_only_tool(self):
+        """CHANGED in 0.30.1 (#184). This asserted `read_only_hint is True`, which was wrong in
+        the permissive direction: the tool writes a file to a model-chosen absolute path, or
+        creates a Drive file, and appends `-TIMESTAMP` rather than overwriting, so a retry makes
+        a SECOND file and it is not idempotent either.
+
+        The MCP spec maps `readOnlyHint` to *"skip the confirmation dialog"* for a trusted
+        server, which a locally-installed one is - so the annotation drives the client's
+        approval decision, and this one told the client not to ask.
+        """
         app = build(comments=DOC_COMMENTS)
         tool = next(t for t in asyncio.run(app.list_tools()) if t.name == "export_comments")
-        assert tool.annotations.read_only_hint is True
+        assert tool.annotations.read_only_hint is False
+        assert tool.annotations.idempotent_hint is False, (
+            "a retry writes a second file, so it is not idempotent")
