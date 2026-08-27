@@ -1,14 +1,43 @@
 # Issues to file · audit 2026-08-27-01
 
-Prepared before the audit branch merged, so the permalinks below resolve as soon
-as it lands on `main`. **File these after the merge, not before** — the links
-point at paths that do not exist yet.
+Prepared before the audit branch merged so the permalinks would resolve on
+landing. **Filed** — see the mapping below. Kept as the record of what was filed
+and why, so a later reader can check an issue against the analysis that produced
+it without reconstructing either.
 
 Each issue is one verifiable done-condition. Full per-finding detail lives in
 [`FINDINGS.md`](FINDINGS.md); the issue bodies carry enough to act on and point
 back rather than duplicating, so there is one copy of the analysis to keep
 correct.
 
+## Filed
+
+All filed 2026-08-27 against `main` at `0aca8a1`. Tracking issue: **#199**.
+The numbers below are this document's internal ids; the GitHub issue numbers are
+what to reference from a commit or a PR.
+
+| doc | issue | title |
+|---|---|---|
+| #1 | **[#181](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/181)** | T15 · `update_cells` defaults to `USER_ENTERED`, giving server-side formula evaluation |
+| #2 | **[#182](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/182)** | T35 · The `.xlsx` export path writes untrusted content as live formulas |
+| #3 | **[#183](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/183)** | T34 · Attribution inside the untrusted-content fence is forgeable |
+| #4 | **[#184](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/184)** | T7 · `export_comments` is annotated read-only and idempotent while writing to disk |
+| #5 | **[#185](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/185)** | T9 · `read_only=True` is satisfied by a cached read-write token |
+| #6 | **[#186](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/186)** | T3 · Split `release.yml` so the publish credential is not held while project code runs |
+| #7 | **[#187](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/187)** | T17 · Raise the `setuptools` floor (CVE-2026-59890) |
+| #8 | **[#188](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/188)** | T18 · Hash-pinned lockfile for CI and release |
+| #9 | **[#189](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/189)** | T19/T27 · Assert the externally-enforced controls instead of trusting prose |
+| #10 | **[#190](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/190)** | T13/T23 · `_apply.py` local register path: decompression bounds and write inertness |
+| #11 | **[#191](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/191)** | T28/T30 · OAuth loopback flow: request PKCE explicitly, filter on `state` |
+| #12 | **[#192](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/192)** | T26 · Desktop config written at default umask, backups never pruned |
+| #13 | **[#193](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/193)** | T22 · `.gitignore` misses `client_secret*.json` |
+| #14 | **[#194](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/194)** | T31 · Retry-After and 401 handling in `_errors.py` |
+| #15 | **[#195](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/195)** | `content.active` capability and the three-axis capability model |
+| #16 | **[#196](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/196)** | Config option documentation: what each option does and what it leaves exposed |
+| #17 | **[#197](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/197)** | Adopt the audit's threat model as the living `THREAT_MODEL.md` |
+| #18 | **[#198](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/198)** | Generate the audit index from per-audit front matter |
+
+---
 **Permalink base** (all issue bodies use it):
 
 ```
