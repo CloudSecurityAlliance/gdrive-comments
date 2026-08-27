@@ -37,6 +37,62 @@ If you ever see PyPI email *"Trusted Publisher … can be made more secure"*, th
 unconstrained — fix it by adding the constrained publisher first, confirming it appears, then
 removing the unconstrained one, so the project is never left without a working publisher.
 
+## Version numbers: an audit opens `x.y.0`, its fixes continue in `x.y.*`
+
+**Decided 2026-08-27.** Two rules, and the first is the useful one.
+
+**A security audit opens a new minor.** The first release carrying remediation from an audit is
+`x.y.0`. Subsequent batches of fixes **from the same audit** are patches — `x.y.1`, `x.y.2` — so
+the version says how far through remediation a release is, not just that something changed:
+
+| | |
+|---|---|
+| `0.30.0` | audit `2026-08-27-01` — remediation opens (#181, the exploitable flaw) |
+| `0.30.1` | same audit, next batch |
+| `0.30.2` | same audit, next batch |
+| `0.31.0` | the **next** audit's remediation opens |
+
+Somebody reading `0.30.4` can tell it is the fifth release against the first audit. That is
+information a bare minor bump per change throws away, and remediation is exactly the case where
+"which batch of what" is the question people ask.
+
+**Otherwise:** a **patch** is fixes only — nothing a caller could notice except the bug going
+away. A **minor** is anything else: a new tool or parameter, a **changed default**, removed
+behaviour, or anything a configuration could depend on. `0.30.0` is correctly a minor on this
+rule as well as the audit rule, because it changed an observable default (`USER_ENTERED` →
+`RAW`).
+
+Note this is a *communication* convention, not a compatibility promise:
+[`API-STABILITY.md`](API-STABILITY.md) says pre-1.0.0 nothing is frozen and that remains true.
+It is still worth having, because "is this safe to take?" is the question a release list should
+answer at a glance.
+
+## Publishing is not optional
+
+**A version bump means carry it to PyPI.** Do not stop at a staged release: the fix only reaches
+installs on publish, and the README shown on PyPI is frozen per release, so documentation
+corrections wait for the next version regardless of what `main` says.
+
+The publish job sits behind the protected **`pypi` environment**, so the run reports `waiting`
+until approved. Approving it is part of cutting the release:
+
+```bash
+RUN=$(gh run list --workflow=release.yml --limit 1 --json databaseId -q '.[0].databaseId')
+gh api --method POST "repos/$REPO/actions/runs/$RUN/pending_deployments" --input - <<'JSON'
+{"environment_ids":[18642982745],"state":"approved","comment":"why this is safe to ship"}
+JSON
+```
+
+`gh api -f 'environment_ids[]=…'` fails under zsh — the brackets glob. Use `--input -`.
+
+Then verify **before** reporting it done: the per-version PyPI endpoint, the simple index, and a
+clean-venv install.
+
+**The two indexes lag independently, in either direction.** After v0.29.0 the project-level JSON
+endpoint was behind and the simple index current; after v0.30.0 it was the reverse.
+`check_release_history.py` treats a claimed version confirmed by **either** as published, which
+is why it no longer fails on a true claim.
+
 ## Cut a release
 
 1. Make sure `main` is green and pick the version. Bump it in **one place** —
