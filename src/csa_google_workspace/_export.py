@@ -199,7 +199,7 @@ def _slug(name: str) -> str:
 
 
 def resolve_export_path(path: str | None, *, default_dir: str | None, doc_name: str,
-                        stamp: str):
+                        stamp: str, suffix: str = CSV_SUFFIX):
     """(target, a sentence saying what happened) — or `ValueError` saying why not.
 
     A full path is ALLOWED, deliberately. A Claude Desktop *project* may only be able to write
@@ -221,7 +221,7 @@ def resolve_export_path(path: str | None, *, default_dir: str | None, doc_name: 
     told_where = False
 
     if not given:
-        given = f"{_slug(doc_name)} comments {stamp}.csv"
+        given = f"{_slug(doc_name)} comments {stamp}{suffix}"
         told_where = True
     has_dir = any(sep in given for sep in ("/", "\\")) or given.startswith("~")
     if has_dir:
@@ -235,8 +235,8 @@ def resolve_export_path(path: str | None, *, default_dir: str | None, doc_name: 
     # `.csv` whatever was asked for. A name with no suffix gets one; a name with the wrong
     # suffix keeps it and gains ours, so `.zshrc` -> `.zshrc.csv` rather than `.csv`, which
     # would silently rename somebody's intended file.
-    if target.suffix.lower() != CSV_SUFFIX:
-        target = target.with_name(target.name + CSV_SUFFIX)
+    if target.suffix.lower() != suffix:
+        target = target.with_name(target.name + suffix)
 
     parent = target.parent.expanduser()
     if not parent.is_dir():
@@ -248,9 +248,95 @@ def resolve_export_path(path: str | None, *, default_dir: str | None, doc_name: 
 
     note = ""
     if target.exists():
-        target = target.with_name(f"{target.stem}-{stamp}{CSV_SUFFIX}")
+        target = target.with_name(f"{target.stem}-{stamp}{suffix}")
         note = (f"A file of that name already existed, so this was written as "
                 f"{target.name} instead - nothing was overwritten. ")
     if told_where:
         note += f"Written to {target}. "
     return target, note
+
+
+# ── Excel ───────────────────────────────────────────────────────────────────────────────
+#
+# A register somebody works through, rather than a CSV they have to import first. Asked for
+# one, the honest answer used to be "CSV, a Google Sheet, or rows", and converting by hand hit
+# two things the tool should handle - so it does.
+
+XLSX_SUFFIX = ".xlsx"
+HEADER_FILL = "1F3864"
+
+# openpyxl refuses to write these and raises IllegalCharacterError. Reviewer text is arbitrary
+# human input - pasted from terminals, editors, mail clients - so it genuinely contains them: a
+# real 205-comment review had one. A register that will not be written because somebody pasted
+# from a terminal is no register at all.
+_ILLEGAL = "".join(chr(c) for c in list(range(0, 9)) + [11, 12] + list(range(14, 32)))
+_STRIP = str.maketrans("", "", _ILLEGAL)
+
+
+def _sheet_safe(value: Any) -> Any:
+    text = flatten(value)
+    return text.translate(_STRIP) if text else text
+
+
+def used_columns(columns: list[str], rows: list[dict]) -> list[str]:
+    """Only the columns that carry something.
+
+    On a DOCUMENT the three Sheets-only columns (`cell`, `cell_text`, `cell_text_by_tab`) are
+    structurally absent, and three empty columns on a review register suggest the export failed
+    to fill them rather than that they do not apply. Computed from the data rather than from
+    the file type, so it stays right for a type that has neither.
+    """
+    if not rows:
+        return list(columns)
+    return [c for c in columns if any(flatten(row.get(c)) for row in rows)]
+
+
+def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None:
+    """Write a formatted, immediately usable register.
+
+    **No formulas, deliberately.** openpyxl writes them with no cached values, so anything
+    reading cached values - a thumbnail previewer, pandas - sees blanks until Excel opens the
+    file and recalculates. A faithful register needs no formulas, so it has none and the
+    problem does not arise. Somebody wanting a pivot can build one on top.
+    """
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError as e:                      # pragma: no cover - environment-dependent
+        raise ValueError(
+            "writing .xlsx needs openpyxl, which is not installed. Either "
+            "`pip install 'csa-google-workspace[xlsx]'`, or use destination=\"file\" for a "
+            "CSV, which needs nothing extra.") from e
+
+    keep = used_columns(columns, rows)
+    wb = Workbook()
+    ws = wb.active
+    # A tab name may not exceed 31 characters or contain []:*?/\ - and it is derived from a
+    # document title, which is untrusted.
+    ws.title = ("".join(c for c in title if c not in "[]:*?/\\")[:31] or "Comments")
+    ws.append(keep)
+    for row in rows:
+        ws.append([_sheet_safe(row.get(c)) for c in keep])
+
+    font = "Arial"
+    fill = PatternFill("solid", fgColor=HEADER_FILL)
+    for cell in ws[1]:
+        cell.font = Font(name=font, bold=True, color="FFFFFF")
+        cell.fill = fill
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    # Frozen header and an autofilter, because two hundred unsorted rows is not a register.
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    ws.row_dimensions[1].height = 28
+
+    wide = {"text", "quoted_text", "cell_text_by_tab"}
+    for i, name in enumerate(keep, start=1):
+        letter = ws.cell(row=1, column=i).column_letter
+        ws.column_dimensions[letter].width = 62 if name in wide else (
+            22 if name in {"author", "created_time"} else 16)
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = Font(name=font)
+            cell.alignment = Alignment(
+                vertical="top", wrap_text=keep[cell.column - 1] in wide)
+    wb.save(target)
