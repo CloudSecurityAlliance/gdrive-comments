@@ -281,7 +281,7 @@ no longer anything this project can do that a client cannot reach.
       exposed how the gap actually behaves: *"if I upload a docx and call `read_file_content`
       on it, what happens?"*
 
-      As of v0.29.0 metadata and raw bytes work on any file; only **text extraction** is
+      As of v0.28.0 metadata and raw bytes work on any file; only **text extraction** is
       Google-native. That is the one place either of the other two servers does more, and the
       README now says so in its own section rather than in a footnote.
 
@@ -384,8 +384,28 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       labour at project level; per-commit attribution would make it greppable. Deferred because
       it is only useful if applied consistently, and retrofitting 113 commits is not worth a
       history rewrite.
-- [ ] **Add `scripts/check_release_history.py` to CI**, guarded so an unreachable PyPI is not a
-      failure. Today it is a pre-tag manual step, which means it runs when someone remembers.
+- [x] **Add `scripts/check_release_history.py` to CI** — **done 2026-08-27**, as a step in the
+      `lint` job. It already treated an unreachable PyPI as *skip the comparison* rather than a
+      failure, so no guard was needed. Earns its place: it caught v0.27.0, which the changelog
+      claimed was released and which had never been published.
+
+- [ ] **C6 List the server in the official MCP Registry** —
+      [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/). Added as a
+      1.0.0 item 2026-08-27, at the CINO's direction (*"registered publicly"*). Mechanics:
+      the `mcp-publisher` CLI, a `server.json` manifest declaring namespace, description and
+      repository, GitHub OAuth to prove ownership, and the package already on PyPI — which it
+      is. GitHub's own registry (the one that feeds Copilot and VS Code one-click install) is
+      **separate** and worth doing too.
+
+      **Why it is a 1.0.0 item rather than marketing:** `server.json` is a *published
+      manifest*, so the name, the namespace and the declared install method become things
+      other people's tooling resolves. Getting the namespace wrong is the kind of mistake that
+      is permanent in the same way a PyPI version is. It also forces a decision this repo has
+      so far avoided: what the canonical install instruction *is*, given there are three
+      (`pipx`, the `[mcp]` extra, and DesktopSetup).
+
+      Blocked on nothing technical. Should follow the last capability gate so the manifest does
+      not describe a surface that changes a week later.
 
 This overlaps **C1** (the API-stability and deprecation policy): both are about what the project
 owes someone who depends on it. C1 says what will not change; this says what did.

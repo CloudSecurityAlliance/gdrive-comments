@@ -27,6 +27,13 @@ jobs:
         run: ruff check src tests
       - name: Type-check (mypy)
         run: mypy
+      # Reconciles CHANGELOG headings against git tags and PyPI. Caught v0.27.0, which the
+      # changelog claimed was released and which had never been published - a gap no test could
+      # see, because the discrepancy is between this repo and the outside world. The script
+      # treats an unreachable PyPI as "skip that comparison", not as a failure, so a PyPI
+      # outage cannot redden an unrelated PR.
+      - name: Reconcile changelog, tags and PyPI
+        run: python scripts/check_release_history.py
 
   test:
     runs-on: ubuntu-latest
