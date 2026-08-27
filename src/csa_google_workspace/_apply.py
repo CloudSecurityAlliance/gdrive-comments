@@ -26,6 +26,7 @@ column, a fill-down that overshot.
 """
 from __future__ import annotations
 
+import contextlib
 import csv
 import os
 import tempfile
@@ -168,18 +169,40 @@ def write_back(path: Path, rows: list[dict], header: list[str]) -> None:
             for name in COMPLETED:
                 if name in index and row.get(name):
                     row_cells[index[name]].value = row[name]
-        with tempfile.NamedTemporaryFile(dir=path.parent, suffix=XLSX_SUFFIX,
-                                         delete=False) as tmp:
-            wb.save(tmp.name)
-            os.replace(tmp.name, path)
+        _atomically(path, XLSX_SUFFIX, wb.save)
         return
-    with tempfile.NamedTemporaryFile("w", dir=path.parent, suffix=".csv", delete=False,
-                                     newline="", encoding="utf-8") as tmp:
-        writer = csv.DictWriter(tmp, fieldnames=header)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({c: row.get(c, "") for c in header})
-        os.replace(tmp.name, path)
+
+    def write_csv(target: str) -> None:
+        with open(target, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=header)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({c: row.get(c, "") for c in header})
+
+    _atomically(path, ".csv", write_csv)
+
+
+def _atomically(path: Path, suffix: str, write: Any) -> None:
+    """Write through a temp file in the same directory, then rename over the target.
+
+    `mkstemp` plus an explicit `close`, NOT `NamedTemporaryFile`: on Windows, reopening a
+    `NamedTemporaryFile` by name and replacing a file whose handle is still open BOTH raise
+    `PermissionError` - and this runs *after* the document has been mutated, so the crash the
+    completed markers exist to survive would be the very crash that stops them being written.
+    Windows is supported here; the repo ships PowerShell installers. (#166)
+
+    `delete=False` also orphaned the temp file whenever anything raised, leaving it next to
+    somebody's register forever. Cleaned up on every path now.
+    """
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=suffix)
+    os.close(fd)              # hand the file to the writer; Windows requires it closed first
+    try:
+        write(tmp)
+        os.replace(tmp, path)          # no handle of ours is open on either side
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def _mine_already_said(comment: Any, text: str) -> bool:
@@ -399,13 +422,23 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
 
         except Exception as error:                # noqa: BLE001 - reported, never fatal
             result.failed = True
-            result.replied = result.resolved = result.reopened = result.deleted = False
-            # "Nothing was changed" said outright: a refusal has to be unambiguous about
-            # whether it happened, or somebody is left wondering if half the row went through.
+            # The flags are NOT reset. Anything already True records work that LANDED in a
+            # shared document, and the register has already recorded it - so claiming
+            # otherwise makes the report disagree with the artifact, and the report is what a
+            # human reads. The original reasoning was half right: a refusal does have to be
+            # unambiguous about whether it happened. It was made unambiguous by being untrue.
+            # "Reply posted; resolve failed - re-run to finish" is both. (#163)
+            did = [name for name in ("replied", "resolved", "reopened", "deleted")
+                   if getattr(result, name)]
             text = str(error)
-            if "nothing" not in text.lower():
+            if did:
+                text = text.rstrip(". ") + (
+                    f". ALREADY APPLIED on this row: {', '.join(did)} - that work is done and "
+                    f"recorded in the register. Re-run to finish what is left; work already "
+                    f"done is skipped, not repeated.")
+            elif "nothing" not in text.lower():
                 text += " Nothing on this row was changed."
-            notes = [f"{type(error).__name__}: {text}"]
+            notes.append(f"{type(error).__name__}: {text}")
 
         report.rows.append(_finish(result, notes))
 
