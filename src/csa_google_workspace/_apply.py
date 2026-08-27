@@ -36,14 +36,49 @@ from typing import Any
 from ._export import ACTIONS, COLUMNS, COMPLETED, XLSX_SUFFIX
 
 DONE = "yes"
-# Deliberately a closed set. "maybe later" in a resolve column must FAIL rather than be
-# guessed at: guessing wrong closes somebody's open question.
+
+# The decision columns are THREE-state, and saying so in the type is the point. A bool that
+# also had to carry "not decided" was how pre-filling `FALSE` came to mean "reopen every
+# resolved thread" - an absence and a reversal are different things and one bool cannot hold
+# both.
+ACT = "act"          # TRUE      resolve · delete
+REVERSE = "reverse"  # FALSE     reopen · (delete has no reversal - see decision())
+NONE = "none"        # NO_CHANGE, or blank
+
+# Pre-filled into the two decision columns on export. Safe to apply untouched, and unlike a
+# blank cell it says what it means to somebody who has never seen the register before.
+NO_CHANGE = "NO_CHANGE"
+
+# Deliberately closed sets. "maybe later" in a resolve column must FAIL rather than be guessed
+# at: guessing wrong closes somebody's open question.
 TRUE = {"true", "yes", "y", "1", "x", "done", "✓"}
-FALSE = {"false", "no", "n", "0", ""}
+FALSE = {"false", "no", "n", "0"}
+UNSET = {"", "no_change", "no change", "nochange", "none", "-", "n/a"}
+
+
+def decision(value: Any) -> str | None:
+    """ACT / REVERSE / NONE, or None when the cell says something nobody can read.
+
+    BLANK counts as NONE alongside the sentinel, and must keep doing so: cells get cleared,
+    sorts leave gaps, and a CSV can pass through a tool that drops a lone token. A default
+    somebody can accidentally destroy is not a default.
+    """
+    text = _norm(value).lower()
+    if text in UNSET:
+        return NONE
+    if text in TRUE:
+        return ACT
+    if text in FALSE:
+        return REVERSE
+    return None
 
 
 @dataclass
 class RowResult:
+    # The SPREADSHEET row, header included - what a person navigates by. A 205-row register is
+    # not something you scan, so "resolve_comment is 'maybe later'" without a row number leaves
+    # somebody hunting for the cell that says it.
+    row: int
     thread_id: str
     replied: bool = False
     resolved: bool = False
@@ -57,6 +92,7 @@ class RowResult:
 class Report:
     rows: list[RowResult] = field(default_factory=list)
     applied: bool = False
+    wrong_file: str = ""
 
     def count(self, attr: str) -> int:
         return sum(1 for r in self.rows if getattr(r, attr))
@@ -149,42 +185,56 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
     not cost the other 204."""
     report = Report(applied=apply)
     by_id = {c.id: c for c in document.comments.all()}
+    missing: list[int] = []
 
-    for row in rows:
+    for number, row in enumerate(rows, start=2):     # row 1 is the header
         thread = _norm(row.get("thread_id"))
-        result = RowResult(thread_id=thread)
+        result = RowResult(row=number, thread_id=thread)
         reply_text = str(row.get("reply_comment") or "").strip()
         resolve_raw = row.get("resolve_comment")
-        # None here means "not filled in" OR "filled in with something unreadable", and those
-        # are told apart below by whether the cell was blank.
-        wants_resolve = truthy(resolve_raw)
-        resolve_blank = _norm(resolve_raw) == ""
         delete_raw = row.get("delete_comment")
-        wants_delete = truthy(delete_raw) is True
+        resolve = decision(resolve_raw)          # ACT | REVERSE | NONE | None
+        delete = decision(delete_raw)
+        wants_delete = delete is ACT
 
         notes: list[str] = []
         try:
             if _norm(row.get("reply_to")):
                 # Drive replies are flat: you reply to a THREAD, never to a reply. A filled-in
                 # reply row is somebody working on the wrong line.
-                if reply_text or wants_resolve:
+                if reply_text or resolve is not NONE or delete is not NONE:
+                    parent = _norm(row.get("reply_to"))
                     raise ValueError(
-                        "this row is a reply (reply_to is set), and actions belong on the "
-                        "thread's own row - Drive has no reply-to-a-reply")
+                        f"this row is a reply, and Drive has no reply-to-a-reply. Move the "
+                        f"action to the row whose thread_id is {parent!r} - that is the thread "
+                        f"this reply belongs to - and clear it here.")
                 notes.append("a reply row; nothing to do")
-            elif not reply_text and resolve_blank and not wants_delete:
-                notes.append("nothing filled in")
+            elif not reply_text and resolve is NONE and delete is NONE:
+                notes.append("no change requested")
             else:
                 # The row's own validity first: an unreadable resolve value is wrong whether
                 # or not the thread exists, and "maybe later" must fail rather than be guessed
                 # at - guessing wrong closes somebody's open question.
-                if not resolve_blank and wants_resolve is None:
+                if resolve is None:
                     raise ValueError(
-                        f"resolve_comment is {str(resolve_raw)!r}, which is neither true nor "
-                        f"false. Use true to resolve, false to reopen, or leave it empty - a "
-                        f"value nobody can read is not something to guess at when the result "
-                        f"closes somebody's open question.")
-                if wants_delete and (reply_text or not resolve_blank):
+                        f"resolve_comment is {str(resolve_raw)!r}. Use TRUE to resolve, FALSE "
+                        f"to reopen, or {NO_CHANGE} to leave it alone - a value nobody can "
+                        f"read is not something to guess at when the result closes somebody's "
+                        f"open question.")
+                if delete is None:
+                    raise ValueError(
+                        f"delete_comment is {str(delete_raw)!r}. Use TRUE to delete or "
+                        f"{NO_CHANGE} to leave it alone.")
+                if delete is REVERSE:
+                    # Refused rather than quietly treated as no-op. FALSE here almost certainly
+                    # means "undo this delete", and there is no undelete for a Drive comment -
+                    # silently doing nothing would leave somebody believing it worked.
+                    raise ValueError(
+                        f"delete_comment is {str(delete_raw)!r}, and there is no way to undo "
+                        f"deleting a comment - Drive strips its text and author permanently. "
+                        f"Use {NO_CHANGE} to leave a comment alone; nothing here can bring one "
+                        f"back.")
+                if wants_delete and (reply_text or resolve is not NONE):
                     # Replying to something you are about to destroy is incoherent, and doing
                     # one of the two silently would be a guess about which was meant.
                     raise ValueError(
@@ -196,6 +246,7 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                 # which was true but too subtle for a reader or a type checker to follow.)
                 comment = by_id.get(thread)
                 if comment is None:
+                    missing.append(number)
                     # A DELETED comment is absent from a normal listing, so a re-run of a
                     # delete row would otherwise report "no such comment" - which reads like
                     # the wrong sheet rather than work already done. Ask again, including the
@@ -210,7 +261,12 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                             row["delete_comment_completed"] = DONE
                             report.rows.append(_finish(result, notes))
                             continue
-                    raise ValueError(f"no comment {thread!r} on this file")
+                    raise ValueError(
+                        f"no comment {thread!r} on this file. Most often that means the "
+                        f"register was exported from a different document, or a sort moved the "
+                        f"thread_id out of line with the rest of the row - check the fileId "
+                        f"matches the document this sheet came from. Nothing on this row was "
+                        f"changed.")
 
                 if wants_delete:
                     if truthy(row.get("delete_comment_completed")):
@@ -251,7 +307,7 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                 # TRUE resolves, FALSE reopens, blank leaves it alone. `resolved` is the
                 # state itself in both directions, so neither needs a marker to be idempotent -
                 # the marker only saves a round trip.
-                if wants_resolve is True:
+                if resolve is ACT:
                     if comment.resolved:
                         notes.append("already resolved")
                         row["resolve_comment_completed"] = DONE
@@ -265,7 +321,7 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                     else:
                         result.resolved = True
                         notes.append("would resolve")
-                elif wants_resolve is False and not resolve_blank:
+                elif resolve is REVERSE:
                     if not comment.resolved:
                         notes.append("already open")
                         row["resolve_comment_completed"] = DONE
@@ -277,12 +333,28 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                     else:
                         result.reopened = True
                         notes.append("would reopen")
+
         except Exception as error:                # noqa: BLE001 - reported, never fatal
             result.failed = True
             result.replied = result.resolved = result.reopened = result.deleted = False
-            notes = [f"{type(error).__name__}: {error}"]
+            # "Nothing was changed" said outright: a refusal has to be unambiguous about
+            # whether it happened, or somebody is left wondering if half the row went through.
+            text = str(error)
+            if "nothing" not in text.lower():
+                text += " Nothing on this row was changed."
+            notes = [f"{type(error).__name__}: {text}"]
 
         report.rows.append(_finish(result, notes))
+
+    # Said ONCE, at the top. When most rows name a thread this file does not have, the single
+    # useful fact is "wrong register", and 205 identical row messages bury it. One bad id among
+    # many good rows is a typo, not the wrong file - saying otherwise sends somebody looking
+    # for a problem they do not have.
+    if missing and len(missing) >= max(3, len(report.rows) // 2):
+        report.wrong_file = (
+            f"{len(missing)} of {len(report.rows)} rows name a comment this file does not "
+            f"have. This register was most likely exported from a DIFFERENT DOCUMENT - check "
+            f"the fileId. Nothing was changed on those rows.")
     return report
 
 

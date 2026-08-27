@@ -118,7 +118,10 @@ class TestApplyingReplies:
                                  "reply_comment": "no"}])
         out = call(app, "apply_comment_actions", path=str(path), apply=True)
         assert out["replied"] == 0
-        assert any("reply_to" in r["detail"] for r in out["rows"])
+        # The message now NAMES the thread to move the action to, rather than saying
+        # "reply_to is set" and leaving somebody to work out which row that means.
+        assert any("reply-to-a-reply" in r["detail"] for r in out["rows"])
+        assert any("'t1'" in r["detail"] for r in out["rows"])
 
 
 class TestIdempotencyLayerOneTheMarkers:

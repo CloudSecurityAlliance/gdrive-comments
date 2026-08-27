@@ -276,6 +276,45 @@ no longer anything this project can do that a client cannot reach.
 - [ ] **C3 Decide the caching knob**, even if the default stays off. Caching is off *by design*
       (live multi-reviewer sessions make a self-invalidated cache actively wrong), but adding
       one later changes observable behaviour. Name the parameter now; leave it off.
+- [ ] **C5 Reading the text of uploaded files** — `.docx`, `.xlsx`, `.pptx`, `.odt`, PDF.
+      **Added as a 1.0.0 gate 2026-08-27**, at the CINO's direction, after a plain question
+      exposed how the gap actually behaves: *"if I upload a docx and call `read_file_content`
+      on it, what happens?"*
+
+      As of v0.29.0 metadata and raw bytes work on any file; only **text extraction** is
+      Google-native. That is the one place either of the other two servers does more, and the
+      README now says so in its own section rather than in a footnote.
+
+      **Why it is a 1.0.0 gate rather than a feature request:** what a tool refuses is part of
+      its contract. If `read_file_content` starts accepting a PDF after 1.0.0 that is additive
+      and fine — but *how* it does so is not. Whether text extraction happens in-process or by
+      converting through Drive changes what capability it needs (`file.create` for the second),
+      whether it creates a file as a side effect of a READ, and what `SECURITY.md` has to say.
+      Those are contract decisions, so the shape has to land pre-1.0 even if the parsing does
+      not.
+
+      **The risk is not uniform, which is the whole reason this needs deciding rather than
+      installing:**
+      - **Office formats are zip + XML and already precedented here.** `_cellmap.py` parses
+        XLSX today with `defusedxml` plus caps on member size, total uncompressed size and
+        member count (`_MAX_MEMBER_UNCOMPRESSED`, `_MAX_TOTAL_UNCOMPRESSED`, `_MAX_MEMBERS`).
+        `python-docx` / `openpyxl` / `python-pptx` reuse that pattern rather than needing a new
+        one. Lowest risk, highest value — most CSA drafts that are not Google-native are Word.
+      - **Drive conversion parses nothing here.** `files.copy` with a Google-native target mime
+        makes a readable copy, and Drive's OCR covers PDF and images. The catch is that it
+        *creates a file*, so a read acquires a write side effect and needs `file.create` — the
+        objection recorded in the README's export-formats section, which is a design decision
+        rather than an impossibility.
+      - **In-process PDF parsing is the genuinely risky one.** A complex binary format with
+        embedded streams and a long CVE history in every parser (`pypdf`, PyMuPDF,
+        `pdfminer.six`). This is what `SECURITY.md`'s primary-risk framing is actually about,
+        and it deserves arguing on its own rather than riding in with the Office formats.
+      - **OCR for images is out of scope** for 1.0.0: a native Tesseract dependency and
+        variable output.
+
+      Likely shape: Office in-process behind the existing hardening, PDF and images via Drive
+      conversion, in-process PDF argued separately.
+
 - [ ] **C4 Logging, and an error store** —
       [#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145).
       **Added as a 1.0.0 gate 2026-08-26**, at the CINO's direction, and it belongs in Gate C

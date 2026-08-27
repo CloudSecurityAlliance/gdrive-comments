@@ -296,7 +296,8 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
             _apply.write_back(source, rows, _apply.header_for(rows))
 
         out_rows: list[ActionRowOut] = [
-            {"thread_id": r.thread_id, "replied": r.replied, "resolved": r.resolved,
+            {"row": r.row, "thread_id": r.thread_id, "replied": r.replied,
+             "resolved": r.resolved,
              "reopened": r.reopened, "deleted": r.deleted, "failed": r.failed,
              "detail": r.detail} for r in report.rows]
         replied, resolved = report.count("replied"), report.count("resolved")
@@ -318,12 +319,15 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
             "failed": failed,
             "rows": out_rows,
             "file_id": doc.id, "file_name": doc.name, "source": str(source),
-            "detail": (f"{replied} replied, {resolved} resolved, {reopened} reopened, "
-                       f"{deleted} deleted, {failed} failed."
-                       if apply else
-                       f"DRY RUN - nothing changed. Would reply to {replied}, resolve "
-                       f"{resolved}, reopen {reopened} and delete {deleted}; {failed} row(s) "
-                       f"could not be read. Pass apply=true to do it."),
+            # The wrong-file hint goes FIRST when there is one: it is the fact that makes
+            # every row-level message beneath it redundant.
+            "detail": ((report.wrong_file + " ") if report.wrong_file else "") + (
+                f"{replied} replied, {resolved} resolved, {reopened} reopened, "
+                f"{deleted} deleted, {failed} failed. Row numbers below are spreadsheet rows."
+                if apply else
+                f"DRY RUN - nothing changed. Would reply to {replied}, resolve {resolved}, "
+                f"reopen {reopened} and delete {deleted}; {failed} row(s) could not be read. "
+                f"Row numbers below are spreadsheet rows. Pass apply=true to do it."),
         }
 
     @app.tool(annotations=READ)

@@ -144,6 +144,59 @@ has to land first or the thread reads backwards to everybody who opens it.
 Temp file plus rename. The whole point of the markers is surviving a crash; a half-written
 register would be a worse state than the one being protected against.
 
+### Uploaded files: identified and downloadable, text still Google-native
+
+Found by a plain question — *"if I upload a docx and call `read_file_content` on it, what
+happens?"* — and the answer was worse than the README claimed, in three ways at once.
+
+**Everything failed, not just text extraction.** `read_file_content`, `get_file_metadata` and
+`download_file_content` all routed through `Workspace.open()`, which MIME-dispatches on a
+three-entry table and raises before any type-specific logic runs. So *"what is this file?"* —
+pure metadata, nothing parsed — failed on a PDF.
+
+**The README promised code that did not exist.** Its API table has listed
+`drive.files.get(alt=media)` for uploaded files since the download tool shipped. There was no
+`alt=media` anywhere in `src/`.
+
+**`search_files` and `open()` disagreed.** Search deliberately returns non-native files —
+`FileRef.type` is `None` for a PDF, its docstring saying *"pretending otherwise would hide
+results"* — so search said "here it is" and nothing could then answer a question about it.
+
+The fix is a split this repo already made once, for `update_file` and `trash_file`: **metadata
+and raw bytes go through the account axis**, which has never cared about file type, and only
+*text extraction* needs `open()`. `FileCollection` gains `get()` and `download()`;
+`Backend.download_file` finally implements the `alt=media` the README promised.
+
+**Reading text out of a PDF or an image stays unsupported, deliberately** — that means parsing
+an untrusted binary format in-process, on the read path `SECURITY.md` names as the primary risk.
+Handing the bytes over parses nothing, which is why one is supported and the other is not.
+
+And the refusal now says something useful. It was the raw mime type and nothing else:
+
+    unsupported file type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+Now it names the format in human terms, says what the server does read, and names the two things
+that work — converting in Drive, or `download_file_content` for the bytes. `exportMimeType` on an
+uploaded file is refused rather than ignored, because handing back the `.docx` unchanged would
+look like it had converted.
+
+Tracked for 1.0.0 as **C5**: Office formats are zip+XML and already precedented here
+(`_cellmap.py` parses XLSX with `defusedxml` plus size and member caps), Drive conversion parses
+nothing locally, and in-process PDF parsing is the one that deserves arguing separately.
+
+### Two guards that fired, and one that did not
+
+Adding `download_file` to `Backend` tripped
+`test_policy.py::test_every_backend_method_has_a_declared_gate` — the fail-closed guard doing
+exactly its job: a new protocol method arrives *refused* rather than ungated, and CI says so. It
+is gated as a file-scoped read, because handing over the bytes of an uploaded file is the same
+disclosure as handing over the text of a Google one.
+
+`test_backend_conformance.py` did **not** fire, and that is a gap worth recording: it compares
+*protocol → implementations*, so a method present on `FakeBackend` but missing from the protocol
+passes clean. The fake can run ahead of the seam it exists to double. Caught here by `mypy`
+instead.
+
 ### Also
 
 `export_comments` in the demonstration now writes a real file and `apply_comment_actions` reads

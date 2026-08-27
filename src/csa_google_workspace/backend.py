@@ -29,6 +29,7 @@ class Backend(Protocol):
     def delete_comment(self, file_id: str, comment_id: str) -> None: ...
     def delete_reply(self, file_id: str, comment_id: str, reply_id: str) -> None: ...
     def export_file(self, file_id: str, mime_type: str) -> bytes: ...
+    def download_file(self, file_id: str) -> bytes: ...
     # -- the account axis: no file_id, because there is no file yet ---------
     def search_files(self, query: str, *, page_size: int = 25, order_by: str | None = None,
                      page_token: str | None = None) -> JsonDict: ...
@@ -62,7 +63,7 @@ class FakeBackend:
     """In-memory backend for unit tests. `files` maps file_id -> metadata dict."""
 
     def __init__(self, files, *, documents=None, spreadsheets=None,
-                 values=None, presentations=None, exports=None, comments=None,
+                 values=None, presentations=None, exports=None, media=None, comments=None,
                  permissions=None):
         self._files = files
         # Keyed (file_id, comment_id) -> raw Drive comment dict, matching what
@@ -77,6 +78,10 @@ class FakeBackend:
         self._values = values or {}
         self._presentations = presentations or {}
         self._exports = exports or {}
+        # Raw bytes of UPLOADED files, keyed by id alone - unlike `_exports`, which is keyed by
+        # (id, mime) because a Google-native file converts into several formats. An uploaded
+        # file has exactly one representation: itself.
+        self._media = media or {}
         self._permissions = {fid: list(ps) for fid, ps in (permissions or {}).items()}
         self._writes = []
 
@@ -174,6 +179,11 @@ class FakeBackend:
         if key not in store:
             raise exc.NotFoundError(f"{kind} '{key}' not found")
         return copy.deepcopy(store[key])
+
+    def download_file(self, file_id):
+        if file_id in self._media:
+            return self._media[file_id]
+        raise exc.NotFoundError(f"no uploaded bytes for {file_id}")
 
     def export_file(self, file_id, mime_type):
         """A seeded export if there is one, otherwise render what this fake holds.
@@ -476,6 +486,17 @@ class ApiBackend:
     def export_file(self, file_id, mime_type):
         return _errors.call(self._services.drive.files()
                             .export(fileId=file_id, mimeType=mime_type).execute)
+
+    def download_file(self, file_id):
+        """Raw bytes of an UPLOADED file — `alt=media`, no conversion.
+
+        Distinct from `export_file`, which is Drive's Google-native conversion and refuses a
+        file it did not create. The README's API table has listed `drive.files.get(alt=media)`
+        since the download tool shipped; the code did not exist until v0.29.0, so a .docx could
+        not be fetched at all.
+        """
+        return _errors.call(self._services.drive.files()
+                            .get_media(fileId=file_id, supportsAllDrives=True).execute)
 
     # emailAddress and displayName are omitted from the default response, and they are the
     # entire point of this call.

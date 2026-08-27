@@ -208,7 +208,8 @@ class TestTheInputColumnsAreRealFields:
         assert "TRUE" in dv.formula1 and "FALSE" in dv.formula1
 
     def test_delete_offers_only_true(self, tmp_path):
-        """No undelete exists, so FALSE would promise a reversal Drive cannot perform."""
+        """No undelete exists, so FALSE would promise a reversal Drive cannot perform - and
+        next to the word "delete" that is exactly how a reader takes it."""
         call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
         dv = self._validations(tmp_path / "v.xlsx")["delete_comment"]
         assert "TRUE" in dv.formula1 and "FALSE" not in dv.formula1
@@ -230,11 +231,12 @@ class TestTheInputColumnsAreRealFields:
     def test_the_offered_values_are_ones_the_importer_accepts(self, tmp_path):
         """The sheet and the importer must agree, or the dropdown offers a value that then
         fails on import - which is worse than no dropdown."""
-        from csa_google_workspace._apply import truthy
+        from csa_google_workspace._apply import decision
         call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
         for name in ("resolve_comment", "delete_comment"):
             for value in self._validations(tmp_path / "v.xlsx")[name].formula1.strip('"').split(","):
-                assert truthy(value) is not None, f"{name} offers {value!r}, unreadable on import"
+                assert decision(value) is not None, (
+                    f"{name} offers {value!r}, which the importer cannot read")
 
     def test_the_input_columns_look_different(self, tmp_path):
         """A register is mostly read-only; the cells somebody is meant to WRITE in should not

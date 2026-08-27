@@ -299,7 +299,27 @@ INPUT_FILL = "FFF2CC"
 #
 # Every value offered must be one `_apply.truthy` accepts, or the sheet hands somebody a value
 # that then fails on import, which is worse than no dropdown at all.
-DROPDOWNS = {"resolve_comment": '"TRUE,FALSE"', "delete_comment": '"TRUE"'}
+# NO_CHANGE first, because it is what every cell already says and the list should open on it.
+#
+# `delete_comment` deliberately does NOT offer FALSE. Next to the word "delete", FALSE reads as
+# *undo the delete* - and there is no undelete for a Drive comment, so it would invite that
+# misreading on the one action here that genuinely cannot be reversed. A row that still says
+# NO_CHANGE after somebody has been through it already records "considered, keeping it"; a
+# second word for the same outcome would only add the wrong implication.
+DROPDOWNS = {"resolve_comment": '"TRUE,FALSE,NO_CHANGE"',
+             "delete_comment": '"TRUE,NO_CHANGE"'}
+
+# Left BLANK on export, with the vocabulary in the dropdown instead. Blank has always been the
+# safe default - it means no change - and pre-filling was considered for making that explicit,
+# then dropped: `NO_CHANGE` on all 205 rows is noise you have to read past, and a column of
+# blanks lets somebody see at a glance which rows they have touched. The dropdown carries the
+# discoverability that a pre-filled value would have carried.
+#
+# (Pre-filling `FALSE` was never an option: on `resolve_comment` it means *reopen*, so a
+# register filled with FALSE and applied untouched reopened every already-resolved thread.)
+#
+# `NO_CHANGE` remains selectable, for recording a decision rather than leaving a cell that
+# cannot be told apart from one nobody reached.
 
 # openpyxl refuses to write these and raises IllegalCharacterError. Reviewer text is arbitrary
 # human input - pasted from terminals, editors, mail clients - so it genuinely contains them: a

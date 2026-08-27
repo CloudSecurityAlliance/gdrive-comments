@@ -205,6 +205,9 @@ _GATES: dict[str, Gate] = {
     "list_comments": READS_FILE,
     "get_comment": READS_FILE,
     "export_file": READS_FILE,
+    # A read, and file-scoped like every other read: handing over the bytes of an uploaded
+    # file is the same disclosure as handing over the text of a Google one.
+    "download_file": READS_FILE,
     "get_document": READS_FILE,
     "get_spreadsheet": READS_FILE,
     "get_values": READS_FILE,
