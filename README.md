@@ -342,7 +342,7 @@ sidebar means scrolling a sixty-page document for an afternoon.
 Instead:
 
 ```
-"export the comments on the AICM draft to a spreadsheet"
+"export the comments on <the draft> to a spreadsheet"
 ```
 
 You get a Google Sheet — or a `.xlsx`, or a CSV in your Downloads folder — with one row per
@@ -364,7 +364,7 @@ opened Claude.
 | `delete_comment` | `TRUE` removes it — for spam. Off unless an operator enables `comment.delete` |
 
 ```
-"apply the register at ~/Downloads/AICM comments.xlsx"
+"apply the register at ~/Downloads/draft comments.xlsx"
 ```
 
 Nothing happens without `apply=true` — the default is a dry run reporting what it *would* do, row
