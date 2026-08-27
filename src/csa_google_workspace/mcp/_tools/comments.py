@@ -258,12 +258,28 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         spreadsheet - sort by reviewer, triage in a grid, draft replies beside the passage
         each one is about - then hand the file back here. `path` is the .csv or .xlsx.
 
-        Two columns are yours to fill in:
-          `reply_comment`     text to post as a reply. Empty means no reply.
-          `resolve_comment`   true/yes/1 to resolve the thread. Empty or false means leave it.
+        THREE columns are yours to fill in, and the two decision columns are THREE-state.
+        Leaving a cell BLANK is how you say "do not touch this thread" - it is not a synonym
+        for false:
 
-        And two the tool ticks as it goes, so an interrupted run can be re-run safely:
-          `reply_comment_completed` · `resolve_comment_completed`
+          `reply_comment`     text to post as a reply. Blank means no reply.
+          `resolve_comment`   TRUE resolves the thread.
+                              FALSE **REOPENS** it - an action, not an absence. It posts a
+                                visible reply under the user's name on a thread somebody
+                                deliberately closed, so do not fill it in to mean "skip".
+                              blank or NO_CHANGE leaves the thread alone.
+          `delete_comment`    TRUE soft-deletes the comment - IRREVERSIBLE, and it strips the
+                                text AND the author, so other people's attribution goes too.
+                              FALSE is REFUSED, because there is no undelete and next to the
+                                word "delete" a false reads as "undo it".
+                              blank or NO_CHANGE leaves it alone.
+
+        NEVER pre-fill a decision column to mean "no change" - blank already means that.
+        Filling `resolve_comment` with FALSE on every row you did not want to touch reopens
+        every resolved thread in the document.
+
+        And three the tool ticks as it goes, so an interrupted run can be re-run safely:
+          `reply_comment_completed` · `resolve_comment_completed` · `delete_comment_completed`
 
         **NOTHING HAPPENS UNLESS YOU PASS `apply`.** The default is a dry run that reports what
         it would do, row by row. Show the user that before applying: this posts under their
@@ -276,9 +292,10 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         needs no such check - an already-resolved thread is simply skipped.
 
         Actions belong on a THREAD's row. A row with `reply_to` set is a reply, and Drive has
-        no reply-to-a-reply, so such a row is refused rather than guessed at. So is a
-        `resolve_comment` value that is neither true nor false - "maybe later" closing somebody's
-        open question is worse than a refusal.
+        no reply-to-a-reply, so such a row is refused rather than guessed at. So is a decision
+        value that is none of the accepted words - "maybe later" closing somebody's open
+        question is worse than a refusal. A spreadsheet's own boolean TRUE/FALSE cells count as
+        the words, so a .csv and an .xlsx of the same register do the same thing.
 
         One bad row never stops the others; every row comes back with its own outcome."""
         from pathlib import Path
