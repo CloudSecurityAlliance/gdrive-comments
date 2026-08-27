@@ -148,6 +148,46 @@ Closes [#163](https://github.com/CloudSecurityAlliance/csa-google-workspace/issu
 [#166](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/166),
 [#168](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/168).
 
+### A safe re-run stops crying wolf; `force` works where it was meant to; the demo pairs correctly
+
+**A normal re-run reported the wrong document.** `missing.append(number)` ran *before* the
+already-deleted tombstone check and the row was never taken back out, so re-running a delete
+register — the most ordinary flow the feature has — reported every row correctly as "already
+deleted" and then headed the report *"4 of 4 rows name a comment this file does not have. This
+register was most likely exported from a DIFFERENT DOCUMENT."*
+
+That warning exists to catch applying a register to the wrong file. Firing it on the normal path
+**trains people to ignore it**, which is precisely when it stops protecting anybody — a safety
+message that cries wolf spends the attention it will need later. The existing test used a **1-row**
+register, below the `max(3, …)` threshold, so it could never fire in CI; the new one uses four.
+
+**`force` was inert exactly where it was meant to be used.** The `reply_comment_completed` marker
+was checked *before* the `force` branch, so `force` only ever overrode the live-document duplicate
+check. But somebody who genuinely means "say it again" is by definition working from a register
+that has **already been applied** — which is when markers exist. So `force` did nothing in its own
+use case, and silently: the row said "already marked done", indistinguishable from `force` having
+been honoured and found nothing to do.
+
+Now checked first, and scoped: `force` overrides the **reply** marker, because re-posting the same
+text is a coherent thing to want. It deliberately invents nothing for the other two — an
+already-resolved thread is skipped on `comment.resolved`, the document's own state, and a deleted
+comment cannot be deleted again. Where `force` cannot apply, the row now says so instead of looking
+satisfied.
+
+**The demo applied the Doc's register to Sheets and Slides, and passed green.** The
+`apply_comment_actions` step was the only one in `per_type()` that did not bind `key=key`, so it
+resolved `document_id or spreadsheet_id or presentation_id` — and `document_id` is populated first.
+It passed because a demo register has nothing filled in, so every row reported "no change
+requested": a green step demonstrating the wrong pairing.
+
+**This is why the other nine defects were not caught here.** The round trip was unverified for two
+of three file types, and the demo never exercised a register against the file it came from — which
+is exactly what would have surfaced the boolean-`FALSE` defect and the docstring contradiction.
+
+Closes [#164](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/164),
+[#165](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/165),
+[#169](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/169).
+
 ## 2026-08-27 — v0.28.0 (the register goes back: bulk replies and resolves, safe to re-run)
 
 `export_comments` made 205 threads readable. `apply_comment_actions` makes them actionable:

@@ -276,7 +276,9 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                 if delete is not ACT:
                     notes.append("a reply row; nothing to do")
                 elif truthy(row.get("delete_comment_completed")):
-                    notes.append("delete already marked done")
+                    notes.append("delete already marked done" + (
+                        " (force does not apply - a deleted comment cannot be deleted again)"
+                        if force else ""))
                 else:
                     reply = _find_reply(by_id.get(parent_id), thread)
                     if reply is None:
@@ -332,11 +334,13 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                 # which was true but too subtle for a reader or a type checker to follow.)
                 comment = by_id.get(thread)
                 if comment is None:
-                    missing.append(number)
                     # A DELETED comment is absent from a normal listing, so a re-run of a
                     # delete row would otherwise report "no such comment" - which reads like
                     # the wrong sheet rather than work already done. Ask again, including the
-                    # deleted, before calling it missing.
+                    # deleted, BEFORE counting it as missing: counting first meant an ordinary
+                    # re-run of a delete register tripped the wrong-document warning on every
+                    # row, and a safety message that cries wolf on the normal path spends the
+                    # attention it will need later. (#164)
                     if wants_delete:
                         try:
                             tombstone = document.comments.get(thread, include_deleted=True)
@@ -347,6 +351,7 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                             row["delete_comment_completed"] = DONE
                             report.rows.append(_finish(result, notes))
                             continue
+                    missing.append(number)
                     raise ValueError(
                         f"no comment {thread!r} on this file. Most often that means the "
                         f"register was exported from a different document, or a sort moved the "
@@ -356,7 +361,9 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
 
                 if wants_delete:
                     if truthy(row.get("delete_comment_completed")):
-                        notes.append("delete already marked done")
+                        notes.append("delete already marked done" + (
+                            " (force does not apply - a deleted reply cannot be deleted again)"
+                            if force else ""))
                     elif getattr(comment, "deleted", False):
                         notes.append("already deleted")
                         row["delete_comment_completed"] = DONE
@@ -374,7 +381,12 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                 # Reply BEFORE resolve: resolving posts its own visible action-reply, so the
                 # substantive one has to land first or the thread reads backwards.
                 if reply_text:
-                    if truthy(row.get("reply_comment_completed")):
+                    # `force` checked FIRST. The marker used to short-circuit ahead of it, so
+                    # force only ever overrode the live-document duplicate check - and the
+                    # person who genuinely means "say it again" is by definition working from a
+                    # register that has already been applied, which is when markers exist. So
+                    # force was inert in its own use case, and silently. (#169)
+                    if not force and truthy(row.get("reply_comment_completed")):
                         notes.append("reply already marked done")
                     elif not force and _mine_already_said(comment, reply_text):
                         # The crash case: posted, then died before the tick.
@@ -398,7 +410,14 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                         notes.append("already resolved")
                         row["resolve_comment_completed"] = DONE
                     elif truthy(row.get("resolve_comment_completed")):
-                        notes.append("resolve already marked done")
+                        # Silence was the actual complaint in #169: "already marked done" is
+                        # indistinguishable from force having been honoured and found nothing
+                        # to do. Resolve is idempotent and an already-resolved thread is
+                        # skipped on `comment.resolved` anyway, so there is nothing for force
+                        # to mean here - which is now said rather than implied.
+                        notes.append("resolve already marked done" + (
+                            " (force does not apply to resolve - the thread's own resolved "
+                            "state is the authority)" if force else ""))
                     elif apply:
                         comment.resolve()
                         row["resolve_comment_completed"] = DONE
