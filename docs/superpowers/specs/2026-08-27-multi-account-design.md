@@ -388,6 +388,38 @@ It detects **two** distinct failures, not one:
 user's own identity, shown to their own model), no failure mode, no ambiguity introduced. When a
 control is this cheap and detects a class of silent error, it is not optional.
 
+#### The 1Password precedent, and why a conversation is harder than a GUI
+
+The CINO's example, and it is the right one. Corporate 1Password accounts sit alongside personal
+ones, and people routinely put personal items in the work vault — because it is one machine, or
+they never set the personal account up, or they simply picked the wrong store at save time. **It
+happens constantly, to careful people.**
+
+Two things follow.
+
+**1Password shows the destination vault in the UI at save time, and people still get it wrong.** So
+an echo is *not sufficient*. But note what we do not have: a GUI has a **persistent visual
+indicator** of the active account, always on screen, glanceable. A conversation has no such
+surface. **The reply is the only place the identity can appear at all** — which makes the echo more
+important here than in 1Password, not less, and means the design cannot lean on the user "just
+checking" somewhere else.
+
+**The consequence is a governance failure, not a mis-attribution nuisance** — and it is asymmetric,
+so both directions need naming:
+
+| Slip | Where the action is recorded | Why it matters |
+|---|---|---|
+| Personal document, **work** account | CSA's Admin Console Drive audit log | Personal activity inside corporate retention and discovery scope. The 1Password personal-in-work-vault problem, offboarding included |
+| CSA document, **personal** account | **no CSA audit log at all** | Corporate work happening off the corporate trail, invisible to the people accountable for it |
+
+The second is the one an organisation should fear more, and it is the one nobody notices, because
+nothing is *missing* from the user's point of view — the comment posted, the thread resolved, the
+work got done. Only the record is gone.
+
+This is the strongest argument for `acted_as`: it is the sole mechanism by which either slip becomes
+visible at the moment it happens, rather than during an audit that will not find what was never
+logged.
+
 ### 8. `authenticate(account)`
 
 One consent flow per account, into that account's token path. Google permits the same OAuth client
@@ -414,6 +446,11 @@ Three consequences:
 
 - **Do not oversell local logging.** Ship it for diagnostics — the ring buffer and opt-in JSONL in
   #145 are right — and state plainly in `SECURITY.md` that the durable record is Google's.
+- **Default the level to genuinely-bad-only**, per the CINO, with opt-in verbosity and a full debug
+  mode for troubleshooting. That is not merely about noise: verbose logging of a tool that reads
+  documents risks **writing document and comment content to disk**, which `SECURITY.md` explicitly
+  rules out ("no persistent storage of comment content"). So default-minimal is a *privacy*
+  control, and full debug needs a loud statement of what it may capture — not a quiet flag.
 - **Multi-account makes Google's trail *more* useful**, because the acting identity determines
   *which* audit log the action lands in. A work-account action is visible to CSA admins; a personal
   one is not. That is another reason the acting identity must be explicit and echoed.
