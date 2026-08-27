@@ -157,7 +157,7 @@ around it quietly.
 
 ### Cutting a release
 
-Publishing is automated via **PyPI Trusted Publishing (OIDC)** — never `twine upload` by hand.
+Publishing is automated via **PyPI Trusted Publishing (OIDC)** — never `twine upload` by hand. **A version bump means carrying it through to PyPI**, including approving the protected `pypi` environment gate — a staged release helps nobody. And **a security audit opens a new minor** (`x.y.0`), with subsequent batches of fixes from that same audit as patches (`x.y.1`, `x.y.2`), so the version says how far through remediation a release is. Both rules, with the approval command and the CDN-lag gotcha: [`RELEASING.md`](RELEASING.md).
 
 1. **Bump `__version__`** in `src/csa_google_workspace/__init__.py` (the single source of truth; `pyproject.toml` reads it dynamically) and add a dated `CHANGELOG.md` entry — via the normal **branch + PR**, merged to `main` first.
 2. **`gh release create vX.Y.Z`** creates the git tag + GitHub Release. **Publishing the Release** triggers `.github/workflows/release.yml`, which runs the suite, builds sdist+wheel, `twine check`s, and uploads to PyPI over OIDC (no token).
