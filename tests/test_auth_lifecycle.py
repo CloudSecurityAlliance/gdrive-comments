@@ -10,6 +10,7 @@ import stat
 import pytest
 
 from csa_google_workspace import auth
+from csa_google_workspace.exceptions import AuthError
 
 
 class FakeCreds:
@@ -234,12 +235,36 @@ def test_cached_corrupt_token_error_does_not_leak_cause(tmp_path, monkeypatch):
     assert ei.value.__cause__ is not None
 
 
-def test_cached_read_write_token_satisfies_read_only_request(tmp_path, monkeypatch):
-    """#13's rule holds here too: a cached RW token serves a read_only=True load."""
+def test_a_cached_read_write_token_is_REFUSED_for_a_read_only_request(tmp_path, monkeypatch):
+    """CHANGED in 0.30.2 (#185). This asserted the opposite - that a cached read-write token
+    serves a `read_only=True` load - which is what made `CSA_GW_READ_ONLY=1` a client-side
+    `Policy` over a full-Drive credential rather than a narrower one.
+
+    Two things now stop it, and this test exercises the second: read-only consent is cached in
+    its own file (`token.readonly.json`), and a token carrying write scopes is refused outright
+    even if it is found at that path.
+
+    `needs_reconsent` still says a write scope satisfies a read requirement, which is true of
+    OAuth and is asserted in tests/test_auth.py. What changed is the posture's policy, not that
+    fact.
+    """
+    token = tmp_path / "token.readonly.json"      # the path a read-only posture looks at
+    token.write_text("{}")
+    rw = FakeCreds(valid=True, scopes=auth.scopes_for(read_only=False))
+    _patch_from_file(monkeypatch, rw)
+    monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
+
+    with pytest.raises(AuthError) as e:
+        auth.load_cached_credentials(str(tmp_path / "token.json"), read_only=True)
+    assert "write" in str(e.value).lower()
+
+
+def test_a_read_write_request_still_uses_the_unsuffixed_cache(tmp_path, monkeypatch):
+    """The counterweight: separating the caches must not disturb the default posture."""
     token = tmp_path / "token.json"
     token.write_text("{}")
     rw = FakeCreds(valid=True, scopes=auth.scopes_for(read_only=False))
     _patch_from_file(monkeypatch, rw)
     monkeypatch.setattr(auth.InstalledAppFlow, "from_client_secrets_file", _no_flow)
 
-    assert auth.load_cached_credentials(str(token), read_only=True) is rw
+    assert auth.load_cached_credentials(str(token), read_only=False) is rw

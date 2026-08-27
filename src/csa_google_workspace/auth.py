@@ -17,6 +17,33 @@ def scopes_for(read_only: bool) -> list[str]:
     return list(_RO if read_only else _RW)
 
 
+def token_path_for(token_path: str, read_only: bool) -> str:
+    """The cache file a posture uses. Read-only gets its own, derived from the configured path.
+
+    A read-write token genuinely satisfies a read-only scope set at Google, so sharing one cache
+    made `CSA_GW_READ_ONLY=1` a client-side `Policy` over a full-write credential rather than a
+    narrower credential. Separating the files means the guarantee is *which file exists* (#185).
+
+    Derived rather than configured on purpose: an operator asked to set two paths will set one,
+    and the one they forget is the one that silently falls back to the wrong posture.
+    """
+    if not read_only:
+        return token_path
+    base, ext = os.path.splitext(token_path)
+    if base.endswith(".readonly"):
+        return token_path          # idempotent: an operator may configure the derived path
+    return f"{base}.readonly{ext or '.json'}"
+
+
+def has_write_scope(granted: list[str]) -> bool:
+    """Does this credential carry any scope that can change something?
+
+    The `.readonly` variants are the only read-safe ones we ever request, so anything else in
+    our own scope space is a write scope.
+    """
+    return any(scope in set(granted or []) for scope in _RW)
+
+
 def needs_reconsent(granted: list[str], required: list[str]) -> bool:
     granted_set = set(granted or [])
     for scope in required:
@@ -29,7 +56,8 @@ def needs_reconsent(granted: list[str], required: list[str]) -> bool:
     return False
 
 
-def _read_cached(token_path: str, required: list[str]) -> Credentials | None:
+def _read_cached(token_path: str, required: list[str], *,
+                 read_only: bool = False) -> Credentials | None:
     """The token cache, or None if absent / scope-stale — both meaning 'consent is needed'."""
     if not os.path.exists(token_path):
         return None
@@ -39,11 +67,28 @@ def _read_cached(token_path: str, required: list[str]) -> Credentials | None:
         # Generic message: don't interpolate the cause (may echo token material). The
         # original is preserved via `from e` for debugging (#19).
         raise AuthError("could not load cached credentials") from e
-    # (#13) A cached read-write token satisfies a required read-only scope set, so
-    # read_only=True reuses it rather than forcing an interactive re-consent — deliberate,
-    # to keep headless refresh working. read_only still blocks writes client-side; for a
-    # scope-level read-only guarantee use a separate token path or from_credentials.
-    if needs_reconsent(list(creds.scopes or []), required):
+    granted = list(creds.scopes or [])
+    # A READ-ONLY POSTURE REFUSES A WRITE CREDENTIAL. `needs_reconsent` would accept one -
+    # correctly, as a statement about OAuth scopes - and accepting its answer here was the
+    # defect (#185): it made CSA_GW_READ_ONLY=1 a client-side Policy over a full-Drive token,
+    # so any path reaching the credential without passing the Policy gates had full write. Both
+    # prior audits name a read-only posture as the primary bound on prompt injection, which made
+    # the top risk's main mitigation fail open.
+    #
+    # `token_path_for` already separates the caches, and this is the second half rather than a
+    # duplicate: file separation alone is a FILENAME guarantee, and a token copied to the
+    # read-only path, or a broad grant at the consent screen, reopens the hole.
+    #
+    # The old comment cited headless refresh as the reason for sharing the cache. That reason
+    # survives: each file refreshes on its own, with no browser.
+    if read_only and has_write_scope(granted):
+        raise AuthError(
+            "this token carries WRITE scopes and the server is configured read-only, so it "
+            "will not be used - a read-only posture has to mean a read-only credential, not a "
+            "full-Drive one with writes blocked in software. Run the login again with "
+            "CSA_GW_READ_ONLY=1 set to consent to read-only scopes; it is written to a separate "
+            "cache file, so the read-write token you already have is left untouched.")
+    if needs_reconsent(granted, required):
         return None
     return creds
 
@@ -82,8 +127,8 @@ def load_credentials(client_secrets: str, token_path: str, read_only: bool,
     `load_cached_credentials` instead, which has no such branch.
     """
     required = scopes_for(read_only)
-    token_path = os.path.expanduser(token_path)
-    creds = None if force else _read_cached(token_path, required)
+    token_path = os.path.expanduser(token_path_for(token_path, read_only))
+    creds = None if force else _read_cached(token_path, required, read_only=read_only)
     if creds and creds.valid:
         return creds
     if creds and creds.expired and creds.refresh_token:
@@ -105,10 +150,14 @@ def load_cached_credentials(token_path: str, read_only: bool) -> Credentials:
     No `client_secrets` argument is needed: `to_json()` persists client_id/client_secret/
     token_uri into the cache, so a cached token is self-sufficient for refresh.
     """
-    token_path = os.path.expanduser(token_path)
+    token_path = os.path.expanduser(token_path_for(token_path, read_only))
     if not os.path.exists(token_path):
-        raise AuthError("no cached credentials")
-    creds = _read_cached(token_path, scopes_for(read_only))
+        raise AuthError(
+            "no cached credentials" + (
+                " for a read-only posture. CSA_GW_READ_ONLY=1 uses its own cache file, so a "
+                "read-write token elsewhere does not satisfy it - run the login again with "
+                "CSA_GW_READ_ONLY=1 set." if read_only else ""))
+    creds = _read_cached(token_path, scopes_for(read_only), read_only=read_only)
     if creds is None:
         raise AuthError("cached credentials lack the required scopes")
     if creds.valid:

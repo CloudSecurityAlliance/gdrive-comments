@@ -2,7 +2,7 @@
 audit_id: 2026-08-27-01
 remediation_started: 2026-08-27T19:20Z
 remediation_status: in-progress
-fixed_in_version: 0.30.0, 0.30.1
+fixed_in_version: 0.30.0, 0.30.1, 0.30.2
 ---
 
 # Remediation — audit 2026-08-27-01
@@ -233,3 +233,70 @@ storage-touching list must still name tools that exist, or a rename silently emp
 be read-only, and 0.30.0's required `USER_ENTERED` as the default. Both were rewritten rather than
 deleted, keeping the legitimate half of each. Three of the four findings fixed so far had a test
 defending them, which is the concrete reason a green suite proved nothing here.
+
+---
+
+## T9 / #185 — `read_only=True` was satisfied by a cached read-write token
+
+**Status:** fixed · **Landed:** 0.30.2 · the audit's load-bearing item
+
+`CSA_GW_READ_ONLY=1` installed an empty `Policy` over a full-write credential. Any path reaching
+the credential without passing the `Policy` gates had full write, and both prior audits name a
+read-only posture as the primary bound on prompt injection — so the top risk's main mitigation
+could fail open.
+
+### Two changes, because either alone is a half-measure
+
+**A separate cache**, `token.readonly.json`, derived from `CSA_GW_TOKEN` rather than configured
+separately: an operator asked for two paths will set one, and the forgotten one is the posture
+that silently falls back. Idempotent, so configuring the derived path is harmless.
+
+**Write scopes refused outright** in a read-only posture. File separation alone is a *filename*
+guarantee — a token copied across, or a broad grant at the consent screen, reopens the hole.
+
+### What was deliberately not changed
+
+`needs_reconsent` says a granted write scope satisfies a required read scope. **That is true of
+OAuth**, `tests/test_auth.py` is right to assert it, and changing it would have made a true thing
+false. The defect was never the predicate; it was the *policy* of accepting its answer for a
+posture whose entire purpose is a narrower credential. The fix is a layer above it, and a test
+asserts both: the predicate still says yes, the posture still says no.
+
+The old comment cited **headless refresh** as the reason for sharing one cache. That reason
+survives the separation — each file refreshes on its own, with no browser — so nothing was traded
+away for this.
+
+### A gap the fix nearly introduced
+
+`mcp/_tools/auth.py` wrote tokens to `settings.token_path` directly. With the separation in place
+and nothing else changed, `authenticate` would have written a valid read-only token to
+`token.json` while the server read `token.readonly.json`, leaving `CSA_GW_READ_ONLY=1`
+**permanently unsatisfiable with no error explaining why** — a worse failure than the one being
+fixed, because it looks like the feature is broken rather than insecure.
+
+Found by reading the call sites, not by a test. So there is now a test asserting that no write
+site uses the raw configured path, and a round-trip test that writes where the writer writes and
+reads where the reader reads.
+
+Also fixed in the same pass: every message naming the token cache (`_login.py`, the
+`authenticate` tool) now shows the file actually in use, or a read-only operator would be told to
+look in the wrong place.
+
+### Usability, because a security fix nobody adopts is not one
+
+Consenting read-only leaves an existing read-write token untouched, and the error message says so
+explicitly. A fix that appeared to destroy somebody's working login would simply be reverted by
+whoever hit it.
+
+### The fourth test found defending a flaw
+
+`test_cached_read_write_token_satisfies_read_only_request` asserted the vulnerable behaviour
+outright, with `#13`'s rule cited as justification. Rewritten, with a counterweight asserting a
+read-write request still uses the unsuffixed cache.
+
+**Four of the five findings fixed so far had a test holding their behaviour in place** — #181
+(`USER_ENTERED` as default), #184 (`export_comments` read-only), #185 (this one), and 0.29.0's
+#161/#162 pair before the audit began. That is the clearest available answer to why a green suite
+of over a thousand tests said nothing about any of it, and it is worth carrying into the next
+audit: **ask what the suite asserts about the behaviour you suspect, before trusting that it
+passes.**

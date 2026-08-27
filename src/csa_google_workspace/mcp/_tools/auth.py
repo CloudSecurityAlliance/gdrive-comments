@@ -10,7 +10,7 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 
 from ... import exceptions as exc
-from ...auth import load_cached_credentials
+from ...auth import load_cached_credentials, token_path_for
 from .._auth_flow import build_flow, consent_url, finish, start_loopback
 from .._config import Settings
 from .._schemas import AuthOut
@@ -47,7 +47,8 @@ def register_auth_tools(app: MCPServer, settings: Settings) -> None:
                 pass
             else:
                 return {"status": "already_authorized",
-                        "detail": f"A usable token is already cached at {settings.token_path}. "
+                        "detail": f"A usable token is already cached at "
+                                  f"{token_path_for(settings.token_path, settings.read_only)}. "
                                   f"Pass force=true to authorize again."}
 
         if not settings.client_secrets:
@@ -91,10 +92,16 @@ def register_auth_tools(app: MCPServer, settings: Settings) -> None:
                                   "Call authenticate again when ready."}
 
             await anyio.to_thread.run_sync(
-                lambda: finish(flow, redirect, settings.token_path))
+                # token_path_for, not settings.token_path: a read-only posture reads a
+                # separate cache (#185), and writing the token where nothing reads it
+                # would make CSA_GW_READ_ONLY=1 impossible to satisfy.
+                lambda: finish(flow, redirect,
+                               token_path_for(settings.token_path, settings.read_only)))
             await ctx.session.send_elicit_complete(elicitation_id)
             return {"status": "authorized",
-                    "detail": f"Token cached at {settings.token_path}. Both Claude Code and "
+                    "detail": f"Token cached at "
+                        f"{token_path_for(settings.token_path, settings.read_only)}. "
+                        f"Both Claude Code and "
                               f"Claude Desktop use this file, so neither needs authorizing again."}
         finally:
             loopback.close()
