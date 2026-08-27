@@ -94,17 +94,30 @@ endpoint was behind and the simple index current; after v0.30.0 it was the rever
 is why it no longer fails on a true claim.
 
 **The consequential direction is a stale simple index, because that is what pip resolves from.**
-After v0.30.0 a clean-venv install returned **0.29.0** — the version the release had just fixed —
-for roughly twenty seconds. `--no-cache-dir` does not help: it bypasses pip's cache, not PyPI's
-CDN. So poll the simple index for the new version *before* the clean-venv check:
+After v0.30.0 a clean-venv install returned **0.29.0** — the version the release had just fixed.
+`--no-cache-dir` does not help: it bypasses pip's cache, not PyPI's CDN.
+
+**And polling an endpoint first is NOT sufficient** — tried at v0.30.1 and it still failed. The
+simple index reported `0.30.1` present, and pip then installed `0.30.0` from a different CDN edge.
+Requesting an index yourself tells you about the edge *you* reached, not the one pip will.
+
+So the only reliable verification is to **install and assert the version, retrying until it
+matches**:
 
 ```bash
-until curl -s -H 'Accept: application/vnd.pypi.simple.v1+json' \
-        https://pypi.org/simple/csa-google-workspace/ | grep -q '"0.30.0"'; do sleep 20; done
+for i in $(seq 1 12); do
+  rm -rf /tmp/vcheck && python3 -m venv /tmp/vcheck
+  /tmp/vcheck/bin/pip install -q --no-cache-dir 'csa-google-workspace[mcp]'
+  V=$(/tmp/vcheck/bin/python -c 'import csa_google_workspace as m; print(m.__version__)')
+  [ "$V" = "$EXPECTED" ] && break
+  sleep 20
+done
 ```
 
-Skip that and the verification step tests the **old artifact** and passes, which is worse than
-not checking at all — it is a green light on the thing you were trying to replace.
+Do it this way round and a stale edge costs a retry. Do it the other way and the verification
+step tests the **old artifact** and *passes* — which is worse than not checking at all, because
+it is a green light on exactly the thing you were replacing. That happened twice before the rule
+was written this way.
 
 ## Cut a release
 
