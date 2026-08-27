@@ -93,6 +93,27 @@ def pypi_versions() -> set[str] | None:
         return None
 
 
+def simple_index_versions() -> set[str] | None:
+    """Versions the SIMPLE INDEX carries. `None` when it could not be read.
+
+    Exists to corroborate `pypi_versions()`, which reads the project-level JSON endpoint. That
+    endpoint is CDN-cached per edge and lags: minutes after v0.29.0 published, a local check
+    saw it and a GitHub runner did not, so this check failed on a claim that was TRUE.
+
+    A release check that is flaky immediately after a release is worse than no check, because
+    it trains people to re-run it instead of reading it. The simple index updates first - the
+    same asymmetry the yank comparison below already relies on - so it is the tie-breaker.
+    """
+    request = urllib.request.Request(  # noqa: S310 - fixed https URL, not user input
+        f"https://pypi.org/simple/{PROJECT}/",
+        headers={"Accept": "application/vnd.pypi.simple.v1+json"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return set(json.load(response).get("versions") or [])
+    except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError):
+        return None
+
+
 def pypi_yanked() -> set[str] | None:
     """Versions PyPI reports as yanked, from the SIMPLE index rather than the JSON API.
 
@@ -172,7 +193,14 @@ def main() -> int:
             problems.append(
                 f"v{version}: on PyPI, but the changelog does not claim it was released. "
                 f"People can install it; the changelog should say so.")
+        # Corroborate against the simple index before calling this a discrepancy: the JSON
+        # endpoint lags per CDN edge, and a false alarm here is the expensive kind.
+        on_index = simple_index_versions() if claimed - published else None
         for version in sorted(claimed - published, key=_key):
+            if on_index is not None and version in on_index:
+                print(f"  ! v{version} is on the simple index but not yet in the JSON endpoint "
+                      f"- a CDN lag, not a discrepancy. Resolves itself within minutes.")
+                continue
             problems.append(
                 f"v{version}: the changelog claims it was released, but it is not on PyPI. "
                 f"`pip install {PROJECT}=={version}` will fail.")
