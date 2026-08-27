@@ -113,8 +113,72 @@ mechanisms empirically where possible).
 
 ---
 
+---
+
+## Running an audit safely in a shared repository
+
+**An audit agent must never run `git checkout`, `git switch`, or `git checkout -b`
+in a working tree it does not exclusively own.** If another agent or person may be
+working in that tree, take one of these two paths instead.
+
+**Preferred — an isolated worktree.** One command, and the shared tree is never
+touched:
+
+```bash
+git worktree add -b docs/security-audit-YYYY-MM-DD /tmp/audit-wt origin/main
+# write, commit and push from /tmp/audit-wt
+git worktree remove /tmp/audit-wt
+```
+
+**Alternative — read-only audit.** Analyse in place without any git write, and
+hand the audit directory to a human to commit.
+
+To push a single existing commit somewhere safe without switching branches:
+
+```bash
+git push origin <sha>:refs/heads/<branch-name>
+```
+
+### Why this rule exists
+
+It was learned the hard way during audit `2026-08-27-01`. That audit called
+`git checkout -b` in a working tree another agent was actively using. The other
+agent's next commit landed on the audit's branch — 259 lines across four files,
+on a branch named for someone else's work, unpushed and reachable from that one
+ref. Nothing was lost, but only because it was noticed; deleting that branch
+would have destroyed it.
+
+The failure is the same class as the two flaws that audit found in the code: **a
+premise that was true when established and stopped being true.** `HEAD` pointed
+at the audit's branch when the audit created it, and the audit kept assuming it
+still did. Git branch state is process-global for a working tree, so it is
+exactly the kind of shared mutable thing the rest of this workflow is designed to
+avoid — which is also why an audit commits only its own directory, and why the
+index should be generated rather than edited.
+
+### Practical consequences for parallel audits
+
+Several audit agents on one commit is the point of this structure, and it works
+only if none of them mutates shared state. With the rule above:
+
+| shared thing | contention |
+|---|---|
+| the audit's own directory | none — one owner |
+| source files | none — audits never write them |
+| the living `THREAT_MODEL.md` | none — proposed by issue, never edited |
+| git branch / `HEAD` | **none, if each agent uses its own worktree** |
+| this index and `SCHEMA.md` | the last one — generate the index from front matter |
+
+Record `HEAD` at both the start and the end of the audit
+(`target_commit` and `main_at_record_commit`) regardless. In a repository with
+concurrent work the tree will move underneath the audit, and a record that does
+not say so will be read as more current than it is.
+
 ## Conventions
 
+- **Never switch branches in a working tree you do not exclusively own.** Use
+  `git worktree`, or audit read-only and hand the directory over. See the section
+  above for why.
 - **Findings are not fixed in the context that found them.** The flaw record and
   its reasoning live in `README.md` / `FINDINGS.md`; the fix and its reasoning
   live in `REMEDIATION.md`, written by a different session. Separating them keeps
