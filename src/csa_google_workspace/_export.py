@@ -197,9 +197,20 @@ def to_grid(columns: list[str], rows: list[dict]) -> list[list[str]]:
 # v0.24.0 shipped the CSV without this escape. The remedy is OWASP's: a leading apostrophe,
 # which Excel and Sheets both read as "the rest is text" while leaving the value legible.
 #
-# NOT applied to `to_grid`: a Sheets write uses RAW, which stores values as text without
-# parsing, so a leading `=` is already inert - and escaping there would put a stray apostrophe
-# into somebody's spreadsheet.
+# NOT applied to `to_grid`, and the reason is narrower than it used to say here. This comment
+# claimed "a Sheets write uses RAW" as a general fact. It was only ever LOCALLY true: it held
+# for the one path `to_grid` uses - `Sheet.update`, whose default is RAW - while the MCP tool
+# `update_cells` sitting above it defaulted to USER_ENTERED and would have evaluated the same
+# text as a formula (#181, fixed by making RAW the default there too).
+#
+# So the premise is now true everywhere AND enforced, rather than asserted: the RAW-ness of
+# this path is asserted by tests/test_raw_is_the_default.py, and the eight library declarations
+# it depends on are asserted there too. Escaping here would put a stray apostrophe into
+# somebody's spreadsheet, which is why the guard belongs on the write and not on the value.
+#
+# Note the escape sets are DELIBERATELY different per format and must stay that way: Excel
+# reading a CSV acts on = + - @, openpyxl infers a formula from `=` alone, and a RAW Sheets
+# write needs no escaping at all. One shared helper would be wrong in two directions.
 FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
 
 
