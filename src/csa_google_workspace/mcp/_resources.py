@@ -24,7 +24,16 @@ from __future__ import annotations
 from mcp.server import MCPServer
 
 from .._environment import describe_environment
-from ..policy import _GATES, ALL_CAPABILITIES, DEFAULT_ENABLED, MODIFY, READ, Policy, Scope
+from ..policy import (
+    _GATES,
+    ALL_CAPABILITIES,
+    DEFAULT_DISABLED,
+    DEFAULT_ENABLED,
+    MODIFY,
+    READ,
+    Policy,
+    Scope,
+)
 from ._capabilities import reachable_capabilities
 from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
 
@@ -100,9 +109,15 @@ def render_config(settings: Settings) -> str:
             "for them yet.",
             "",
           ] if unreachable else []),
+        # Derived from DEFAULT_DISABLED, not written out. The previous version said the
+        # default "excludes renaming, trashing and sharing" while LISTING file.update and
+        # file.trash two clauses earlier - true when written, and contradicted by the v0.21.0
+        # regrouping, in the resource whose entire job is telling the truth about the config.
+        # `tests/test_resources.py` now asserts the sentence agrees with the constant.
         f"Set with `CSA_GW_CAPABILITIES`. Unset means the default set "
-        f"({', '.join(f'`{c}`' for c in sorted(DEFAULT_ENABLED))}), which excludes renaming, "
-        f"trashing and sharing.",
+        f"({', '.join(f'`{c}`' for c in sorted(DEFAULT_ENABLED))}), which excludes "
+        f"{', '.join(f'`{c}`' for c in sorted(DEFAULT_DISABLED))} - the three Google gives "
+        f"you no way to undo.",
         "",
         "## Other",
         "",

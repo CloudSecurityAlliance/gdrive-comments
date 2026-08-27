@@ -6,9 +6,73 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-26 — v0.26.0 (`describe`, because a notice about permissions must be generated from them)
+
+Both of these came out of one real install, and they are the same failure twice: **prose about
+configuration, written once, drifting from the constant it describes.**
+
+### The grant notice told somebody sharing was off while it was on
+
+The CSA installer prints a notice saying what has just been granted — the control that makes an
+unrestricted write scope *a decision* rather than a surprise. It was hardcoded to the DEFAULT
+posture. On a machine where it kept an existing environment instead of writing one, it said:
+
+> It CANNOT share a file with anybody, edit a comment, or delete one.
+
+while that install had `CSA_GW_CAPABILITIES=default,file.update,file.trash,file.share`.
+**`file.share` was enabled.** The notice understated the grant, which is the dangerous direction
+for a notice to be wrong in.
+
+Hence `csa-google-workspace-mcp describe`: the same text as the `csa-gw://config` resource and
+the `describe_configuration` tool, printed to **stderr**, reachable without an MCP client. Same
+reason `--version` exists — *an installer could not otherwise check what it had just
+configured.* Now the installer can print the truth instead of asserting a default.
+
+### The config resource contradicted itself in one paragraph
+
+Found immediately, by using the new command. `render_config` listed the default set —
+correctly including `file.trash` and `file.update` — and then said it *"excludes renaming,
+trashing and sharing."*
+
+True when written. False after v0.21.0 regrouped the profiles on recoverability and moved those
+two **into** the default. In the one resource whose entire job is telling the truth about the
+configuration.
+
+The clause is now derived from `DEFAULT_DISABLED` rather than written out, so it cannot say
+something different from the constant:
+
+    ...which excludes `comment.delete`, `comment.edit`, `file.share` - the three Google gives
+    you no way to undo.
+
+### The check
+
+`tests/test_config_text_agrees_with_policy.py`, 18 tests, including the two that would have
+caught each bug:
+
+- the "excludes" clause may not name anything that is IN `DEFAULT_ENABLED` — the exact
+  contradiction that shipped;
+- an enabled non-default capability must appear under *Available here* — the exact shape of the
+  notice bug, checked at the layer that should have prevented it;
+- and every capability must appear somewhere, available or refused, never silently absent —
+  because silent absence is how somebody comes to believe a permission they have is one they do
+  not.
+
+Verified to fail on the reintroduced sentence and pass when reverted.
+
+### A consequence of v0.21.0 worth stating plainly
+
+That install's capability list began with the token `default`. Before v0.21.0 `default` included
+`comment.edit` and `comment.delete`; it no longer does. **So upgrading silently removed two
+capabilities from any config written that way.**
+
+`API-STABILITY.md` already says profile membership is not covered by the stability promise and
+may be recurated — and this is what that looks like from the other end. `describe` is now the
+answer to *"what does my install actually permit?"*, which is a question a moving token makes
+worth asking after every upgrade.
 
 ## 2026-08-26 — v0.25.0 (**security:** CSV formula injection; and the export lands where you are)
 

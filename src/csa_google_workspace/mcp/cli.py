@@ -24,6 +24,7 @@ USAGE = """usage: csa-google-workspace-mcp [login [--force]]
   demo --auto     the same, unattended - it is also the end-to-end test
   configure       write a working Claude Desktop config (absolute path + policy)
   configure --print   show the JSON without writing anything
+  describe        print the EFFECTIVE policy - what this install may actually do
   --version       print the installed version and exit
 
 Clients that support MCP URL elicitation (Claude Code) can authorize in-session via
@@ -82,6 +83,20 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         # "which version is actually on this machine?" without an MCP client in the loop.
         from .. import __version__
         print(__version__, file=sys.stderr)
+        return 0
+    if argv and argv[0] in ("describe", "describe-configuration", "config"):
+        # The same text as the `csa-gw://config` resource and the `describe_configuration`
+        # tool, reachable WITHOUT an MCP client — for the same reason `--version` exists: an
+        # installer could not otherwise check what it had just configured.
+        #
+        # It was needed for a specific bug. The CSA installer printed a notice saying what had
+        # just been granted, hardcoded to the DEFAULT posture — and when it kept a user's
+        # existing environment instead of writing one, the notice described a config they did
+        # not have. It told somebody sharing was off while `file.share` was enabled. A notice
+        # about permissions has to be generated from the permissions, not from an assumption
+        # about them.
+        from ._resources import render_config
+        print(render_config(settings), file=sys.stderr)
         return 0
     if argv and argv[0] in ("configure", "configure-desktop"):
         # D2. Claude Desktop is a GUI app, so on macOS it inherits launchd's PATH -
