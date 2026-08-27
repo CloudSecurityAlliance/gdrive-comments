@@ -93,6 +93,19 @@ endpoint was behind and the simple index current; after v0.30.0 it was the rever
 `check_release_history.py` treats a claimed version confirmed by **either** as published, which
 is why it no longer fails on a true claim.
 
+**The consequential direction is a stale simple index, because that is what pip resolves from.**
+After v0.30.0 a clean-venv install returned **0.29.0** — the version the release had just fixed —
+for roughly twenty seconds. `--no-cache-dir` does not help: it bypasses pip's cache, not PyPI's
+CDN. So poll the simple index for the new version *before* the clean-venv check:
+
+```bash
+until curl -s -H 'Accept: application/vnd.pypi.simple.v1+json' \
+        https://pypi.org/simple/csa-google-workspace/ | grep -q '"0.30.0"'; do sleep 20; done
+```
+
+Skip that and the verification step tests the **old artifact** and passes, which is worse than
+not checking at all — it is a green light on the thing you were trying to replace.
+
 ## Cut a release
 
 1. Make sure `main` is green and pick the version. Bump it in **one place** —
