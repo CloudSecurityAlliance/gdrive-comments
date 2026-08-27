@@ -10,6 +10,70 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-27 — v0.30.0 (RAW is the default at the MCP boundary too) — not released yet; pending, not abandoned
+
+**Security fix.** From audit
+[`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md),
+which rated this its only exploitable flaw.
+
+`update_cells` and `append_rows` defaulted `valueInputOption` to **`USER_ENTERED`**, while every
+Sheets write declaration in the library defaults to `RAW` — **eight** of them, across the
+`Backend` protocol, both implementations and the `Sheet` façade. The tool layer sat above all
+eight and overrode the safe default.
+
+`USER_ENTERED` means *parse this as if a human typed it*. So text derived from a comment body —
+authored by anyone who can comment on a shared document, which is `SECURITY.md`'s named primary
+risk — became a **live formula**.
+
+**Why that is worse than the CSV variant that got 0.24.0 yanked.** Sheets evaluates formulas on
+**Google's servers**, and `IMPORTXML` / `IMPORTDATA` / `IMPORTRANGE` / `IMAGE` issue outbound
+requests from there, with other cells concatenable into the URL. The 0.24.0 case needed a human
+to open a file and click through a warning. This one needs neither:
+
+- no sharing event, so DLP sees nothing
+- version history is irrelevant — the data has already left
+- the client's approval mode does not help: the call is a legitimate, correctly-annotated write,
+  and `content.write` is on by default
+
+The chain is ordinary rather than contrived: a collaborator leaves a crafted comment, the
+operator asks the agent to summarise comments into a tracking sheet, the formula evaluates.
+
+**Fixed by making `RAW` the default on both tools.** `USER_ENTERED` remains available as an
+explicit argument — the feature is legitimate and only the default was wrong. The docstrings are
+rewritten: the old one taught the unsafe value as the norm, which matters more than the signature,
+because for an MCP tool the description is the only interface documentation a model gets.
+
+**Reachability was checked, not assumed.** The deployed configuration on the maintainer's machine
+had `CSA_GW_ALLOWLIST_MODIFY=*` and no per-tool enablement, so nothing in configuration removed
+this path.
+
+### One correction to the finding, recorded rather than quietly absorbed
+
+The audit reported that `_export.py`'s premise — *"NOT applied to `to_grid`: a Sheets write uses
+RAW"* — was *"true of the library, false at the MCP boundary."* Tracing it during the fix shows
+`destination="sheet"` goes through `Sheet.update`, the library method, and so was **already
+safe**; a test written before the fix confirmed it by passing.
+
+The premise was not false. It was a **global claim that was only locally true** — it held for the
+one path `to_grid` happens to use, with nothing tying it to the eight declarations it depended
+on. That is load-bearing prose with no enforcement, which is a different defect from an incorrect
+statement, and the comment now names the path, points at the tests that hold it, and records why
+the escape sets **must stay different per format**.
+
+### An existing test asserted the vulnerable behaviour
+
+`test_update_cells_defaults_to_user_entered_so_formulas_work` encoded the unsafe default as
+intent. Rewritten rather than deleted: its legitimate half — *a formula is writable* — is kept and
+asserted through the explicit argument.
+
+21 new assertions in `tests/test_raw_is_the_default.py`, ten failing before the fix, including
+all eight library defaults by reflection: a tool passing no option inherits whatever the layer
+beneath chose, so one drifted default reopens this.
+
+Fix reasoning:
+[`REMEDIATION.md`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/REMEDIATION.md).
+Closes [#181](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/181).
+
 ## 2026-08-27 — v0.29.0 (a spreadsheet's FALSE is a boolean, and it meant the opposite)
 
 Two defects in v0.28.0's `apply_comment_actions`, found in review, and they are two halves of

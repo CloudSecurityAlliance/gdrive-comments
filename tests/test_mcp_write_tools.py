@@ -79,10 +79,24 @@ def test_update_cells_writes_and_counts():
     assert be._writes, "the write did not reach the backend"
 
 
-def test_update_cells_defaults_to_user_entered_so_formulas_work():
+def test_update_cells_defaults_to_raw_and_user_entered_is_opt_in():
+    """CHANGED in 0.30.0 (#181). This asserted USER_ENTERED "so formulas work" - true, and the
+    wrong default: it made Google evaluate text derived from untrusted comment bodies as a
+    formula, server-side, where IMPORTXML and friends fetch outbound. The legitimate half of
+    the original intent is kept below - a formula is still writable, just deliberately.
+
+    Full reasoning and the payload shapes: tests/test_raw_is_the_default.py.
+    """
     app, be = _app()
     _out(app, "update_cells", {"fileId": "s", "a1Range": "A1", "values": [["=SUM(B1:B2)"]]})
-    assert any("USER_ENTERED" in str(w) for w in be._writes)
+    assert not any("USER_ENTERED" in str(w) for w in be._writes), \
+        "a bare update_cells must not let Google parse the value as a formula"
+
+    app, be = _app()
+    _out(app, "update_cells", {"fileId": "s", "a1Range": "A1", "values": [["=SUM(B1:B2)"]],
+                               "valueInputOption": "USER_ENTERED"})
+    assert any("USER_ENTERED" in str(w) for w in be._writes), \
+        "writing a real formula on purpose must still work"
 
 
 def test_update_cells_rejects_a_flat_list():
