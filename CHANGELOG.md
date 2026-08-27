@@ -105,6 +105,49 @@ and being refused beats an OOM while not needing to be refused beats both.
 
 Closes [#167](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/167).
 
+### The report survives the mutation — three ways it did not
+
+One theme, found in review: the record was destroyed *exactly* when it was the only record.
+`apply_comment_actions` mutates a shared document and then writes markers back to the register,
+and in three separate ways the account of what happened was falsified or thrown away after the
+first mutation had already landed.
+
+**A partial row reported as untouched.** The per-row `except` reset *every* outcome flag and
+appended "Nothing on this row was changed" — even when earlier actions on that row had succeeded.
+A row with a reply and a resolve, where the resolve hit a transient 500, reported `replied=0,
+failed=1, "Nothing on this row was changed."` while the reply was live in a document forty-two
+people were reading, and the register had already recorded it as done. The artifact and the report
+disagreed, and the report is what a human reads — so every next step was wrong: re-word and
+re-send (duplicate), or believe the review unfinished when it was not.
+
+The original reasoning is in the code and is half right — *"a refusal has to be unambiguous about
+whether it happened"*. True. It was made unambiguous by being **untrue**. Now:
+
+    replied; RuntimeError: backend exploded (503). ALREADY APPLIED on this row: replied -
+    that work is done and recorded in the register. Re-run to finish what is left; work
+    already done is skipped, not repeated.
+
+**An unguarded `write_back` discarded the whole report.** A read-only volume, an `.xlsx` still
+open in Excel, an `openpyxl` error — any of them propagated and took the entire row-by-row account
+with it. An `.xlsx` locked open in Excel is not exotic; it is the *expected* state seconds after
+somebody finishes filling the register in. Now caught, with the report kept and the reason
+surfaced ahead of the row detail, including that re-running is safe.
+
+**`write_back` could not survive its own temp file on Windows.** It reopened a
+`NamedTemporaryFile` by name (`wb.save(tmp.name)`) and called `os.replace` while the handle was
+open — both `PermissionError` there, and Windows is supported: the repo ships PowerShell
+installers. It failed *after* the replies had applied, so the crash the markers exist to survive
+was the crash that stopped them being written. Now `mkstemp` with an explicit close and the rename
+outside any open handle.
+
+`delete=False` also **orphaned the temp file** whenever anything raised, leaving it beside
+somebody's register permanently. That half is portable and is what the new test asserts, since the
+Windows `PermissionError` cannot be reproduced on POSIX.
+
+Closes [#163](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/163),
+[#166](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/166),
+[#168](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/168).
+
 ## 2026-08-27 — v0.28.0 (the register goes back: bulk replies and resolves, safe to re-run)
 
 `export_comments` made 205 threads readable. `apply_comment_actions` makes them actionable:

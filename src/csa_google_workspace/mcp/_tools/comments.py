@@ -311,10 +311,21 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         rows = _apply.read_rows(source)
         report = _apply.apply_rows(doc, rows, apply=apply, force=force)
 
+        register_error = ""
         if apply:
             # Written even on partial failure: the rows that DID land must be marked, or a
-            # re-run repeats them.
-            _apply.write_back(source, rows, _apply.header_for(rows))
+            # re-run repeats them. GUARDED, because this is the one moment the report is the
+            # only surviving record - the document has already changed, and letting a locked
+            # .xlsx or a read-only volume propagate would replace the whole row-by-row account
+            # with an exception. An .xlsx open in Excel is the EXPECTED state seconds after
+            # somebody finishes filling the register in. (#168)
+            try:
+                _apply.write_back(source, rows, _apply.header_for(rows))
+            except Exception as error:            # noqa: BLE001 - reported, never fatal
+                register_error = (
+                    f"The document WAS updated as listed below, but the register could not be "
+                    f"written back: {error}. Re-running is safe - it checks the document "
+                    f"itself, not just its tick-boxes, so work already done is skipped.")
 
         out_rows: list[ActionRowOut] = [
             {"row": r.row, "thread_id": r.thread_id, "replied": r.replied,
@@ -342,7 +353,10 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
             "file_id": doc.id, "file_name": doc.name, "source": str(source),
             # The wrong-file hint goes FIRST when there is one: it is the fact that makes
             # every row-level message beneath it redundant.
-            "detail": ((report.wrong_file + " ") if report.wrong_file else "") + (
+            # The wrong-file hint and a failed write-back both go FIRST: each is a fact that
+            # changes how every row-level message beneath it should be read.
+            "detail": ((report.wrong_file + " ") if report.wrong_file else "")
+            + ((register_error + " ") if register_error else "") + (
                 f"{replied} replied, {resolved} resolved, {reopened} reopened, "
                 f"{deleted} deleted, {failed} failed. Row numbers below are spreadsheet rows."
                 if apply else
