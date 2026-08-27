@@ -190,6 +190,8 @@ class ActionRowOut(TypedDict):
     thread_id: str
     replied: bool
     resolved: bool
+    reopened: bool
+    deleted: bool
     failed: bool
     detail: str
 
@@ -204,8 +206,12 @@ class ApplyActionsOut(TypedDict):
     applied: bool
     replied: int
     resolved: int
+    reopened: int
+    deleted: int
     would_reply: int
     would_resolve: int
+    would_reopen: int
+    would_delete: int
     skipped: int
     failed: int
     rows: list[ActionRowOut]

@@ -42,8 +42,16 @@ REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text
 # finished rows without asking Google about every one of them. It is the FAST path, not the
 # authority - see `apply_comment_actions`, which also checks the live thread, because the
 # interesting failure is posting a reply and dying before the tick is written.
-ACTIONS = ("reply_comment", "resolve_comment")
-COMPLETED = ("reply_comment_completed", "resolve_comment_completed")
+#   reply_comment    text to post. Empty means no reply.
+#   resolve_comment  TRUE resolves, FALSE reopens, empty leaves it alone. Three states, and
+#                    the blank one has to stay "I did not decide" - otherwise every untouched
+#                    row would reopen every resolved thread.
+#   delete_comment   TRUE removes it. For spam. The sharpest action here: Drive's soft delete
+#                    strips the content AND the author, permanently, and `comment.delete` is
+#                    off in every profile but `full`.
+ACTIONS = ("reply_comment", "resolve_comment", "delete_comment")
+COMPLETED = ("reply_comment_completed", "resolve_comment_completed",
+             "delete_comment_completed")
 COLUMNS = REPORTED + ACTIONS + COMPLETED
 
 
@@ -276,6 +284,22 @@ def resolve_export_path(path: str | None, *, default_dir: str | None, doc_name: 
 
 XLSX_SUFFIX = ".xlsx"
 HEADER_FILL = "1F3864"
+# The cells somebody is meant to WRITE in. A register is mostly a read-only record, so the
+# editable columns should not look like the rest of it - the same convention a financial model
+# uses to mark its inputs.
+INPUT_FILL = "FFF2CC"
+
+# What each decision column offers. NOT symmetrical, deliberately:
+#
+#   resolve_comment  TRUE / FALSE / blank - three real states. TRUE resolves, FALSE REOPENS,
+#                    and blank means "I have not decided", which most rows will be.
+#   delete_comment   TRUE / blank only. Drive has no undelete for a comment, so offering FALSE
+#                    would imply a reversal that does not exist - on the one action here that
+#                    genuinely cannot be undone.
+#
+# Every value offered must be one `_apply.truthy` accepts, or the sheet hands somebody a value
+# that then fails on import, which is worse than no dropdown at all.
+DROPDOWNS = {"resolve_comment": '"TRUE,FALSE"', "delete_comment": '"TRUE"'}
 
 # openpyxl refuses to write these and raises IllegalCharacterError. Reviewer text is arbitrary
 # human input - pasted from terminals, editors, mail clients - so it genuinely contains them: a
@@ -346,14 +370,36 @@ def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None
     ws.auto_filter.ref = ws.dimensions
     ws.row_dimensions[1].height = 28
 
+    # Dropdowns on the decision columns, so a value the importer would refuse cannot be typed.
+    from openpyxl.worksheet.datavalidation import DataValidation
+    last = ws.max_row
+    for name, allowed in DROPDOWNS.items():
+        if name not in keep or last < 2:
+            continue
+        letter = ws.cell(row=1, column=keep.index(name) + 1).column_letter
+        # `showDropDown` is INVERTED against its name: the XML attribute means "suppress the
+        # in-cell dropdown", so True HIDES the arrow. False is what shows it. Costly to
+        # rediscover, because the workbook opens fine either way and only the arrow is missing.
+        validation = DataValidation(type="list", formula1=allowed, allow_blank=True,
+                                    showDropDown=False)
+        validation.error = (f"{name} takes {allowed.strip(chr(34))} or nothing. A value nobody "
+                            f"can read is refused on import rather than guessed at.")
+        validation.errorTitle = "Not a value this column takes"
+        ws.add_data_validation(validation)
+        validation.add(f"{letter}2:{letter}{last}")
+
     wide = {"text", "quoted_text", "cell_text_by_tab"}
+    editable = set(ACTIONS)
     for i, name in enumerate(keep, start=1):
         letter = ws.cell(row=1, column=i).column_letter
         ws.column_dimensions[letter].width = 62 if name in wide else (
             22 if name in {"author", "created_time"} else 16)
+    input_fill = PatternFill("solid", fgColor=INPUT_FILL)
     for row in ws.iter_rows(min_row=2):
         for cell in row:
+            name = keep[cell.column - 1]
             cell.font = Font(name=font)
-            cell.alignment = Alignment(
-                vertical="top", wrap_text=keep[cell.column - 1] in wide)
+            cell.alignment = Alignment(vertical="top", wrap_text=name in wide)
+            if name in editable:
+                cell.fill = input_fill
     wb.save(target)

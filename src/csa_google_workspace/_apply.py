@@ -47,6 +47,8 @@ class RowResult:
     thread_id: str
     replied: bool = False
     resolved: bool = False
+    reopened: bool = False
+    deleted: bool = False
     failed: bool = False
     detail: str = ""
 
@@ -153,7 +155,12 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
         result = RowResult(thread_id=thread)
         reply_text = str(row.get("reply_comment") or "").strip()
         resolve_raw = row.get("resolve_comment")
+        # None here means "not filled in" OR "filled in with something unreadable", and those
+        # are told apart below by whether the cell was blank.
         wants_resolve = truthy(resolve_raw)
+        resolve_blank = _norm(resolve_raw) == ""
+        delete_raw = row.get("delete_comment")
+        wants_delete = truthy(delete_raw) is True
 
         notes: list[str] = []
         try:
@@ -165,23 +172,62 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                         "this row is a reply (reply_to is set), and actions belong on the "
                         "thread's own row - Drive has no reply-to-a-reply")
                 notes.append("a reply row; nothing to do")
-            elif not reply_text and not wants_resolve and wants_resolve is not None:
+            elif not reply_text and resolve_blank and not wants_delete:
                 notes.append("nothing filled in")
             else:
                 # The row's own validity first: an unreadable resolve value is wrong whether
                 # or not the thread exists, and "maybe later" must fail rather than be guessed
                 # at - guessing wrong closes somebody's open question.
-                if wants_resolve is None:
+                if not resolve_blank and wants_resolve is None:
                     raise ValueError(
                         f"resolve_comment is {str(resolve_raw)!r}, which is neither true nor "
-                        f"false. Use true/yes/1 or leave it empty - a value nobody can read "
-                        f"is not something to guess at when the result closes a thread.")
+                        f"false. Use true to resolve, false to reopen, or leave it empty - a "
+                        f"value nobody can read is not something to guess at when the result "
+                        f"closes somebody's open question.")
+                if wants_delete and (reply_text or not resolve_blank):
+                    # Replying to something you are about to destroy is incoherent, and doing
+                    # one of the two silently would be a guess about which was meant.
+                    raise ValueError(
+                        "delete_comment is set alongside another action on the same row. "
+                        "Deleting strips the text and the author permanently, so put it on "
+                        "its own row or drop the other column.")
                 # Reaching here means there IS something to do, so a missing thread is an
                 # error unconditionally. (The earlier version guarded this with an `and`,
                 # which was true but too subtle for a reader or a type checker to follow.)
                 comment = by_id.get(thread)
                 if comment is None:
+                    # A DELETED comment is absent from a normal listing, so a re-run of a
+                    # delete row would otherwise report "no such comment" - which reads like
+                    # the wrong sheet rather than work already done. Ask again, including the
+                    # deleted, before calling it missing.
+                    if wants_delete:
+                        try:
+                            tombstone = document.comments.get(thread, include_deleted=True)
+                        except Exception:         # noqa: BLE001 - genuinely absent
+                            tombstone = None
+                        if tombstone is not None and getattr(tombstone, "deleted", False):
+                            notes.append("already deleted")
+                            row["delete_comment_completed"] = DONE
+                            report.rows.append(_finish(result, notes))
+                            continue
                     raise ValueError(f"no comment {thread!r} on this file")
+
+                if wants_delete:
+                    if truthy(row.get("delete_comment_completed")):
+                        notes.append("delete already marked done")
+                    elif getattr(comment, "deleted", False):
+                        notes.append("already deleted")
+                        row["delete_comment_completed"] = DONE
+                    elif apply:
+                        comment.delete()
+                        row["delete_comment_completed"] = DONE
+                        result.deleted = True
+                        notes.append("deleted")
+                    else:
+                        result.deleted = True
+                        notes.append("would delete")
+                    report.rows.append(_finish(result, notes))
+                    continue
 
                 # Reply BEFORE resolve: resolving posts its own visible action-reply, so the
                 # substantive one has to land first or the thread reads backwards.
@@ -202,7 +248,10 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                         result.replied = True
                         notes.append("would reply")
 
-                if wants_resolve:
+                # TRUE resolves, FALSE reopens, blank leaves it alone. `resolved` is the
+                # state itself in both directions, so neither needs a marker to be idempotent -
+                # the marker only saves a round trip.
+                if wants_resolve is True:
                     if comment.resolved:
                         notes.append("already resolved")
                         row["resolve_comment_completed"] = DONE
@@ -216,14 +265,30 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
                     else:
                         result.resolved = True
                         notes.append("would resolve")
+                elif wants_resolve is False and not resolve_blank:
+                    if not comment.resolved:
+                        notes.append("already open")
+                        row["resolve_comment_completed"] = DONE
+                    elif apply:
+                        comment.reopen()
+                        row["resolve_comment_completed"] = DONE
+                        result.reopened = True
+                        notes.append("reopened")
+                    else:
+                        result.reopened = True
+                        notes.append("would reopen")
         except Exception as error:                # noqa: BLE001 - reported, never fatal
             result.failed = True
-            result.replied = result.resolved = False
+            result.replied = result.resolved = result.reopened = result.deleted = False
             notes = [f"{type(error).__name__}: {error}"]
 
-        result.detail = "; ".join(notes) or "nothing to do"
-        report.rows.append(result)
+        report.rows.append(_finish(result, notes))
     return report
+
+
+def _finish(result: RowResult, notes: list[str]) -> RowResult:
+    result.detail = "; ".join(notes) or "nothing to do"
+    return result
 
 
 def header_for(rows: list[dict]) -> list[str]:

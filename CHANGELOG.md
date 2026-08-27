@@ -61,6 +61,61 @@ Demonstrated end to end, including the crash:
                  -> 0 replied, 0 resolved
                     "an identical reply from you is already on this thread; skipped"
 
+### Unresolve, delete, and three filters the library already had
+
+Four more, three of them corrections to the first cut.
+
+**`resolve_comment` is a genuine true/false.** `false` was doing nothing, which wasted half the
+column — *"it makes sense that they might want to unresolve a comment."* So **TRUE resolves,
+FALSE reopens, blank leaves it alone**. Three states, and the blank one has to stay "I have not
+decided", or every untouched row would reopen every resolved thread.
+
+**`delete_comment`, for spam.** A review on a widely-shared document collects junk, and clearing
+it one thread at a time is the drudgery the register exists to end. It is also the sharpest
+action here — Drive's soft delete strips the content *and the author*, permanently — so it needs
+`comment.delete`, which is off in every profile but `full`, and it is refused on a row that also
+carries a reply or a resolve: replying to something you are about to destroy is incoherent, and
+silently doing one of the two would be a guess about which was meant.
+
+Its idempotency needed its own care. A deleted comment is **absent** from a normal listing, so a
+re-run would report *"no comment t3 on this file"* — which reads like the wrong sheet rather than
+work already done. It now asks again with `includeDeleted` before calling anything missing, and
+reports "already deleted".
+
+**`author` and `since` on the export.** `CommentCollection.filter` has supported both since the
+library shipped and the MCP layer simply never passed them through — the **fourth** time this
+month a capability existed in the library and not in the server. `since` is a Drive-side filter
+(`startModifiedTime`), so it is cheaper than fetching everything and discarding. Naive input is
+read as UTC rather than local: a register is shared, and *"since the 24th"* meaning a different
+instant per reader is worse than one arbitrary but stated choice.
+
+`includeResolved` already defaulted to True, so *"everything unless you say otherwise"* was
+already the behaviour — now pinned by a test.
+
+### The decision columns are real fields
+
+Dropdowns on `resolve_comment` and `delete_comment`, so a value the importer would refuse cannot
+be typed in the first place. Refusing at import is a round trip later than refusing at entry.
+
+They are **not symmetrical**, and that is the point:
+
+    resolve_comment   TRUE / FALSE / blank    resolve, reopen, leave alone
+    delete_comment    TRUE / blank            because Drive has NO undelete for a comment, and
+                                              offering FALSE would imply a reversal that does
+                                              not exist - on the one action that cannot be undone
+
+A test asserts every offered value is one `truthy()` accepts, because a dropdown that hands
+somebody a value which then fails on import is worse than no dropdown.
+
+The three input columns are tinted, the convention a financial model uses to mark its inputs: a
+register is mostly a read-only record, and the cells somebody is meant to write in should not
+look like the rest of it.
+
+**One openpyxl trap worth recording:** `showDropDown` is **inverted** against its name. The XML
+attribute means *"suppress the in-cell dropdown"*, so `True` hides the arrow and `False` shows
+it. Expensive to find, because the workbook opens perfectly either way and only the arrow is
+missing.
+
 ### Nothing happens without `apply`
 
 The default is a dry run reporting what it *would* do, row by row. The blast radius is somebody's
