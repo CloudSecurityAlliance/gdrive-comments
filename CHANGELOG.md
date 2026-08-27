@@ -75,6 +75,35 @@ The refusal for the other two columns now says plainly that moving a delete to t
 a substitute.
 
 Closes [#170](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/170).
+### Refuse an oversized download before fetching it, not after
+
+`download_file_content` on a non-openable file pulled the whole thing into memory with
+`get_media().execute()` and only *then* compared it to the 10 MiB cap. So the cap protected the
+**response** and not the **process**: a 2 GB video, or a disk image somebody parked in Drive, was
+read into RAM in full and refused afterwards.
+
+Because the server is a long-lived **stdio child of the MCP client**, an OOM there does not fail
+one call — it takes out the session.
+
+There was no pre-check available even in principle: `get_file_metadata` requested
+`fields="id,name,mimeType,webViewLink"`, with **no `size`**. This was exposure that arrived with a
+feature — before non-native download existed, the cap only ever applied to Google-native
+*exports*, which Drive bounds itself — and it is reachable with no malice at all: *"download that
+file for me"* on a file the user has forgotten is a video.
+
+Drive reports `size` for uploaded files and omits it for native ones, which is exactly the split
+that matters. So `FileRef.size_bytes` is new, following `parents` in the same class: **`None` means
+not known, never zero** — a guard that read 0 as "tiny" would wave through the files it exists to
+stop. Drive sends it as a decimal *string*, parsed to `int` so a `>` cannot compare
+lexicographically.
+
+The post-download check **stays** as a backstop: `size` can be absent, and a cap that trusts only
+metadata trusts the thing it is guarding against.
+
+`get_file_metadata` now returns `size_bytes` too — beyond the strict fix, but the data is now free
+and being refused beats an OOM while not needing to be refused beats both.
+
+Closes [#167](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/167).
 
 ## 2026-08-27 — v0.28.0 (the register goes back: bulk replies and resolves, safe to re-run)
 

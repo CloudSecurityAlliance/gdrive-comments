@@ -70,6 +70,11 @@ class FileRef:
     # this list, so "where is it now" has to be answerable after an update - and answerable
     # correctly, not plausibly.
     parents: tuple[str, ...] | None = None
+    # Bytes, for an UPLOADED file. `None` means NOT KNOWN, exactly as `parents` above means
+    # not asked - Drive omits `size` for native Google files, which have no byte length until
+    # they are exported. Reporting 0 would assert a fact never checked, and a size guard that
+    # read 0 as "tiny" would wave through the very files it exists to stop.
+    size_bytes: int | None = None
     _backend: Backend | None = None
     _read_only: bool = False
 
@@ -96,6 +101,21 @@ class FileRef:
                 f"name_chars={len(self.name)})")
 
 
+def _parse_size(value: Any) -> int | None:
+    """Drive returns `size` as a decimal STRING, and omits it for native files.
+
+    Returned as an int so a caller can compare it. A `>` against the raw string would either
+    raise or compare lexicographically - "9" > "10000000" - which is the worse failure because
+    it looks like it works.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):      # a shape Drive has never sent; unknown beats wrong
+        return None
+
+
 class FileCollection:
     """`workspace.files` — search and recency, paginated lazily.
 
@@ -115,7 +135,7 @@ class FileCollection:
         return FileRef(id=raw["id"], name=raw.get("name", ""),
                        mime_type=raw.get("mimeType", ""), url=raw.get("webViewLink", ""),
                        modified_time=_parse_time(raw.get("modifiedTime")),
-                       parents=parents,
+                       parents=parents, size_bytes=_parse_size(raw.get("size")),
                        _backend=self._backend, _read_only=self._read_only)
 
     def search(self, query: str, *, limit: int = 25,

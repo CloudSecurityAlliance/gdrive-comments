@@ -399,7 +399,7 @@ class ApiBackend:
 
     def get_file_metadata(self, file_id: str) -> dict:
         return _errors.call(self._services.drive.files()
-                            .get(fileId=file_id, fields="id,name,mimeType,webViewLink",
+                            .get(fileId=file_id, fields="id,name,mimeType,webViewLink,size",
                                  supportsAllDrives=True).execute)
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
