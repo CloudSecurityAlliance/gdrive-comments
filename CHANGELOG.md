@@ -68,6 +68,32 @@ clearest available answer to why a 1050-test green suite said nothing about any 
 
 Closes [#185](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/185).
 
+### The release guard ambushed this release
+
+The publish job refuses to ship an sdist containing a credential-or-probe path. It fired on
+`tests/test_read_only_means_a_read_only_token.py` — because the filename contains the word
+`token` — and **stopped a security release one step from PyPI**, after the tag was pushed and the
+environment gate approved.
+
+Failing closed is right. Failing closed *at publish time*, on a filename anybody might add, is
+not: it ambushes the release it exists to protect, and whoever hits it is mid-release and inclined
+to weaken the pattern to get moving.
+
+`.py` files are now exempt from the **word** half of the pattern, and only that half. This costs
+nothing the check ever provided — it matches filenames, never contents, so a secret hardcoded in a
+`.py` was invisible before and still is; that is `bandit`'s and `gitleaks`' job. Verified that all
+six real cases are still caught: `token.json`, `token_full.json`, `credentials.json`,
+`client_secret_*.json`, a probe transcript, and `research/` + `experiments/`.
+
+And `tests/test_sdist_guard.py` now runs the same pattern over the tracked tree, so a colliding
+filename fails on the **PR that adds it**. Writing that turned up its own correction: the tracked
+tree is not the sdist — `research/` and `experiments/` are tracked deliberately and pruned
+deliberately, so they are the pattern's *intended* matches rather than collisions. The two halves
+are checked separately, and a third test asserts `pyproject.toml` still excludes those
+directories, because a pattern is not an exclusion: it only fires once packaging has already
+failed.
+
+
 ## 2026-08-27 — v0.30.1 (three more from the same audit)
 
 Second batch of remediation from audit
