@@ -34,6 +34,12 @@ from ._base import READ, WorkspaceProviderT, _errors, _require
 
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 
+
+def _mib(n: int) -> int:
+    """Whole MiB, rounded UP, so a file just over the cap does not report as exactly the cap
+    and read like an off-by-one in the check."""
+    return -(-n // (1024 * 1024))
+
 # Human names for the formats people actually upload to Drive. The old refusal was the raw mime
 # type and nothing else - it did not say what kind of file that is, what this server DOES read,
 # or what to do about it, and "unsupported file type:
@@ -210,11 +216,23 @@ def register_content_tools(app: MCPServer, get_workspace: WorkspaceProviderT) ->
                     f"exportMimeType only applies to Google-native files (Docs, Sheets, "
                     f"Slides). {ref.name!r} is {_named(ref.mime_type)}, which is already in "
                     f"its own format - drop exportMimeType to download it as-is.")
+            # REFUSE BEFORE FETCHING. get_media().execute() buffers the whole file, so a
+            # cap applied afterwards protects the response and not the process - and this
+            # server is a long-lived stdio child, so an OOM here takes out the session, not
+            # one call. Drive reports `size` for uploaded files, which is exactly the case
+            # that needs it; native files have none and their export path is bounded already.
+            if ref.size_bytes is not None and ref.size_bytes > MAX_DOWNLOAD_BYTES:
+                raise ToolError(
+                    f"{ref.name!r} is {_mib(ref.size_bytes)} MiB, over the "
+                    f"{_mib(MAX_DOWNLOAD_BYTES)} MiB limit for one response. Not downloaded - "
+                    f"refused before reading it, so nothing was transferred.")
             data = workspace.files.download(fileId)
+            # Backstop, deliberately kept: `size` can be absent, and a cap that trusts only
+            # metadata trusts the thing it is guarding against.
             if len(data) > MAX_DOWNLOAD_BYTES:
                 raise ToolError(
-                    f"{ref.name!r} is {len(data) // (1024 * 1024)} MiB, over the "
-                    f"{MAX_DOWNLOAD_BYTES // (1024 * 1024)} MiB limit for one response.")
+                    f"{ref.name!r} is {_mib(len(data))} MiB, over the "
+                    f"{_mib(MAX_DOWNLOAD_BYTES)} MiB limit for one response.")
             return {"content_base64": base64.b64encode(data).decode("ascii"),
                     "mime_type": ref.mime_type, "size_bytes": len(data)}
         doc = workspace.open(fileId)

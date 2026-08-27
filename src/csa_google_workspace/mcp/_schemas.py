@@ -67,6 +67,11 @@ class FileMetadataOut(TypedDict):
     mime_type: str
     url: str
     snippet: str | None       # leading text, unless excludeContentSnippets - or unopenable
+    # Bytes, for an UPLOADED file. `None` means NOT KNOWN - Drive omits it for native Google
+    # files, which have no byte length until exported. Here so a caller can see that a file is
+    # too large to download BEFORE trying: being refused beats an OOM, and not needing to be
+    # refused beats both.
+    size_bytes: int | None
     detail: str
 
 
@@ -357,12 +362,15 @@ def file_ref_metadata_out(ref: Any, detail: str) -> FileMetadataOut:
     """Metadata for a file this library cannot open. No snippet: a snippet is extracted text,
     and there is none - omitting it silently would look like an empty document."""
     return {"id": ref.id, "name": ref.name, "type": None, "mime_type": ref.mime_type,
-            "url": ref.url, "snippet": None, "detail": detail}
+            "url": ref.url, "snippet": None,
+            "size_bytes": getattr(ref, "size_bytes", None), "detail": detail}
 
 
 def file_metadata_out(doc: Any, snippet: str | None) -> FileMetadataOut:
+    # None throughout: a native Google file has no `size` in Drive, and `Document` does not
+    # carry one. Stating it explicitly rather than omitting the key, so the shape is uniform.
     return {"id": doc.id, "name": doc.name, "type": doc.type, "mime_type": doc.mime_type,
-            "url": doc.url, "snippet": snippet,
+            "url": doc.url, "snippet": snippet, "size_bytes": None,
             "detail": f"A Google {doc.type}. read_file_content will read its text."}
 
 
