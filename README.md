@@ -473,10 +473,45 @@ no longer has to begin with a pasted URL.
 **What is genuinely further here** is depth on one axis rather than breadth. Neither of the
 others can create, reply to, resolve or reopen a comment — Claude's connector can *inline*
 comments into text it reads, which is a read, not a write. Ours are structured objects with
-ids, authors, resolved state, replies, and the Sheets cell a comment is about. And this is the
-only one of the three that can **edit an existing document's content** — though see the
-`library only` rows below: that is true of the Python library today and not yet of the MCP
-server.
+ids, authors, resolved state, replies, and the Sheets cell a comment is about. And of these
+three, this is the only one that can **edit an existing document's content** — through the MCP
+server as well as the library, since v0.13.0.
+
+That last claim is about **these three servers**, and Google ships more than one. See the next
+section, which bounds it properly.
+
+### Google ships eight of these now, not one
+
+**Verified against Google's own documentation on 2026-08-27.** The comparison above is with
+Google's **Drive** server, which is the right comparison for a Drive tool — but reading it as
+*"Google cannot edit documents"* would be wrong, and increasingly so.
+
+Google's Workspace MCP servers, all in the
+[Developer Preview Program](https://developers.google.com/workspace/guides/configure-mcp-servers):
+
+| Server | Endpoint | Edits existing content? |
+|---|---|---|
+| Drive | `drivemcp.googleapis.com` | **no** — 8 tools; read, search, create, copy. No comment tools |
+| **Docs** | `docsmcp.googleapis.com` | **yes** — `update_doc` |
+| **Sheets** | `sheetsmcp.googleapis.com` | **yes** — `update_values`, `update_formulas`, `insert_dimension` |
+| **Slides** | `slidesmcp.googleapis.com` | **yes** — `update_presentation` |
+| Gmail · Calendar · Chat · People | `gmailmcp` · `calendarmcp` · `chatmcp` · `people` | out of scope here |
+| Universal | `workspacemcp.googleapis.com` | a combined surface over the above |
+
+So **content editing is no longer a differentiator against Google as a whole** — only against its
+Drive server. What is still not offered by any of them, as of the date above:
+
+- **comments in any form** — not read as structured data, not written, on any of the eight
+- **bulk comment export and apply-back**
+- **suggestions**
+- **a library underneath**, so the tool list is not the ceiling
+- **configurable per-file and per-capability scoping** — theirs is bounded by OAuth scope instead,
+  which is a different and often better trade (see *Environment* above)
+
+**This table is the thing most likely to go stale in this README**, because it describes somebody
+else's product. It carries a verification date for that reason, and the endpoints are canonical
+so re-checking is mechanical rather than a research exercise. If you are reading this well after
+the date above, assume it has moved.
 
 ### Tool-by-tool comparison
 
