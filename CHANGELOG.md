@@ -55,6 +55,27 @@ code** — a class of defect no behavioural test can see.
 Closes [#161](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/161),
 [#162](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/162).
 
+### Deleting a reply deletes the reply, not the thread it sits in
+
+A row carrying an action on a **reply** was refused wholesale, and the refusal said *"move the
+action to the row whose thread_id is `<parent>`"*. For `reply_comment` and `resolve_comment` that
+is right. For **`delete_comment` it was destructive**: deleting the parent deletes the *whole
+thread*, and Drive's delete strips content **and author** from every part of it — so following the
+tool's own instruction destroyed other reviewers' text and attribution, unrecoverably.
+
+It landed in the likeliest case rather than an exotic one. `delete_comment` exists to clear spam,
+and spam on a shared document usually arrives **as a reply** to a real discussion. So the advice
+was most likely to be read in exactly the situation where obeying it wrecked three other people's
+work — with no warning, because the user did what they were told.
+
+`Reply.delete()` already existed, so the capability was there all along and only the register
+could not reach it. **A reply row now honours `delete_comment` and removes that reply**, with the
+same dry run, the same `*_completed` marker, and the same refusal of `FALSE` as a comment gets.
+The refusal for the other two columns now says plainly that moving a delete to the parent is not
+a substitute.
+
+Closes [#170](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/170).
+
 ## 2026-08-27 — v0.28.0 (the register goes back: bulk replies and resolves, safe to re-run)
 
 `export_comments` made 205 threads readable. `apply_comment_actions` makes them actionable:
