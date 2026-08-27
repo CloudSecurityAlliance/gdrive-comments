@@ -454,11 +454,14 @@ Three consequences:
 - **Multi-account makes Google's trail *more* useful**, because the acting identity determines
   *which* audit log the action lands in. A work-account action is visible to CSA admins; a personal
   one is not. That is another reason the acting identity must be explicit and echoed.
-- **Worth verifying, not asserting:** whether Google's Drive audit events record the **OAuth client**
-  that acted, and not only the user. If they do, actions taken through this server are already
-  distinguishable from the same user's manual edits, which would be a genuinely valuable audit
-  property. If they do not, that is a limitation to document rather than paper over. Nobody has
-  checked.
+- **Answered 2026-08-27: they do.** Drive log events carry **App ID** (*"OAuth client ID of the
+  third-party app that performed the action"*), **App name** and **API method**, so actions through
+  this server are already distinguishable from the same user's manual edits — unforgeably, because
+  Google derives it server-side. Full findings and the four things the trail *cannot* record in
+  [`research/audit-trail-and-agent-attribution.md`](../../../research/audit-trail-and-agent-attribution.md).
+  The one that matters here: **an audit trail whose coverage depends on an unlogged runtime decision
+  is not a trail**, which makes `account` required-and-echoed an audit argument, not a usability
+  one.
 
 ## Consequences
 
