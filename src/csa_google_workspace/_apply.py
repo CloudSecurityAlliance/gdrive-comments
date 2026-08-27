@@ -197,6 +197,15 @@ def _mine_already_said(comment: Any, text: str) -> bool:
     return False
 
 
+def _find_reply(comment: Any, reply_id: str) -> Any:
+    """The reply object on a thread, or None. Replies obtained through a `Workspace` carry the
+    backend, so `.delete()` works on them; a hand-built one would raise `DetachedError`."""
+    for reply in (getattr(comment, "replies", None) or []):
+        if reply.id == reply_id:
+            return reply
+    return None
+
+
 def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> Report:
     """Walk the register once. Never raises for one bad row — 205 rows and #113 failing must
     not cost the other 204."""
@@ -217,15 +226,52 @@ def apply_rows(document: Any, rows: list[dict], *, apply: bool, force: bool) -> 
         notes: list[str] = []
         try:
             if _norm(row.get("reply_to")):
-                # Drive replies are flat: you reply to a THREAD, never to a reply. A filled-in
-                # reply row is somebody working on the wrong line.
-                if reply_text or resolve is not NONE or delete is not NONE:
-                    parent = _norm(row.get("reply_to"))
+                parent_id = _norm(row.get("reply_to"))
+                # Drive replies are flat - you reply to a THREAD, never to a reply - and
+                # resolving acts on the thread. But DELETING a reply is a real operation, and
+                # the one this column exists for: spam on a shared document usually arrives AS
+                # a reply. Refusing it here used to send people to the parent row, which
+                # deletes the WHOLE thread and strips every reply's text and author with it -
+                # so following the advice destroyed other reviewers' work. (#170)
+                if reply_text or resolve is not NONE:
                     raise ValueError(
-                        f"this row is a reply, and Drive has no reply-to-a-reply. Move the "
-                        f"action to the row whose thread_id is {parent!r} - that is the thread "
-                        f"this reply belongs to - and clear it here.")
-                notes.append("a reply row; nothing to do")
+                        f"this row is a reply. reply_comment and resolve_comment belong on the "
+                        f"thread's own row, thread_id {parent_id!r} - Drive has no "
+                        f"reply-to-a-reply, and resolving acts on the whole thread. "
+                        f"delete_comment DOES work on this row and removes just this reply. "
+                        f"Never move a delete to the parent row: that deletes the entire "
+                        f"thread, including other people's replies, and cannot be undone.")
+                if delete is None:
+                    raise ValueError(
+                        f"delete_comment is {str(delete_raw)!r}. Use TRUE to delete this reply "
+                        f"or {NO_CHANGE} to leave it alone.")
+                if delete is REVERSE:
+                    raise ValueError(
+                        f"delete_comment is {str(delete_raw)!r}, and there is no way to undo "
+                        f"deleting a reply - Drive strips its text and author permanently. Use "
+                        f"{NO_CHANGE} to leave it alone; nothing here can bring one back.")
+                if delete is not ACT:
+                    notes.append("a reply row; nothing to do")
+                elif truthy(row.get("delete_comment_completed")):
+                    notes.append("delete already marked done")
+                else:
+                    reply = _find_reply(by_id.get(parent_id), thread)
+                    if reply is None:
+                        raise ValueError(
+                            f"no reply {thread!r} on thread {parent_id!r} in this file. Either "
+                            f"the register came from a different document, or the reply is "
+                            f"already gone.")
+                    if getattr(reply, "deleted", False):
+                        notes.append("already deleted")
+                        row["delete_comment_completed"] = DONE
+                    elif apply:
+                        reply.delete()
+                        row["delete_comment_completed"] = DONE
+                        result.deleted = True
+                        notes.append("reply deleted")
+                    else:
+                        result.deleted = True
+                        notes.append("would delete this reply")
             elif not reply_text and resolve is NONE and delete is NONE:
                 notes.append("no change requested")
             else:

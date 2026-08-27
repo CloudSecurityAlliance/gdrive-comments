@@ -291,8 +291,12 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         overrides that for the rare case somebody means to say the same thing twice. Resolving
         needs no such check - an already-resolved thread is simply skipped.
 
-        Actions belong on a THREAD's row. A row with `reply_to` set is a reply, and Drive has
-        no reply-to-a-reply, so such a row is refused rather than guessed at. So is a decision
+        Replies and resolves belong on a THREAD's row. A row with `reply_to` set is a reply:
+        Drive has no reply-to-a-reply and resolving acts on the whole thread, so both are
+        refused there rather than guessed at. `delete_comment` is the exception - it works on a
+        reply row and removes just that reply, which is usually what you want, since spam
+        arrives as a reply to a real discussion. NEVER move a delete to the parent row to get
+        rid of a reply: that deletes the entire thread, other people's replies included. So is a decision
         value that is none of the accepted words - "maybe later" closing somebody's open
         question is worse than a refusal. A spreadsheet's own boolean TRUE/FALSE cells count as
         the words, so a .csv and an .xlsx of the same register do the same thing.
