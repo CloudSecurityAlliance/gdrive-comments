@@ -137,6 +137,29 @@ class FileCollection:
         """Recently touched files. `order_by` is `recency`, `lastModified` or `lastModifiedByMe`."""
         return self._page("trashed = false", limit, self._order(order_by) or ORDER_BY["recency"])
 
+    def get(self, file_id_or_url: str) -> FileRef:
+        """One file, WHATEVER its type — a Doc, a folder, a PDF, a .docx.
+
+        Deliberately on the account axis rather than through `Workspace.open()`, for the reason
+        `update` and `trash` are here: `open()` MIME-dispatches on a three-entry table and
+        raises for anything else, so *"what is this file?"* — pure metadata, nothing parsed —
+        used to fail on a PDF that `search` had just returned. Search and identify now agree.
+        """
+        from .workspace import parse_file_id
+        return self._wrap(self._backend.get_file_metadata(parse_file_id(file_id_or_url)))
+
+    def download(self, file_id_or_url: str) -> bytes:
+        """Raw bytes of an UPLOADED file, unconverted (`alt=media`).
+
+        Not `export`, which is Drive's Google-native conversion and refuses a file it did not
+        create. Reading TEXT out of these stays unsupported on purpose - that means parsing an
+        untrusted binary format in-process, on the read path `SECURITY.md` calls the primary
+        risk. Handing the bytes over parses nothing, which is why this is safe and text
+        extraction is not.
+        """
+        from .workspace import parse_file_id
+        return self._backend.download_file(parse_file_id(file_id_or_url))
+
     def create(self, name: str, kind: str, *, parent_id: str | None = None,
                content: str | None = None) -> FileRef:
         """Create a new file. `kind` is `document`, `spreadsheet`, `presentation` or `folder`.

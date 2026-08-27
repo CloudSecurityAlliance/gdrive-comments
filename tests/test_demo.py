@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tempfile
 
 import pytest
 
@@ -23,7 +24,16 @@ from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
 from csa_google_workspace.policy import Policy
 
-FULL = {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*", "CSA_GW_PROFILE": "full"}
+# A real, writable export directory for the whole module. The plan writes a register to disk,
+# and the default destination is `~/Downloads` - which exists on the machines the demonstration
+# actually runs on and NOT on a CI runner, where the step failed on all five Pythons while
+# passing locally. Refusing to create a missing directory is deliberate (a typo must not
+# silently start writing somewhere unexpected), so the fix belongs in the test environment
+# rather than in the product.
+_EXPORT_DIR = tempfile.mkdtemp(prefix="csa-demo-export-")
+
+FULL = {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*", "CSA_GW_PROFILE": "full",
+        "CSA_GW_EXPORT_DIR": _EXPORT_DIR}
 
 
 @pytest.fixture(autouse=True)
@@ -139,7 +149,8 @@ def test_a_disabled_capability_is_skipped_not_failed():
     than a hard-coded list, so it keeps testing the property if the grouping moves again."""
     backend = FakeBackend({})
     server = create_server(lambda: Workspace(backend), settings=settings_from_env(
-        {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*"}))   # default profile
+        {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",
+         "CSA_GW_EXPORT_DIR": _EXPORT_DIR}))   # default profile
     report = Runner(server).run(prefix="demo-test", folder_name="Demo",
                                 share_with="someone@example.com")
     enabled = set(Policy.default().enabled)

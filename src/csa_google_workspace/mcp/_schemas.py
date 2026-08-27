@@ -60,10 +60,14 @@ class DocumentOut(TypedDict):
 class FileMetadataOut(TypedDict):
     id: str
     name: str
-    type: str
+    # `None` for anything this library cannot OPEN - a PDF, a .docx, a folder. The same answer
+    # `FileRef.type` has always given for a search hit; inventing a type here would contradict
+    # search, which deliberately returns these.
+    type: str | None
     mime_type: str
     url: str
-    snippet: str | None       # leading text, unless excludeContentSnippets
+    snippet: str | None       # leading text, unless excludeContentSnippets - or unopenable
+    detail: str
 
 
 class DownloadOut(TypedDict):
@@ -183,6 +187,42 @@ class CommentExportOut(TypedDict):
     sheet_id: str | None        # destination="sheet"
     sheet_url: str | None       # destination="sheet": hand this to the user
     written_path: str | None    # destination="file"
+    detail: str
+
+
+class ActionRowOut(TypedDict):
+    row: int                    # the SPREADSHEET row, header included - what a person navigates by
+    thread_id: str
+    replied: bool
+    resolved: bool
+    reopened: bool
+    deleted: bool
+    failed: bool
+    detail: str
+
+
+class ApplyActionsOut(TypedDict):
+    """What a filled-in register did, or would do.
+
+    `applied` false means nothing happened - that is the default, because the blast radius is
+    somebody's review under their own name. `would_reply` / `would_resolve` are the dry run's
+    answer; `replied` / `resolved` are the real one.
+    """
+    applied: bool
+    replied: int
+    resolved: int
+    reopened: int
+    deleted: int
+    would_reply: int
+    would_resolve: int
+    would_reopen: int
+    would_delete: int
+    skipped: int
+    failed: int
+    rows: list[ActionRowOut]
+    file_id: str
+    file_name: str
+    source: str
     detail: str
 
 
@@ -313,9 +353,17 @@ def file_ref_out(ref: Any) -> FileRefOut:
             "url": ref.url, "modified_time": _iso(ref.modified_time)}
 
 
+def file_ref_metadata_out(ref: Any, detail: str) -> FileMetadataOut:
+    """Metadata for a file this library cannot open. No snippet: a snippet is extracted text,
+    and there is none - omitting it silently would look like an empty document."""
+    return {"id": ref.id, "name": ref.name, "type": None, "mime_type": ref.mime_type,
+            "url": ref.url, "snippet": None, "detail": detail}
+
+
 def file_metadata_out(doc: Any, snippet: str | None) -> FileMetadataOut:
     return {"id": doc.id, "name": doc.name, "type": doc.type, "mime_type": doc.mime_type,
-            "url": doc.url, "snippet": snippet}
+            "url": doc.url, "snippet": snippet,
+            "detail": f"A Google {doc.type}. read_file_content will read its text."}
 
 
 class ProblemReportOut(TypedDict):

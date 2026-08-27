@@ -173,3 +173,78 @@ class TestDiscoverability:
         with pytest.raises(Exception) as raised:
             call(build(), destination="pdf")
         assert "xlsx" in str(raised.value)
+
+
+class TestTheInputColumnsAreRealFields:
+    """Dropdowns, so the two decision columns cannot be typed wrong in the first place.
+
+    The importer already refuses a value it cannot read - "maybe later" in a resolve column
+    fails rather than closing somebody's open question - but refusing at import is a round trip
+    later than refusing at entry. A dropdown makes the wrong value unreachable.
+
+    The two are NOT symmetrical, and the dropdowns say so:
+
+        resolve_comment   TRUE / FALSE / blank   - three real states: resolve, reopen, leave
+        delete_comment    TRUE / blank           - two, because Drive has no undelete. Offering
+                                                   FALSE would imply a reversal that does not
+                                                   exist, on the one action that cannot be undone.
+    """
+
+    def _validations(self, path):
+        openpyxl = pytest.importorskip("openpyxl")
+        ws = openpyxl.load_workbook(path).active
+        header = [c.value for c in next(ws.iter_rows(max_row=1))]
+        out = {}
+        for dv in ws.data_validations.dataValidation:
+            for name, idx in ((h, i) for i, h in enumerate(header, start=1)):
+                letter = ws.cell(row=1, column=idx).column_letter
+                if any(str(r).startswith(f"{letter}2") for r in dv.sqref.ranges):
+                    out[name] = dv
+        return out
+
+    def test_resolve_offers_true_and_false(self, tmp_path):
+        call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
+        dv = self._validations(tmp_path / "v.xlsx")["resolve_comment"]
+        assert "TRUE" in dv.formula1 and "FALSE" in dv.formula1
+
+    def test_delete_offers_only_true(self, tmp_path):
+        """No undelete exists, so FALSE would promise a reversal Drive cannot perform - and
+        next to the word "delete" that is exactly how a reader takes it."""
+        call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
+        dv = self._validations(tmp_path / "v.xlsx")["delete_comment"]
+        assert "TRUE" in dv.formula1 and "FALSE" not in dv.formula1
+
+    def test_blank_is_always_allowed(self, tmp_path):
+        """Most rows are untouched; a validation that rejected empty would make the register
+        unopenable."""
+        call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
+        for name in ("resolve_comment", "delete_comment"):
+            assert self._validations(tmp_path / "v.xlsx")[name].allow_blank
+
+    def test_the_dropdown_is_actually_shown(self, tmp_path):
+        """openpyxl's `showDropDown` is INVERTED against its name: the XML attribute means
+        "suppress the in-cell dropdown", so True hides it. False is what shows the arrow."""
+        call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
+        dv = self._validations(tmp_path / "v.xlsx")["resolve_comment"]
+        assert not dv.showDropDown
+
+    def test_the_offered_values_are_ones_the_importer_accepts(self, tmp_path):
+        """The sheet and the importer must agree, or the dropdown offers a value that then
+        fails on import - which is worse than no dropdown."""
+        from csa_google_workspace._apply import decision
+        call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
+        for name in ("resolve_comment", "delete_comment"):
+            for value in self._validations(tmp_path / "v.xlsx")[name].formula1.strip('"').split(","):
+                assert decision(value) is not None, (
+                    f"{name} offers {value!r}, which the importer cannot read")
+
+    def test_the_input_columns_look_different(self, tmp_path):
+        """A register is mostly read-only; the cells somebody is meant to WRITE in should not
+        look like the rest."""
+        openpyxl = pytest.importorskip("openpyxl")
+        call(build(), destination="xlsx", path=str(tmp_path / "v.xlsx"))
+        ws = openpyxl.load_workbook(tmp_path / "v.xlsx").active
+        header = [c.value for c in next(ws.iter_rows(max_row=1))]
+        reported = ws.cell(row=2, column=header.index("author") + 1)
+        editable = ws.cell(row=2, column=header.index("reply_comment") + 1)
+        assert editable.fill.fgColor.rgb != reported.fill.fgColor.rgb

@@ -16,11 +16,13 @@ It also enforces the three properties every tool needs regardless of what it doe
 from __future__ import annotations
 
 import asyncio
+import pathlib
 import re
+import tempfile
 
 import pytest
 
-from csa_google_workspace import Workspace
+from csa_google_workspace import Workspace, _export
 from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
@@ -30,6 +32,12 @@ DOC, SHEET, DECK = "doc1", "sheet1", "deck1"
 # `authenticate` opens a browser or elicits a URL from the client. Excluded deliberately, and
 # named here rather than skipped silently, so "not smoke-tested" stays a visible decision.
 INTERACTIVE = {"authenticate"}
+
+# `apply_comment_actions` reads a register off disk, so smoke-testing it needs one to exist.
+# A refusal would "pass" a test that only checks the tool runs, which is not the same as the
+# tool working - so this writes a real, empty register and the tool walks it with nothing to do.
+_REGISTER = pathlib.Path(tempfile.mkdtemp()) / "register.csv"
+_REGISTER.write_text(",".join(_export.COLUMNS) + "\n", encoding="utf-8")
 
 ARGS: dict[str, dict] = {
     "search_files":          {"query": "Doc"},
@@ -42,6 +50,9 @@ ARGS: dict[str, dict] = {
     "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
     "list_suggestions":      {"fileId": DOC},
     "export_comments":       {"fileId": DOC},
+    # A DRY RUN over a real but empty register: it reads the file, finds nothing filled in,
+    # and reports that. Passing apply=true here would mutate the shared fake mid-suite.
+    "apply_comment_actions": {"fileId": DOC, "path": str(_REGISTER)},
     "list_comments":         {"fileId": DOC},
     "create_comment":        {"fileId": DOC, "content": "a comment"},
     "get_comment":           {"fileId": DOC, "commentId": "<made>"},

@@ -6,9 +6,204 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0, 0.28.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
+
+## 2026-08-27 — v0.28.0 (the register goes back: bulk replies and resolves, safe to re-run)
+
+`export_comments` made 205 threads readable. `apply_comment_actions` makes them actionable:
+export, work through them in a spreadsheet — sort by reviewer, triage in a grid, draft replies
+beside the passage each one is about — then hand the file back and it posts them.
+
+Google Docs cannot do this at all, and at 205 threads across 42 reviewers the alternative is
+scrolling a sixty-page document for an afternoon.
+
+Four new columns. Two you fill in, two the tool ticks:
+
+    reply_comment              text to post as a reply
+    resolve_comment            true / yes / 1 to resolve the thread
+    reply_comment_completed    ticked as it goes, so an interrupted run can be re-run
+    resolve_comment_completed
+
+They survive the empty-column trim that would otherwise drop them — they are *always* empty on
+export, being the point of the register rather than a defect in it.
+
+### Two layers of idempotency, because one is not enough
+
+The obvious protection is the `*_completed` markers: tick each row as it lands, skip the ticked
+ones next time. That covers the ordinary case and fails in exactly the interesting one — **the
+reply posts and the process dies before the tick is written.** The sheet then says not-done while
+the document says done, and a re-run trusting the marker alone posts the reply a second time, to
+a thread forty-two people are reading, with no way to unsend it.
+
+So the marker is the **fast path** and the live document is the **authority**. Before posting, it
+looks for a reply carrying this exact text, *from this user*, already on the thread. There is no
+real reason to post a completely identical reply twice, so an exact match is treated as evidence
+the work was already done.
+
+Author-aware on purpose: the same text from somebody *else* is not evidence that **I** did it —
+two reviewers can both write "Fixed." — whereas my own identical reply almost certainly means the
+previous run got there. Whitespace-insensitive, because a spreadsheet cell round-trips with stray
+space. And `force` exists for whoever genuinely means to say the same thing twice.
+
+Resolving needs none of this: `resolved` *is* the state, so an already-resolved thread is skipped
+on its own evidence.
+
+Demonstrated end to end, including the crash:
+
+    1. exported  -> reg.csv
+    2. filled in 3 rows (one deliberately unreadable)
+    3. dry run   -> Would reply to 1 and resolve 2; 1 row(s) could not be read.
+    4. applied   -> 1 replied, 2 resolved, 1 failed.
+    5. RE-RUN    -> 0 replied, 0 resolved         (markers did their job)
+    6. markers WIPED, simulating a crash after posting
+                 -> 0 replied, 0 resolved
+                    "an identical reply from you is already on this thread; skipped"
+
+### Unresolve, delete, and three filters the library already had
+
+Four more, three of them corrections to the first cut.
+
+**`resolve_comment` is a genuine true/false.** `false` was doing nothing, which wasted half the
+column — *"it makes sense that they might want to unresolve a comment."* So **TRUE resolves,
+FALSE reopens, blank leaves it alone**. Three states, and the blank one has to stay "I have not
+decided", or every untouched row would reopen every resolved thread.
+
+**`delete_comment`, for spam.** A review on a widely-shared document collects junk, and clearing
+it one thread at a time is the drudgery the register exists to end. It is also the sharpest
+action here — Drive's soft delete strips the content *and the author*, permanently — so it needs
+`comment.delete`, which is off in every profile but `full`, and it is refused on a row that also
+carries a reply or a resolve: replying to something you are about to destroy is incoherent, and
+silently doing one of the two would be a guess about which was meant.
+
+Its idempotency needed its own care. A deleted comment is **absent** from a normal listing, so a
+re-run would report *"no comment t3 on this file"* — which reads like the wrong sheet rather than
+work already done. It now asks again with `includeDeleted` before calling anything missing, and
+reports "already deleted".
+
+**`author` and `since` on the export.** `CommentCollection.filter` has supported both since the
+library shipped and the MCP layer simply never passed them through — the **fourth** time this
+month a capability existed in the library and not in the server. `since` is a Drive-side filter
+(`startModifiedTime`), so it is cheaper than fetching everything and discarding. Naive input is
+read as UTC rather than local: a register is shared, and *"since the 24th"* meaning a different
+instant per reader is worse than one arbitrary but stated choice.
+
+`includeResolved` already defaulted to True, so *"everything unless you say otherwise"* was
+already the behaviour — now pinned by a test.
+
+### The decision columns are real fields
+
+Dropdowns on `resolve_comment` and `delete_comment`, so a value the importer would refuse cannot
+be typed in the first place. Refusing at import is a round trip later than refusing at entry.
+
+They are **not symmetrical**, and that is the point:
+
+    resolve_comment   TRUE / FALSE / blank    resolve, reopen, leave alone
+    delete_comment    TRUE / blank            because Drive has NO undelete for a comment, and
+                                              offering FALSE would imply a reversal that does
+                                              not exist - on the one action that cannot be undone
+
+A test asserts every offered value is one `truthy()` accepts, because a dropdown that hands
+somebody a value which then fails on import is worse than no dropdown.
+
+The three input columns are tinted, the convention a financial model uses to mark its inputs: a
+register is mostly a read-only record, and the cells somebody is meant to write in should not
+look like the rest of it.
+
+**One openpyxl trap worth recording:** `showDropDown` is **inverted** against its name. The XML
+attribute means *"suppress the in-cell dropdown"*, so `True` hides the arrow and `False` shows
+it. Expensive to find, because the workbook opens perfectly either way and only the arrow is
+missing.
+
+### Nothing happens without `apply`
+
+The default is a dry run reporting what it *would* do, row by row. The blast radius is somebody's
+review under their own name, and a spreadsheet is easy to get subtly wrong — a sort that did not
+carry every column, a fill-down that overshot. Show the user the dry run first.
+
+### The refusals, and why each is a refusal rather than a guess
+
+- **`resolve_comment` that is neither true nor false.** "maybe later" fails loudly. Guessing wrong
+  closes somebody's open question, and the closed vocabulary (`true/yes/y/1/x/done` vs
+  `false/no/n/0`/empty) is what makes that possible.
+- **An action on a reply row.** Drive replies are flat — you reply to a *thread*, never to a
+  reply — so a filled-in row with `reply_to` set is somebody working on the wrong line.
+- **A thread id that is not on the file.** Most often a sheet from a different document.
+
+One bad row never stops the others: 205 rows with #113 failing must not cost the other 204, so
+every row comes back with its own outcome and the markers are written for the rows that landed.
+
+### Order matters
+
+Reply **before** resolve. Resolving posts its own visible action-reply, so the substantive reply
+has to land first or the thread reads backwards to everybody who opens it.
+
+### Write-back is atomic
+
+Temp file plus rename. The whole point of the markers is surviving a crash; a half-written
+register would be a worse state than the one being protected against.
+
+### Uploaded files: identified and downloadable, text still Google-native
+
+Found by a plain question — *"if I upload a docx and call `read_file_content` on it, what
+happens?"* — and the answer was worse than the README claimed, in three ways at once.
+
+**Everything failed, not just text extraction.** `read_file_content`, `get_file_metadata` and
+`download_file_content` all routed through `Workspace.open()`, which MIME-dispatches on a
+three-entry table and raises before any type-specific logic runs. So *"what is this file?"* —
+pure metadata, nothing parsed — failed on a PDF.
+
+**The README promised code that did not exist.** Its API table has listed
+`drive.files.get(alt=media)` for uploaded files since the download tool shipped. There was no
+`alt=media` anywhere in `src/`.
+
+**`search_files` and `open()` disagreed.** Search deliberately returns non-native files —
+`FileRef.type` is `None` for a PDF, its docstring saying *"pretending otherwise would hide
+results"* — so search said "here it is" and nothing could then answer a question about it.
+
+The fix is a split this repo already made once, for `update_file` and `trash_file`: **metadata
+and raw bytes go through the account axis**, which has never cared about file type, and only
+*text extraction* needs `open()`. `FileCollection` gains `get()` and `download()`;
+`Backend.download_file` finally implements the `alt=media` the README promised.
+
+**Reading text out of a PDF or an image stays unsupported, deliberately** — that means parsing
+an untrusted binary format in-process, on the read path `SECURITY.md` names as the primary risk.
+Handing the bytes over parses nothing, which is why one is supported and the other is not.
+
+And the refusal now says something useful. It was the raw mime type and nothing else:
+
+    unsupported file type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+Now it names the format in human terms, says what the server does read, and names the two things
+that work — converting in Drive, or `download_file_content` for the bytes. `exportMimeType` on an
+uploaded file is refused rather than ignored, because handing back the `.docx` unchanged would
+look like it had converted.
+
+Tracked for 1.0.0 as **C5**: Office formats are zip+XML and already precedented here
+(`_cellmap.py` parses XLSX with `defusedxml` plus size and member caps), Drive conversion parses
+nothing locally, and in-process PDF parsing is the one that deserves arguing separately.
+
+### Two guards that fired, and one that did not
+
+Adding `download_file` to `Backend` tripped
+`test_policy.py::test_every_backend_method_has_a_declared_gate` — the fail-closed guard doing
+exactly its job: a new protocol method arrives *refused* rather than ungated, and CI says so. It
+is gated as a file-scoped read, because handing over the bytes of an uploaded file is the same
+disclosure as handing over the text of a Google one.
+
+`test_backend_conformance.py` did **not** fire, and that is a gap worth recording: it compares
+*protocol → implementations*, so a method present on `FakeBackend` but missing from the protocol
+passes clean. The fake can run ahead of the seam it exists to double. Caught here by `mypy`
+instead.
+
+### Also
+
+`export_comments` in the demonstration now writes a real file and `apply_comment_actions` reads
+it back, so the round trip is what gets demonstrated rather than each half separately. The
+capability declared is `comment.reply`; resolving is gated independently at the `Backend`
+wrapper, so an operator who granted only one of the two gets exactly that one and the tool cannot
+smuggle the other through.
 
 ## 2026-08-27 — v0.27.0 (the export stops returning what it just wrote; and Excel)
 

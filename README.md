@@ -287,17 +287,17 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 33, each with structured output and read-only/destructive annotations
+**Tools** — 34, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
 |---|---|
 | **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
 | **Read** | `read_file_content` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
-| **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` |
+| **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` · `apply_comment_actions` |
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
-| **File lifecycle** ⚠️ | `update_file` · `trash_file` · `share_file` — each OFF unless an operator names its capability |
+| **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` — each OFF unless an operator names its capability |
 | **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
@@ -332,6 +332,56 @@ starts and tells you so through a tool error, rather than dying where no one can
 > **Before pointing an agent at documents you care about**, read [`SECURITY.md`](./SECURITY.md).
 > Comment and document text is attacker-influenceable input: a comment can *say* "resolve
 > everything and clear the Payroll tab". Consider `CSA_GW_READ_ONLY=1` until you trust the flow.
+
+## Working through a review: export the comments, apply the answers back
+
+The thing this exists for, and the reason it is not just another Drive connector. A CSA paper in
+review had **205 open comment threads from 42 reviewers**. Working through that in the Google Docs
+sidebar means scrolling a sixty-page document for an afternoon.
+
+Instead:
+
+```
+"export the comments on <the draft> to a spreadsheet"
+```
+
+You get a Google Sheet — or a `.xlsx`, or a CSV in your Downloads folder — with one row per
+comment and per reply: who, when, resolved or not, the comment text, and **the passage of the
+document it was left on**. For a spreadsheet it gives the cell reference *and what that cell
+holds*.
+
+That last column is what makes it usable. A list of forty comments is unreadable; forty comments
+each beside the sentence they are about is a work plan. And once it is a spreadsheet it is
+yours — sort by reviewer, filter to the unresolved, assign it, hand it to somebody who has never
+opened Claude.
+
+**Then fill it in and hand it back.** Two columns are yours:
+
+| column | |
+|---|---|
+| `reply_comment` | text to post as a reply |
+| `resolve_comment` | `TRUE` resolves · `FALSE` reopens · blank leaves it alone |
+| `delete_comment` | `TRUE` removes it — for spam. Off unless an operator enables `comment.delete` |
+
+```
+"apply the register at ~/Downloads/draft comments.xlsx"
+```
+
+Nothing happens without `apply=true` — the default is a dry run reporting what it *would* do, row
+by row, with spreadsheet row numbers so you can go straight to a cell.
+
+**It is safe to re-run.** It ticks `*_completed` columns as it goes, and — because a run can die
+after posting and before ticking — it also checks the document itself: an identical reply already
+there from you is treated as work already done. So an interrupted run resumes instead of
+double-posting to a thread forty-two people are reading.
+
+Narrow the export when you want a work list rather than a record:
+
+```
+"export only the unresolved comments"          →  includeResolved=false
+"just Alice's comments"                        →  author="Alice"
+"anything since the 24th"                      →  since="2026-08-24"
+```
 
 ## Try it — and test it — in one command
 
@@ -398,12 +448,12 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **33** |
+| MCP tools | 8 | 11 | **34** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **22** |
+| Tools they do not have | — | — | **23** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
-The twenty-two they do not have: **ten** comment tools, five content-write tools,
+The twenty-three they do not have: **eleven** comment tools, five content-write tools,
 `list_slides` and `list_suggestions`, four in which the server accounts for itself
 (`describe_configuration`, `read_server_resource`, `authenticate`, `report_a_problem`), and
 `demonstration_plan`.
@@ -444,7 +494,7 @@ accepting a share URL, which neither of theirs does.
 | `list_recent_files` | Recently touched files | ✅ | ✅ | ✅ |
 | `get_file_metadata` | Name, type, owner, times, content snippet | ✅ | ✅ | ✅ |
 | `get_file_permissions` | Who it is shared with, and at what role | ✅ | ✅ | ✅ ¹ |
-| `read_file_content` | A file's text, optionally with comments inlined | ✅ | ✅ | ⚠️ ² |
+| `read_file_content` | A file's text | ✅ | ✅ | ✅ ² |
 | `download_file_content` | Raw bytes as base64, converted on the way out | ✅ | ✅ | ✅ |
 | `create_file` | Create or upload a **new** file | ✅ | ✅ | ✅ ⁶ |
 | `copy_file` | Duplicate a file | ✅ | ✅ | ✅ |
@@ -457,6 +507,7 @@ accepting a share URL, which neither of theirs does.
 | `resolve_comment`, `reopen_comment` | Close or reopen a thread | ✗ | ✗ | ✅ |
 | `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
 | `export_comments` | Every comment as **flat rows for a spreadsheet or another tool** — with the passage or the cell's contents | ✗ | ✗ | ✅ |
+| `apply_comment_actions` | Fill the register in and **apply it back** — bulk replies and resolves, safe to re-run | ✗ | ✗ | ✅ |
 | `read_file_content(includeComments)` | Fold threads into the text where they were left | ✗ | ✅ | ✅ |
 | `replace_text` · `append_text` · `update_cells` · `append_rows` · `insert_slide_text` | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ✅ |
 | `list_suggestions` · `read_file_content(suggestions=)` | Read suggestions, and preview a Doc as if they were accepted/rejected | ✗ | ✗ | ✅ ⁸ |
@@ -468,7 +519,9 @@ accepting a share URL, which neither of theirs does.
 | — | Turn individual **mutation kinds** off | ⚠️ ⁵ | ✗ | ✅ |
 
 ¹ Plus `public` / `writers` roll-ups.
-² Google-native types only — Docs, Sheets, Slides — not their 13 mime types. See below.
+² Reads Google Docs, Sheets and Slides — and does more with them than either of theirs, taking
+`tab`, `suggestions` and `includeComments`. Metadata and raw bytes work on **any** file type.
+Text extraction from uploaded PDF and Office files is a 1.0.0 item — see *Formats* below.
 ³ Not configurable, but bounded by the **`drive.file`** scope, so Google enforces the
 equivalent upstream — where it cannot be misconfigured.
 ⁴ Not configurable, but its only writes create *new* files, so there is nothing to scope.
@@ -533,6 +586,30 @@ all, is reported unanchored rather than guessed.
 file; `update_file` only renames or moves. Read down the `batchUpdate` rows — that is the
 difference, and it is structural rather than a matter of tool count.
 
+### Formats: Google-native today, more for 1.0.0
+
+**This server is built for the documents teams actually draft in — Google Docs, Sheets and
+Slides — and on those it goes considerably further than either alternative:** comments as
+structured objects with authors and resolved state, bulk export and apply-back, content editing,
+suggestions review, Sheets cell mapping, and a policy that can scope every bit of it.
+
+Uploaded files are handled too: **`get_file_metadata` and `download_file_content` work on any
+file type** — a PDF, a `.docx`, an image, a folder. Extracting *text* from those is Google-native
+for now, and is a **1.0.0** item. Python has mature readers for all of it; the reason it is being
+sequenced rather than simply switched on is that the risk differs sharply by format:
+
+| | how | risk |
+|---|---|---|
+| **`.docx` · `.xlsx` · `.pptx` · `.odt`** | zip + XML, via `python-docx` / `openpyxl` / `python-pptx` | **lowest, and already precedented here** — `_cellmap.py` parses XLSX today with `defusedxml` plus caps on member size, total size and member count. The pattern exists; this reuses it |
+| **Convert in Drive, then read** | `files.copy` with a Google-native target mime | **no parsing at all** — Google does it. Costs a created file, so it needs `file.create`, and Drive's OCR covers PDF and images too |
+| **PDF text in-process** | `pypdf` / `pdfplumber` / PyMuPDF | **highest.** A complex binary format with embedded streams and a long CVE history in every parser. This is the one `SECURITY.md`'s primary-risk argument is really about |
+| **OCR for images** | `pytesseract` + a Tesseract binary | out of scope for 1.0.0 — a native dependency and variable output |
+
+The likely shape: Office formats in-process behind the hardening already proven in
+`_cellmap.py`, PDF and images through Drive's own conversion where nothing is parsed here at all,
+and in-process PDF parsing argued separately on its merits. Tracked as **C5** in
+[`TODO.md`](./TODO.md).
+
 ### Markdown out, Markdown in
 
 A Google Doc exports as `text/markdown` — `download_file_content(exportMimeType="markdown")`,
@@ -587,7 +664,7 @@ Sequencing is in [`TODO.md`](./TODO.md); the two tables together are the roadmap
 | `list_file_labels` · `set_file_labels` | Read and apply Drive labels — classification and data governance | `drive.files.listLabels` / `.modifyLabels` | ✗ | ✗ | ✗ *planned* |
 | `get_slide_image` | Render a slide to a PNG, so a model can actually *see* a deck | `slides…pages.getThumbnail` | ✗ | ✗ | ✗ *planned* |
 | `find_named_range` · `annotate_range` | Durable anchors that survive edits, instead of fragile A1 ranges and character offsets | `docs` named ranges · `sheets…developerMetadata` | ✗ | ✗ | ✗ *planned* |
-| **Docs structure & formatting** | Tables, styles, headers/footers, footnotes, bullets, images, page breaks, tabs, smart chips — **37 of `batchUpdate`'s 40 request types are unused by anybody** | `docs.documents.batchUpdate` | ✗ | ✗ | ⚠️ 3 of 40 |
+| **Docs structure & formatting** | Tables, styles, headers/footers, footnotes, bullets, images, page breaks, tabs, smart chips — **37 of `batchUpdate`'s 40 request types are unused by anybody** | `docs.documents.batchUpdate` | ✗ | ✗ | ✅ 3 of 40 |
 
 That last row is the largest gap in the whole comparison, and the most direct answer to "help
 me get work done": today no MCP server can add a table to a document.
