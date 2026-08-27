@@ -597,7 +597,7 @@ accepting a share URL, which neither of theirs does.
 ¹ Plus `public` / `writers` roll-ups.
 ² Reads Google Docs, Sheets and Slides — and does more with them than either of theirs, taking
 `tab`, `suggestions` and `includeComments`. Metadata and raw bytes work on **any** file type.
-Text extraction from uploaded PDF and Office files is a 1.0.0 item — see *Formats* below.
+Text extraction from uploaded PDF and Office files is on the roadmap — see *Formats* below.
 ³ Not configurable, but bounded by the **`drive.file`** scope, so Google enforces the
 equivalent upstream — where it cannot be misconfigured.
 ⁴ Not configurable, but its only writes create *new* files, so there is nothing to scope.
@@ -662,7 +662,7 @@ all, is reported unanchored rather than guessed.
 file; `update_file` only renames or moves. Read down the `batchUpdate` rows — that is the
 difference, and it is structural rather than a matter of tool count.
 
-### Formats: Google-native today, more for 1.0.0
+### Formats: Google-native today, more on the way
 
 **This server is built for the documents teams actually draft in — Google Docs, Sheets and
 Slides — and on those it goes considerably further than either alternative:** comments as
@@ -679,7 +679,7 @@ sequenced rather than simply switched on is that the risk differs sharply by for
 | **`.docx` · `.xlsx` · `.pptx` · `.odt`** | zip + XML, via `python-docx` / `openpyxl` / `python-pptx` | **lowest, and already precedented here** — `_cellmap.py` parses XLSX today with `defusedxml` plus caps on member size, total size and member count. The pattern exists; this reuses it |
 | **Convert in Drive, then read** | `files.copy` with a Google-native target mime | **no parsing at all** — Google does it. Costs a created file, so it needs `file.create`, and Drive's OCR covers PDF and images too |
 | **PDF text in-process** | `pypdf` / `pdfplumber` / PyMuPDF | **highest.** A complex binary format with embedded streams and a long CVE history in every parser. This is the one `SECURITY.md`'s primary-risk argument is really about |
-| **OCR for images** | `pytesseract` + a Tesseract binary | out of scope for 1.0.0 — a native dependency and variable output |
+| **OCR for images** | `pytesseract` + a Tesseract binary | out of scope — a native dependency and variable output |
 
 The likely shape: Office formats in-process behind the hardening already proven in
 `_cellmap.py`, PDF and images through Drive's own conversion where nothing is parsed here at all,

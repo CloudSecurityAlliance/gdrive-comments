@@ -51,15 +51,41 @@ the control that scopes it existed.
   write-on-by-default defensible rather than merely convenient. The open remainder — folders,
   per-capability scope, expiry, dead-entry detection, dry-run — is Gate A4.
 
-## What 1.0.0 is, and what it is not
+## No 1.0.0 milestone — keep shipping `0.N+1.0`
 
-**1.0.0 is the local MCP server plus the library, with a stable API.** The hosted server is
-**2.x** — different transport, different auth model, different threat model (its own section
-below). Nothing about hosting belongs in a 1.0 gate.
+**Decided 2026-08-27 by the CINO: stop treating 1.0.0 as a thing to reach.** Ship
+`0.N+1.0` improvements continuously and let the version number follow the work.
 
-The point of a 1.0 is a *promise*: this API will not change under you without a major bump. So
-the gate list is not "everything good" — it is **everything whose absence would force a
-breaking change later**, plus the minimum that makes calling it 1.0 honest.
+That matches how this project actually operates — **33 releases in five weeks** — and it
+removes a milestone that was starting to shape priorities rather than reflect them. Items below
+that were "gates" are now simply a **backlog ordered by leverage**. Nothing is blocked on
+anything else, and none of them blocks a release.
+
+### What this changes, and the one thing it does not
+
+The gate list existed on a specific argument: *everything whose absence would force a breaking
+change later*. Dropping the milestone weakens that pressure — but it does **not** remove it, and
+the reason is worth being precise about, because it is easy to get the wrong relief here.
+
+**The constraint was never the version number. It was whether anybody depends on the name yet.**
+And they do: the server is installed through DesktopSetup, the research department was told about
+it on 2026-08-27, and staff-wide is next. Every `CSA_GW_*` variable somebody puts in a client
+config is a name we have to keep working, `API-STABILITY.md` or no `API-STABILITY.md`.
+
+So:
+
+- **Config-surface names still deserve care before shipping** — `CSA_GW_LOG_LEVEL`, the flavour
+  switch's vocabulary, a caching knob's parameter, `account` and its enum. Not because 1.0.0 is
+  coming, but because a config people wrote is a promise however the version reads.
+- **Everything else is now ordered by value, not by contract risk.** Format breadth, the
+  allowlist remainder, folders, expiry — take them when they are worth taking.
+- **`API-STABILITY.md` needs no change.** It already says pre-1.0.0 nothing is frozen, and that
+  stays literally true for longer than anyone expected. Its per-item table is the useful part
+  and does not depend on a milestone.
+- **The hosted server is still a separate thing** — different transport, auth model and threat
+  model. That was never about version numbering.
+
+The `C*` labels are kept below only because issues and commits reference them.
 
 ### Gate A — parity, because a reader will check — ✅ CLOSED 2026-08-25
 
@@ -484,6 +510,11 @@ owes someone who depends on it. C1 says what will not change; this says what did
 | **#8 Docs `batchUpdate` breadth** | A programme, not a release gate. Tables first, post-1.0. |
 | **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
 | **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
+
+### Decided 2026-08-27
+
+**No 1.0.0 milestone.** See the top of this section. `0.N+1.0`, continuously, with
+config-surface names still getting care because people already depend on them.
 
 ### Decided 2026-08-25
 
