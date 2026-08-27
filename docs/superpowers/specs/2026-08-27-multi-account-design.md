@@ -32,7 +32,7 @@ collide on the callback port.
 | For | Against |
 |---|---|
 | Zero code. Available now | **Context cost: 34 tools × N accounts.** Two accounts is 68 tools |
-| **Process isolation** — each process holds exactly one credential, so a bug *cannot* cross accounts | No fan-out across accounts |
+| **Process isolation** — a *code* bug cannot cross accounts (but see the threat-model section: this does **not** help against injection, and does not isolate tokens at rest) | No fan-out across accounts |
 | Per-account policy is free — separate env per instance | The model picks by server prefix, which is easy to get wrong and invisible in the result |
 
 ### B — one server, `account` a required parameter — **chosen**
@@ -46,10 +46,67 @@ This is the same principle already load-bearing in this codebase, and it is reco
 one parameter must not carry both.** An optional `account` would have to default, and a default is
 how a model that simply forgot the parameter writes to the wrong Drive.
 
-**What B gives up, stated plainly:** A's *process* isolation. B holds N credentials in one
-process, so account resolution becomes correctness-critical. That is an acceptable trade **only**
-because the mitigation already exists as a proven pattern here — see *The resolution seam* below —
-and it must be guarded by a test the way `policy._GATES` is.
+**What B gives up:** A's *process* isolation. B holds N credentials in one process, so account
+resolution becomes correctness-critical, and it must be guarded by a test the way `policy._GATES`
+is — see *The resolution seam* below.
+
+### Weigh that against the actual threat, not the tidy one
+
+**Corrected 2026-08-27**, after the CINO observed that the real attack surface is the model.
+An earlier draft of this spec treated process isolation as B's significant cost. It is not, and
+the reason matters enough to write down.
+
+[`SECURITY.md`](../../../SECURITY.md) names **prompt injection through document content as the
+primary risk**. Measure both designs against *that*:
+
+| | A — process per account | B — one process |
+|---|---|---|
+| Injection says *"use the personal account"* | Model calls `csa-gw-personal__create_comment` | Model passes `account="personal"` |
+| **Exposure** | **identical** | **identical** |
+
+In A the model holds tools for **every registered server simultaneously**. Process isolation
+protects against a *software bug* crossing accounts; it does nothing about the *model being
+persuaded* to pick the other one — and the model is the attack surface.
+
+**Nor does it isolate the credentials at rest.** Both processes run as the same user with read
+access to `~/.csa_google_workspace/`, so a malicious dependency or a code-execution flaw in
+*either* process reads *both* tokens. The boundary is a process, not a privilege domain.
+
+**What actually defends here is capability gating and the allowlists** — already built, already
+fail-closed. A personal account that is `read_only` with an empty modify allowlist cannot be made
+to write by any injection, whichever tool the model is talked into calling. Per-account policy
+(§2) is that control extended to several identities, and it is the real security argument for this
+work.
+
+Two ways **B is better** against the primary risk:
+
+- **`acted_as` on every response (§7).** Attribution after the fact is the main way a *successful*
+  injection gets detected. An echoed field is far harder for a summarising model to drop than a
+  tool-name prefix is.
+- **One policy declaration** instead of two client entries that can silently drift apart.
+
+### The property A really has is reachability, and B subsumes it
+
+Not isolation — **reachability**. Under A you can register only the personal server for a session,
+and the work account is *absent*: no injection can reach a tool that does not exist. That is
+stronger than any gate, because it is not a decision anything makes at runtime.
+
+**B gets the same property for free**, because `CSA_GW_ACCOUNTS` is per client entry. Register the
+same server twice with different account lists and the accounts are as unreachable from each other
+as two processes would make them:
+
+```
+csa-gw-work      CSA_GW_ACCOUNTS=csa                 # this session cannot see the personal account
+csa-gw-personal  CSA_GW_ACCOUNTS=personal
+csa-gw-both      CSA_GW_ACCOUNTS=csa,personal        # convenience, when you want both
+```
+
+So **reachability is a deployment decision, not an architecture decision**, and one codebase spans
+the whole range. That is the argument that settles A vs B: B is a superset.
+
+**The general principle, worth carrying beyond this feature:** the strongest protection for a
+capability against prompt injection is for its tools **not to be present in the session at all**.
+Gating is the fallback for when they must be.
 
 ## Design
 
@@ -198,9 +255,11 @@ existing entry rather than replacing it.
   **Alias *values* are user-chosen configuration and explicitly not contract** — the same
   distinction already drawn between capability names (contract) and profile membership (not).
 - **`SECURITY.md`**: a new paragraph. The server now holds credentials for several identities, so
-  the failure mode *"acted as the wrong identity"* joins the threat model. Note the mitigation is
-  the required parameter plus the single resolution seam, and that per-account policy means a
-  laxer account cannot lend its scope to a stricter one.
+  *"acted as the wrong identity"* joins the threat model — and it belongs under the **prompt
+  injection** heading, not token custody, because that is where it will actually come from. State
+  the three mitigations honestly: the required parameter (intent), `acted_as` (detection),
+  per-account policy (containment). And state plainly that **a session which does not need an
+  account should not be configured with it** — reachability beats gating.
 - **Context cost**: one extra required parameter on 31 tools, versus A's 34-tools-per-account.
   Strictly better beyond one account.
 - **A stays available and is worth documenting anyway** — for anyone who wants process isolation
