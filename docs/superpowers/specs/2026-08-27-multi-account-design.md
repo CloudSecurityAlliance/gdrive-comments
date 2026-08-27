@@ -152,8 +152,28 @@ Gating is the fallback for when they must be.
 
 ### 1. Configuration — env only, by suffix
 
-Per the standing rule that policy lives in the client config as environment variables and never in
-a local file:
+**A correction to how this rule is usually justified here.** "Env, not a file" does *not* buy
+tamper-resistance: the MCP client config that carries the env (`claude_desktop_config.json`,
+`.mcp.json`) is itself a user-writable file, and per *Same POSIX user* above, anything running as
+the user can rewrite it. What env-only actually buys is **provenance and reviewability** — one
+place to look, visible in `claude mcp get`, travelling with the client entry, and **never written
+by the server itself**. Those are the real reasons; integrity is not one of them.
+
+So the rule is a split rather than a prohibition:
+
+| | Where | Why |
+|---|---|---|
+| Which accounts exist, and each one's **policy** | **env** | declarative, reviewable, server never writes it |
+| The **tokens** | files, one per account | already true today; only the naming changes |
+
+`gmail-mcp-multi` puts both in `~/.gmail-mcp/` (`config.json` for aliases, `accounts/{alias}/credentials.json`
+for tokens, and `oauth-keys.json` for the OAuth **client secret**). We deliberately do not follow
+that on either count: per-account **policy** in a server-managed file is the worst version of the
+alias-swap problem — an attacker rewriting `personal` from `read_only` to `editor` is worse than
+swapping which account is used — and the client secret stays out of the token tree, which is why
+`_desktop.carried_env()` already excludes `CSA_GW_CLIENT_SECRETS`.
+
+With that settled:
 
 ```
 CSA_GW_ACCOUNTS=csa,personal
@@ -197,8 +217,21 @@ email yet. So the email can be neither the configured identifier nor the publish
 | **alias** | the **local handle** — declared in config, taken by the parameter, listed in the enum | always, from config | **input** |
 | **email** | the **authoritative identity** — what a reply asserts | after authorization, from Google | **output only** |
 
-So the alias is not optional decoration; it is mandatory as a handle. What is optional is whether
-it means anything to a human (`csa` versus `acct1`). **The email is never an input.**
+So an account always has a **handle**. What is optional is whether the handle means anything to a
+human.
+
+**Both are accepted as input** (`gmail-mcp-multi` does this and it costs nothing):
+
+- `account="csa"` — the configured handle
+- `account="kseifried@cloudsecurityalliance.org"` — the verified email, once known
+
+**Nobody is forced to invent an alias.** A handle may simply *be* an email address —
+`CSA_GW_ACCOUNTS=kseifried@cloudsecurityalliance.org,kurt@seifried.org` is a valid configuration,
+and for one account `CSA_GW_ACCOUNTS` may be omitted entirely, giving a single account whose handle
+is `default` until authorization supplies its email, after which the email works too.
+
+Validation: a handle that collides with a *different* account's verified email is a startup error.
+Rare, but it is the one way this ambiguity bites.
 
 **Obtaining the email — verified 2026-08-27.** `drive.about.get` returns `user.emailAddress` and
 is authorized by the `drive` and `drive.readonly` scopes **already requested**. So: no new scope,
@@ -343,8 +376,17 @@ alias misattribute silently, forever. Leading with the address **Google verified
 misleading alias cannot hide anything: the ground truth is always on screen, and the alias is there
 only so the reader recognises which one they meant.
 
-This is also the **detection mechanism for the one risk this design cannot prevent** (§4a): if the
-model chose an account the human did not intend, the human finds out in that sentence.
+It detects **two** distinct failures, not one:
+
+1. **The model chose an account the human did not intend** — the risk §4a cannot prevent.
+2. **The human's own configuration is wrong.** Swapping the `work` and `personal` aliases by
+   accident is an easy mistake, silent forever otherwise, and *only* visible by comparing the
+   handle you asked for against the address that actually acted. This is the case that makes the
+   echo worth it even in a single-user, non-adversarial setting.
+
+**And the cost is a few tokens.** There is no competing consideration — no privacy cost (it is the
+user's own identity, shown to their own model), no failure mode, no ambiguity introduced. When a
+control is this cheap and detects a class of silent error, it is not optional.
 
 ### 8. `authenticate(account)`
 
@@ -353,6 +395,33 @@ across accounts; only the token differs. Port 0 already prevents callback collis
 
 `configure --account <alias>` writes the client entry, and should be able to add an alias to an
 existing entry rather than replacing it.
+
+## Logging and the audit trail — local logs are for debugging, not for security
+
+**Raised by the CINO, and it changes the design of C4 ([#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145)), not just this feature.**
+
+An attacker who has compromised the MCP client is running as the user. So a local log file is
+writable by them, and cleaning it up is among the first things they would do. **By the argument in
+*Same POSIX user* above, a local log cannot be evidence against a local attacker.** It is a
+debugging aid, and #145 should say so rather than implying an audit property it cannot have.
+
+**The real record is server-side, at Google.** Every action here is taken with the user's own
+token, so Drive logs it as that user — and for a Workspace account those events reach the **Admin
+Console Drive audit log**, which the user cannot delete and the compromised machine cannot reach.
+That is the tamper-resistant trail, and it exists already without us building anything.
+
+Three consequences:
+
+- **Do not oversell local logging.** Ship it for diagnostics — the ring buffer and opt-in JSONL in
+  #145 are right — and state plainly in `SECURITY.md` that the durable record is Google's.
+- **Multi-account makes Google's trail *more* useful**, because the acting identity determines
+  *which* audit log the action lands in. A work-account action is visible to CSA admins; a personal
+  one is not. That is another reason the acting identity must be explicit and echoed.
+- **Worth verifying, not asserting:** whether Google's Drive audit events record the **OAuth client**
+  that acted, and not only the user. If they do, actions taken through this server are already
+  distinguishable from the same user's manual edits, which would be a genuinely valuable audit
+  property. If they do not, that is a limitation to document rather than paper over. Nobody has
+  checked.
 
 ## Consequences
 
