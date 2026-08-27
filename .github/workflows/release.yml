@@ -40,8 +40,26 @@ jobs:
         run: |
           twine check dist/*
           # fail loudly if a probe transcript / secret / research or experiments file
-          # ever sneaks into the sdist
-          if tar tzf dist/*.tar.gz | grep -Ei '(^|/)(research|experiments)/|token|credential|client_secret'; then
+          # ever sneaks into the sdist.
+          #
+          # `.py` files are excluded from the word match, and only from the word match. The
+          # pattern is a SUBSTRING test on paths, so a legitimately-named source file trips it:
+          # tests/test_read_only_means_a_read_only_token.py blocked the v0.30.2 security release
+          # for containing the word "token". The guard failed closed, which is right, but a
+          # false positive that only appears at publish time ambushes the release it is meant to
+          # protect.
+          #
+          # What this costs: nothing this check ever provided. It matches FILENAMES, never
+          # contents, so a secret hardcoded in a .py was invisible to it before and still is -
+          # that is bandit's and gitleaks' job. Real credentials are .json/.txt/.pem, and every
+          # one of them is still caught. Verified against token.json, credentials.json,
+          # client_secret_*.json, token_full.json, a probe transcript, research/ and
+          # experiments/ - all six still flagged.
+          #
+          # tests/test_sdist_guard.py runs this same pattern over the tracked tree, so a
+          # colliding filename fails on the PR that adds it rather than during a release.
+          if tar tzf dist/*.tar.gz | grep -Ev '\.py$' \
+               | grep -Ei '(^|/)(research|experiments)/|token|credential|client_secret'; then
             echo "::error::unexpected file in sdist — refusing to publish"; exit 1
           fi
       - name: Publish to PyPI (Trusted Publishing + PEP 740 attestations)
