@@ -99,8 +99,25 @@ class Report:
 
 
 def _norm(text: Any) -> str:
-    """Whitespace-insensitive, because a spreadsheet cell round-trips with stray space."""
-    return " ".join(str(text or "").split())
+    """Whitespace-insensitive, because a spreadsheet cell round-trips with stray space.
+
+    **Never `str(text or "")`.** `openpyxl` hands back a TRUE/FALSE cell as Python
+    `True`/`False` - which is exactly what the xlsx register's own dropdown produces - and
+    `False or ""` is `""`, so a boolean FALSE read as *blank* while a typed one read as
+    REVERSE. Same intent, opposite behaviour, decided by a cell type nobody chose.
+
+    Note the asymmetry that hid it for a release: `True or ""` is `True`, so `str()` gave
+    `"True"` and the ACT path worked **by accident**. Only the reverse branch was broken.
+
+    `0` and `0.0` had it too, and a numeric-formatted column is not exotic.
+    """
+    if text is None:
+        return ""
+    if isinstance(text, bool):          # BEFORE the numeric branch - bool subclasses int
+        return "true" if text else "false"
+    if isinstance(text, float) and text.is_integer():
+        text = int(text)                # 1.0 -> "1", so a number cell reads like a typed one
+    return " ".join(str(text).split())
 
 
 def truthy(value: Any) -> bool | None:

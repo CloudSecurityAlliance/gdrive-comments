@@ -10,6 +10,51 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-27 — v0.29.0 (a spreadsheet's FALSE is a boolean, and it meant the opposite) — not released yet; pending, not abandoned
+
+Two defects in v0.28.0's `apply_comment_actions`, found in review, and they are two halves of
+one hazard — the same one this feature was built to design against.
+
+**A boolean `FALSE` meant the opposite of a typed one.** `openpyxl` returns a TRUE/FALSE cell as
+Python `True`/`False`, not as text, and `_norm` collapsed it with `str(text or "")` — where
+`False or ""` is `""`. So a boolean `FALSE` read as **blank**, meaning *no change*, while a typed
+`FALSE` read as **reopen**. Same intent, opposite behaviour, decided by a cell type the person
+filling in the register cannot see and did not choose.
+
+The asymmetry is why nothing noticed: `True or ""` is `True`, so `str()` gave `"True"` and the
+resolve path worked **by accident**. Only the reverse branch was broken. `0` and `0.0` had it too.
+
+And the xlsx register's own dropdown offers `FALSE` — so a boolean was the value a user was
+*most* likely to produce. The most-taken path was the broken one. Two silent losses:
+
+    resolve_comment = FALSE   a deliberate reopen that did nothing
+    delete_comment  = FALSE   silently ignored, instead of hitting the deliberate
+                              "there is no undelete" refusal — so the user never learned
+                              their instruction was impossible
+
+**And the tool description said the opposite of the code.** It told a model *"empty or false
+means leave it"*. `FALSE` reopens: it posts a visible reply, under the user's name, on a thread
+somebody deliberately closed. A model following that documentation exactly — pre-filling `FALSE`
+on every row it did not want to touch, which is the reasonable explicit-is-better choice —
+reopens every resolved thread in the document.
+
+That is the hazard `_apply.py`'s three-state `decision()` was written to prevent, and its
+docstring records it. The type-level defence was built in v0.26.0; the description then invited
+the same input through the front door. `delete_comment` was also undocumented — an irreversible
+action that strips text *and* author, with no mention that the column existed — and the
+description claimed two input columns where there are three.
+
+Fixed: `_norm` handles booleans and numerics explicitly (bool checked **before** int, because
+`bool` subclasses it), so a `.csv` and an `.xlsx` of the same register now do the same thing. The
+description now says what `FALSE` does, documents `delete_comment`, and says plainly that blank
+already means "no change" so nobody pre-fills a decision column to say it.
+
+29 tests in `tests/test_falsy_cells.py`, including four that assert the **description matches the
+code** — a class of defect no behavioural test can see.
+
+Closes [#161](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/161),
+[#162](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/162).
+
 ## 2026-08-27 — v0.28.0 (the register goes back: bulk replies and resolves, safe to re-run)
 
 `export_comments` made 205 threads readable. `apply_comment_actions` makes them actionable:
