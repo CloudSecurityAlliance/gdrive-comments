@@ -247,8 +247,11 @@ def per_type(kind: str) -> list[Step]:
              captures=lambda s, out: s.update(register=out.get("written_path")),
              optional=True, group=kind),
         Step("apply_comment_actions",
-             lambda s: {"fileId": s.get("document_id") or s.get("spreadsheet_id")
-                                  or s.get("presentation_id"), "path": s["register"]},
+             # key=key, as every other step in per_type() does. Without it this resolved
+             # `document_id or spreadsheet_id or presentation_id`, and document_id is populated
+             # first - so the spreadsheet and presentation groups applied THEIR register to the
+             # Doc, and passed green because a demo register has nothing filled in. (#165)
+             lambda s, key=key: {"fileId": s[key], "path": s["register"]},
              f"Show what applying that register back would do ({label})",
              "The other half of the export: fill in reply_comment and resolve_comment in the "
              "spreadsheet, hand it back, and it posts the replies and resolves the threads. "
