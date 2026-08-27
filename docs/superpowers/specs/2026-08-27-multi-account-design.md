@@ -46,9 +46,49 @@ This is the same principle already load-bearing in this codebase, and it is reco
 one parameter must not carry both.** An optional `account` would have to default, and a default is
 how a model that simply forgot the parameter writes to the wrong Drive.
 
-**What B gives up:** A's *process* isolation. B holds N credentials in one process, so account
+**What B gives up:** A's *process* separation. B holds N credentials in one process, so account
 resolution becomes correctness-critical, and it must be guarded by a test the way `policy._GATES`
-is — see *The resolution seam* below.
+is — see *The resolution seam* below. **How much that separation is worth is settled below, and
+the answer is: for local stdio, nothing security-relevant.**
+
+### A does not need dynamic tool naming — that worry is unfounded
+
+Worth stating because it is the first objection A attracts. **You do not rename anything.** MCP
+clients namespace tools by server automatically — observed in a live session, not inferred:
+
+```
+mcp__csa-google-workspace__list_comments
+```
+
+Register the server twice under two names and the client yields
+`mcp__csa-gw-work__list_comments` and `mcp__csa-gw-personal__list_comments`. `MCPServer(name=…)`
+already takes the name from settings, so this costs no code.
+
+A's real problems are different ones:
+
+1. **Both instances ship identical descriptions.** `INSTRUCTIONS` is a module constant, so the
+   model distinguishes the accounts *only* by the server-name prefix. Nothing in any description
+   says *"this one is the work account."* Fixable by taking the identity from settings — small, but
+   work A needs and B does not.
+2. **34 × N tool definitions** in every session.
+3. **The result never says which account acted.** The tool *name* carried it; the payload does not,
+   so a model summarising back to a human can drop it silently.
+
+### Same POSIX user, therefore not a security boundary
+
+**Settled 2026-08-27, by the CINO.** For a local stdio deployment, process separation is a
+**reliability** boundary — a crash or a code bug in one instance does not reach the other — and
+**not a security boundary at all.**
+
+The proof does not need the interesting part. **Both processes read tokens from
+`~/.csa_google_workspace/`, which is readable by that user.** Any code running as the user already
+holds *both* tokens, whatever the process count. Signals, debuggers and `/proc/PID/mem` are
+additional; the filesystem alone is sufficient and certain.
+
+**Scoping caveat, so this is not misapplied.** The conclusion is about *same-user local stdio*.
+In a **hosted, multi-tenant** deployment — Customer360 — tenant isolation genuinely *is* a security
+boundary, because the tenants are different principals with different rights. Same word, opposite
+weight, and the deciding question is only ever *do these identities share a POSIX user?*
 
 ### Weigh that against the actual threat, not the tidy one
 
@@ -145,6 +185,29 @@ case needs no path configuration at all. `CSA_GW_TOKEN_CSA` overrides.
 validated at startup; an alias that cannot be turned into a valid variable suffix is a loud
 configuration error, not a silent skip.
 
+### 1a. Identity: the alias is the handle, the verified email is the truth
+
+Two identifiers, and which is which is forced by *when each is knowable*.
+
+Configuration must name an account **before any token exists**, and an unauthorized account has no
+email yet. So the email can be neither the configured identifier nor the published enum:
+
+| | Role | Known when | Direction |
+|---|---|---|---|
+| **alias** | the **local handle** — declared in config, taken by the parameter, listed in the enum | always, from config | **input** |
+| **email** | the **authoritative identity** — what a reply asserts | after authorization, from Google | **output only** |
+
+So the alias is not optional decoration; it is mandatory as a handle. What is optional is whether
+it means anything to a human (`csa` versus `acct1`). **The email is never an input.**
+
+**Obtaining the email — verified 2026-08-27.** `drive.about.get` returns `user.emailAddress` and
+is authorized by the `drive` and `drive.readonly` scopes **already requested**. So: no new scope,
+**no re-consent for existing users**, one call per token, cacheable because an account's email does
+not change.
+
+Costs a new `Backend` method and therefore a `policy._GATES` entry — and it is the first gate that
+is **account-scoped rather than file-scoped**: `Gate(capability=None, file_scoped=False)`.
+
 ### 2. Per-account policy is the point, not a side effect
 
 Different accounts genuinely warrant different capability sets: the work account editing shared
@@ -192,6 +255,16 @@ A schema that changes shape based on configuration is a schema that lies to ever
 cached it, and *"there is only one, so it cannot be wrong"* is the exact reasoning that produced
 the `FALSE`-means-two-things defect. One rule, no modes.
 
+**And it is an `enum` of the configured aliases, not a free string.** With one account the schema
+offers exactly one legal value, so there is nothing to get wrong; with two, the model must name one
+and cannot invent a third.
+
+This refines the paragraph above rather than contradicting it: the parameter **existing** is the
+schema's *shape* and never varies; the **allowed values** are a *constraint*, and clients re-fetch
+tool lists on connect. It is strictly safer — an invalid alias cannot be sent at all, so the
+fail-closed seam becomes the second line of defence rather than the first. Aliases are always
+knowable at startup (§1a), so the enum is never empty or stale.
+
 **Migration** for existing single-account users is therefore a breaking change, and a one-line
 one:
 
@@ -201,6 +274,30 @@ mv ~/.csa_google_workspace/token.json ~/.csa_google_workspace/token-default.json
 ```
 
 Pre-1.0.0 is precisely when to take this. `configure` should perform the rename itself and say so.
+
+### 4a. The limit of a required parameter — and the sentence that has to carry it
+
+**`account` required stops the *software* from choosing. It does not stop the *model* from choosing
+badly.**
+
+A user says *"check my comments"* with two accounts configured. The model must supply a value, so
+it will **pick one** rather than ask, unless something tells it otherwise. A JSON schema cannot
+express *"ask the human"*; only a description can.
+
+So the load-bearing sentence lives in the tool descriptions, not the signature:
+
+> **If the user has not said which account, ask. Do not choose.**
+
+That gives a clean division of labour, worth stating because only the first half is enforceable:
+
+| Mechanism | Moves the decision |
+|---|---|
+| `account` required + enum | from **software** to **model** — enforceable |
+| the description above | from **model** to **human** — *not* enforceable |
+| `acted_as` echoed (§7) | detection, after the fact |
+
+Nothing here closes the gap fully. `acted_as` is what makes it *visible*, which is why it is not
+optional.
 
 ### 5. Which tools take `account`
 
@@ -232,14 +329,22 @@ list_accounts() -> [{alias, authorized, email?, profile, read_only}, …]
 (`research/google-drive-comments-reference.md`), so it is a convenience, never the key. `alias` is
 the identifier.
 
-### 7. Echo the acting account in every response
+### 7. Echo the acting account — address first, alias second
 
 **A required input proves intent; an echoed output proves what happened.** Every tool that acts on
-Google returns `acted_as` — the alias, and the email when known.
+Google returns `acted_as: {email, alias}`, and the human-readable form leads with the **address**:
 
-Cheap, and it is what makes *"they did it, not the software"* verifiable after the fact rather
-than only intended beforehand. It also gives the human reviewing a transcript the one fact they
-most need and currently cannot see: which of their identities posted that comment.
+> *"Replied to 3 comments on **kseifried@cloudsecurityalliance.org**, which you also call
+> `work`."*
+
+**The ordering is the point, not politeness.** An alias is user-chosen and can be wrong — somebody
+can alias their personal account `work` by mistake. Leading with the alias would let a mis-assigned
+alias misattribute silently, forever. Leading with the address **Google verified** means a
+misleading alias cannot hide anything: the ground truth is always on screen, and the alias is there
+only so the reader recognises which one they meant.
+
+This is also the **detection mechanism for the one risk this design cannot prevent** (§4a): if the
+model chose an account the human did not intend, the human finds out in that sentence.
 
 ### 8. `authenticate(account)`
 
