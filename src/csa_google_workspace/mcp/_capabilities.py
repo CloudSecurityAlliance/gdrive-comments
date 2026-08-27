@@ -53,6 +53,10 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     # has no endpoint for either, so there is nothing to gate.
     "list_suggestions": None,
     "export_comments": None,
+    # Declares comment.reply; resolving is gated independently at the Backend wrapper, so
+    # an operator who granted only one of the two gets exactly that one - the tool cannot
+    # smuggle the other through. Declared rather than left None because it is a WRITE.
+    "apply_comment_actions": COMMENT_REPLY,
     # comment writes
     "create_comment": COMMENT_CREATE,
     "reply_comment": COMMENT_REPLY,

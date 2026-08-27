@@ -186,6 +186,35 @@ class CommentExportOut(TypedDict):
     detail: str
 
 
+class ActionRowOut(TypedDict):
+    thread_id: str
+    replied: bool
+    resolved: bool
+    failed: bool
+    detail: str
+
+
+class ApplyActionsOut(TypedDict):
+    """What a filled-in register did, or would do.
+
+    `applied` false means nothing happened - that is the default, because the blast radius is
+    somebody's review under their own name. `would_reply` / `would_resolve` are the dry run's
+    answer; `replied` / `resolved` are the real one.
+    """
+    applied: bool
+    replied: int
+    resolved: int
+    would_reply: int
+    would_resolve: int
+    skipped: int
+    failed: int
+    rows: list[ActionRowOut]
+    file_id: str
+    file_name: str
+    source: str
+    detail: str
+
+
 class CellCommentsOut(TypedDict):
     """`comments_by_cell` - the answer, plus how much to trust it. (D3)
 

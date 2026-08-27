@@ -229,12 +229,35 @@ def per_type(kind: str) -> list[Step]:
 
     # Every type, because the whole point is that one call covers a file whatever it is - and
     # the column that makes it useful differs per type, which is worth seeing three times.
-    steps.append(
+    steps += [
         Step("export_comments", lambda s, key=key: {"fileId": s[key]},
              f"Export every comment on the {label} as rows",
              "One call for a whole file: flat rows with ordered columns, the shape you write to "
              "a spreadsheet or hand to another tool. For a Doc the useful column is the passage "
-             "each comment is about; for a Sheet it is what the CELL holds.", group=kind))
+             "each comment is about; for a Sheet it is what the CELL holds.", group=kind),
+        # Written to disk so the NEXT step has something real to read. The round trip is the
+        # demonstration: a register is only useful if it can come back.
+        Step("export_comments",
+             lambda s, key=key: {"fileId": s[key], "destination": "file"},
+             f"Write that register out as a .csv ({label})",
+             "destination=\"file\" puts it in your Downloads folder and returns the path; "
+             "\"xlsx\" gives a formatted workbook, and \"sheet\" a Google Sheet you can share. "
+             "Only destination=\"rows\" returns the rows themselves - a file destination that "
+             "also echoed the payload broke on a 205-comment document.",
+             captures=lambda s, out: s.update(register=out.get("written_path")),
+             optional=True, group=kind),
+        Step("apply_comment_actions",
+             lambda s: {"fileId": s.get("document_id") or s.get("spreadsheet_id")
+                                  or s.get("presentation_id"), "path": s["register"]},
+             f"Show what applying that register back would do ({label})",
+             "The other half of the export: fill in reply_comment and resolve_comment in the "
+             "spreadsheet, hand it back, and it posts the replies and resolves the threads. "
+             "NOTHING happens without apply=true - this is the dry run. It is also safe to "
+             "re-run: it checks the document itself, not just its own tick-boxes, so a run "
+             "interrupted half way cannot post the same reply twice. Nothing is filled in "
+             "here, so it reports nothing to do.",
+             optional=True, group=kind),
+    ]
 
     if kind == "spreadsheet":
         steps.append(

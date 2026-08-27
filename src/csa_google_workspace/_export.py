@@ -31,8 +31,20 @@ from __future__ import annotations
 
 from typing import Any
 
-COLUMNS = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
-           "quoted_text", "cell", "cell_text", "cell_text_by_tab")
+# What the export REPORTS.
+REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
+            "quoted_text", "cell", "cell_text", "cell_text_by_tab")
+
+# What somebody FILLS IN, and what the importer ticks. Always empty on export - they are the
+# point of the register being a worksheet rather than a printout.
+#
+# Two markers rather than none, and the reason is the crash: `*_completed` lets a re-run skip
+# finished rows without asking Google about every one of them. It is the FAST path, not the
+# authority - see `apply_comment_actions`, which also checks the live thread, because the
+# interesting failure is posting a reply and dying before the tick is written.
+ACTIONS = ("reply_comment", "resolve_comment")
+COMPLETED = ("reply_comment_completed", "resolve_comment_completed")
+COLUMNS = REPORTED + ACTIONS + COMPLETED
 
 
 def _row(**kw: Any) -> dict[str, Any]:
@@ -288,7 +300,12 @@ def used_columns(columns: list[str], rows: list[dict]) -> list[str]:
     """
     if not rows:
         return list(columns)
-    return [c for c in columns if any(flatten(row.get(c)) for row in rows)]
+    # The action columns are kept whatever they contain: they are ALWAYS empty on export,
+    # because they are what somebody fills in. Trimming them would remove the only part of the
+    # sheet that is meant to be written to.
+    keep = set(ACTIONS) | set(COMPLETED)
+    return [c for c in columns
+            if c in keep or any(flatten(row.get(c)) for row in rows)]
 
 
 def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None:
