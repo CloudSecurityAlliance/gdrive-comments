@@ -10,6 +10,64 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-27 — v0.30.2 (read-only means a read-only credential) — not released yet; pending, not abandoned
+
+**Security fix**, and the audit calls it the load-bearing one. Third batch from
+[`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md).
+
+`CSA_GW_READ_ONLY=1` installed an empty `Policy` over a **full-write token**. `_read_cached`
+accepted a granted read-write scope as satisfying a required read-only one, so
+`load_cached_credentials(read_only=True)` returned the full-Drive credential on any machine that
+had ever run `login`. Read-only was a client-side block, not a narrower credential — and any code
+path reaching the credential without passing the `Policy` gates had full write.
+
+**Why it outranks its severity.** This is GA-#13 from the 2026-07-22 audit, deprioritised then as
+*"interim PoC scaffolding"* on the assumption that `from_oauth` / `token.json` never runs in the
+shipped server. `mcp/_login.py` and `mcp/_auth_flow.py` exist now, so that assumption is gone.
+And **both prior audits name a read-only posture as the primary bound on prompt injection** —
+making this the top-rated risk's main mitigation failing open.
+
+**Two changes, because either alone is insufficient:**
+
+- **Read-only consent has its own cache**, `token.readonly.json`, derived from whatever
+  `CSA_GW_TOKEN` is set to. Derived rather than configured: an operator asked to set two paths
+  will set one, and the forgotten one is the posture that silently falls back. The derivation is
+  idempotent, so pointing `CSA_GW_TOKEN` at the derived path is harmless.
+- **Write scopes are refused outright** in a read-only posture. File separation alone is a
+  *filename* guarantee — copy a token across, or grant broadly at the consent screen, and the
+  hole reopens.
+
+**`needs_reconsent` is deliberately unchanged.** As a statement about OAuth it is correct: a write
+scope really does satisfy a read requirement at Google, and `tests/test_auth.py` is right to
+assert it. The defect was the *policy* of accepting that answer for a posture whose entire purpose
+is a narrower credential. Fixing the predicate would have made a true thing false.
+
+**Your read-write token is untouched.** Consenting read-only writes a separate file, and the error
+message says so — a fix that appeared to destroy an existing login would simply not get used.
+Headless refresh still works for whichever posture has a token; each file refreshes on its own,
+which was the original reason given for sharing one cache.
+
+`mcp/cli.py` said `CSA_GW_READ_ONLY=1` *"also narrows the OAuth scopes"* unconditionally. True
+only of a fresh consent. It now explains the separate cache and that a re-login is needed.
+
+### A gap this fix nearly introduced, now guarded
+
+`mcp/_tools/auth.py` wrote tokens to `settings.token_path` directly. With the separation in place
+and nothing else changed, the `authenticate` tool would have written a valid read-only token to
+`token.json` while the server read `token.readonly.json` — leaving `CSA_GW_READ_ONLY=1`
+**permanently unsatisfiable, with no error explaining why**. Caught by reading the call sites, so
+there is now a test asserting no write site uses the raw configured path.
+
+### The fourth test found defending a flaw
+
+`test_cached_read_write_token_satisfies_read_only_request` asserted the vulnerable behaviour
+outright. Rewritten with its counterweight — a read-write request still uses the unsuffixed cache.
+
+That is now **four of five findings** whose behaviour a test was holding in place. It is the
+clearest available answer to why a 1050-test green suite said nothing about any of this.
+
+Closes [#185](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/185).
+
 ## 2026-08-27 — v0.30.1 (three more from the same audit)
 
 Second batch of remediation from audit

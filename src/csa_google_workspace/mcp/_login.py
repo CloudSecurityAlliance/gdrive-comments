@@ -14,7 +14,7 @@ import os
 import sys
 from collections.abc import Mapping
 
-from ..auth import load_cached_credentials
+from ..auth import load_cached_credentials, token_path_for
 from ..exceptions import AuthError
 from ..workspace import Workspace
 from ._config import Settings
@@ -115,18 +115,19 @@ def login(settings: Settings, env: Mapping[str, str], *, force: bool = False, ou
             # been issued by a *different* OAuth client. Everything then works while
             # running against the wrong project's quota and consent screen — silently.
             # Worth naming, because no error will ever surface it.
-            want, have = _client_id_of(client_secrets), _token_client_id(settings.token_path)
+            cache = token_path_for(settings.token_path, settings.read_only)
+            want, have = _client_id_of(client_secrets), _token_client_id(cache)
             if want and have and want != have:
                 print(f"Warning: the cached token was issued by a different OAuth client\n"
                       f"  cached: {have}\n  wanted: {want}\n"
                       f"Re-authorize with `csa-google-workspace-mcp login --force` to use the "
                       f"intended client.", file=sys.stderr)
-            print(f"Already authorized (token cache: {settings.token_path}).\n"
+            print(f"Already authorized (token cache: {cache}).\n"
                   f"Use `login --force` to authorize again.", file=out)
             return 0
 
     print(f"Opening a browser to authorize access to your Google Workspace files.\n"
-          f"  token cache: {settings.token_path}", file=out)
+          f"  token cache: {token_path_for(settings.token_path, settings.read_only)}", file=out)
     # force=True bypasses the cache but deletes nothing: the old token is replaced only
     # once a new one exists, so a cancelled consent leaves the previous one working.
     with _branded_success_page():

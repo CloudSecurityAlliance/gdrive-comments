@@ -32,7 +32,10 @@ the `authenticate` tool instead, with no terminal step.
 
 environment:
   CSA_GW_TOKEN           token cache path (default ~/.csa_google_workspace/token.json)
-  CSA_GW_READ_ONLY=1     refuse writes (also narrows the OAuth scopes)
+  CSA_GW_READ_ONLY=1     refuse writes, and use a read-only credential. Read-only
+                         consent is cached separately (token.readonly.json), so a
+                         read-write token will NOT be reused - log in again with this
+                         set. Your read-write token is left untouched.
   CSA_GW_PROFILE         a named capability set: reader | commenter | editor | full.
                          reader may change nothing; commenter may comment, reply and
                          resolve; editor adds content edits and file creation; full adds
