@@ -154,6 +154,72 @@ it simply has no premise now. **If a future capability genuinely falls outside D
 this question returns**, and the answer then is two names — a stable ladder top plus an explicitly
 auto-absorbing `everything` that logs what it resolved to. Not needed today.
 
+
+## 3a. Defaults: on, not closed
+
+**Decided 2026-08-28 by the CINO.** Out of the box: **all ten capabilities enabled, both
+allowlists `*`.** The documentation's job becomes *how to narrow this*, not *how to switch it on*.
+
+This reverses the #82 posture, and the case for reversing it is mostly already written down in
+this repository:
+
+- **The README already tells operators to set `CSA_GW_ALLOWLIST_READ="*"`**, and explains why the
+  fine-grained alternative is not what anyone wants. The fail-closed default was already
+  contradicted by our own documented happy path; the only thing it reliably produced was a
+  setup step.
+- **`THREAT_MODEL.md` §1 says Drive is the primary control layer** and that this project's layer
+  is *"defense in depth, deliberately narrow … not the primary layer and not intended to be."*
+  A deliberately-narrow secondary layer that bricks the tool on install is inconsistent with its
+  own stated role. For activities on Google Drive, Drive is where policy belongs — that framing
+  is the maintainer's and it predates this decision.
+- **Somebody installing a Google Workspace MCP server intends to do Google Workspace things.**
+  No comparable MCP server ships inoperative. A control that every operator disables during setup
+  is not a control; it is a support burden that additionally teaches people to paste `*` without
+  reading, which is a worse outcome than defaulting to `*` honestly.
+- **Locking it down must stay easy and obvious** — that is the part this spec must not lose. The
+  profiles, the two allowlists and `CSA_GW_CAPABILITIES` all keep working exactly as they do now;
+  only which end of the range you start from changes.
+
+### The counter-argument, recorded rather than resolved
+
+`file.share` was raised as the one plausible exception: it is not on the get-work-done path for a
+comments-and-content tool — nobody installs this in order to grant Drive permissions — so
+defaulting it on removes no friction from any real workflow, while it is the single capability
+whose effect leaves the organisation and cannot be recalled once a copy is taken.
+
+**Overruled deliberately**, and the reasoning is coherent: Drive is the layer that owns sharing
+policy, and an organisation that cares has sharing restrictions, target audiences and DLP for
+Drive available there. Recorded here because a default that was argued about is worth being able
+to find later, not because the decision is unsettled.
+
+What follows from it: `file.share` must be **named prominently** in the "how to narrow this"
+documentation as the action whose effect leaves the organisation, and `describe_configuration`
+and `csa-gw://config` must show it as enabled rather than leaving an operator to infer it.
+
+### What does NOT change
+
+**`PolicyBackend` still fails closed on an unlisted `Backend` method.** That is a different
+property from a permissive default and must not be simplified away with it: a method added to the
+protocol without a `_GATES` entry is *refused*, not delegated, so forgetting one turns the method
+off rather than leaving it silently ungoverned. `tests/test_policy.py` keeps enforcing it. The
+default set is a policy decision; the gate table is a code-safety invariant.
+
+### Consequences to carry out with this change
+
+- **T1 must be rescored in `THREAT_MODEL.md`.** #197 required that the model carry T1 forward on
+  the basis that `CSA_GW_ALLOWLIST_READ="*"` is *"a deliberate interim posture with a documented
+  1.0.0 path, not a defect"*, and that it be rescored if that changed. It has changed: this is now
+  the permanent default rather than an interim posture. §0 must record the move, and
+  `tests/test_threat_model.py` will fail until it does.
+- **The v0.30.7 reversibility invariant is retired.**
+  `test_the_irreversible_three_are_exactly_the_ones_off_by_default` has no meaning once nothing is
+  off by default. It is replaced by an assertion that every capability is *named* with its
+  reversibility in `CAPABILITY_NOTES` and surfaced in the narrowing documentation — the
+  information survives, the enforcement point moves.
+- **`csa-gw://config`'s "fail closed" diagnosis text** currently explains why an unset allowlist
+  permits nothing. That path becomes unreachable for a default install and the wording must stop
+  presenting it as the expected state.
+
 ## 4. Two data-handling switches, which are not capabilities
 
 `local.read` and `local.write`. Default **on** — they are not a boundary, and off would break
@@ -231,6 +297,12 @@ Everything here is additive or aliased. Nothing an existing configuration says c
 - `full` → alias of `organizer`, **identical capability set** (all ten).
 - `fileOrganizer` is a genuinely new rung and grants strictly less than `full`.
 - `local.read` / `local.write` default on, matching today's behaviour.
+- **The defaults reversal (§3a) is a real behaviour change, not an alias.** An install that
+  today refuses everything because neither allowlist is set will, after this, permit everything.
+  That is the intent, and it is the one change here that an operator must be *told* rather than
+  allowed to discover: the release notes lead with it, and the first run logs the effective
+  policy so "everything" is never an abstraction. An existing configuration that *does* set the
+  allowlists is unaffected — explicit values still win, and still narrow.
 - Removing `valueInputOption` from the MCP tools is the one behaviour change: a caller that
   explicitly passed `USER_ENTERED` now gets `RAW`. That is the fix, and the parameter has been
   documented as dangerous since 0.30.1.
