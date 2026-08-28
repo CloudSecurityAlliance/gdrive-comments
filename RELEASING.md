@@ -73,8 +73,14 @@ answer at a glance.
 installs on publish, and the README shown on PyPI is frozen per release, so documentation
 corrections wait for the next version regardless of what `main` says.
 
-The publish job sits behind the protected **`pypi` environment**, so the run reports `waiting`
-until approved. Approving it is part of cutting the release:
+**The workflow is two jobs, and the approval now sits between them.** `build` runs the security
+gate, the suite, the build and the sdist guard, holding **no** publishing credential; `publish`
+holds `id-token: write` and does nothing but download the artifacts and hand them to the PyPA
+action — it does not even check out the repository.
+
+So the run reports `waiting` **after** `build` has passed rather than before it starts, which is
+the better moment: you are approving a build you can see succeeded. Approving it is part of
+cutting the release:
 
 ```bash
 RUN=$(gh run list --workflow=release.yml --limit 1 --json databaseId -q '.[0].databaseId')
@@ -87,6 +93,11 @@ JSON
 
 Then verify **before** reporting it done: the per-version PyPI endpoint, the simple index, and a
 clean-venv install.
+
+**Do not add steps to the `publish` job.** Anything that runs there — a checkout, a `pip install`,
+a version check — executes beside a live publishing credential, which is precisely what the split
+removed. `tests/test_release_workflow_shape.py` asserts the shape, including an allowlist of the
+actions that job may use, so a new one has to be added there deliberately.
 
 **The two indexes lag independently, in either direction.** After v0.29.0 the project-level JSON
 endpoint was behind and the simple index current; after v0.30.0 it was the reverse.

@@ -2,7 +2,7 @@
 audit_id: 2026-08-27-01
 remediation_started: 2026-08-27T19:20Z
 remediation_status: in-progress
-fixed_in_version: 0.30.0, 0.30.1, 0.30.2
+fixed_in_version: 0.30.0, 0.30.1, 0.30.2, 0.30.3, 0.30.4
 ---
 
 # Remediation — audit 2026-08-27-01
@@ -300,3 +300,74 @@ read-write request still uses the unsuffixed cache.
 of over a thousand tests said nothing about any of it, and it is worth carrying into the next
 audit: **ask what the suite asserts about the behaviour you suspect, before trusting that it
 passes.**
+
+---
+
+## T17 / #187 — `setuptools` floor, and the dependency pass around it
+
+**Status:** fixed · **Landed:** 0.30.3
+
+`setuptools>=83` for CVE-2026-59890. Build-time only, so no consumer cost, and it removes the need
+to rely on the release job's sdist grep — which the finding correctly called a *partial
+compensating control* rather than a fix. Verified 83 and 84 both declare `requires-python >=3.10`,
+matching ours.
+
+**Also declared `oauthlib>=3.2.2`**, from #188's observation: it arrives transitively
+(`google-auth-oauthlib` → `requests-oauthlib`) and this project named no floor, so CVE-2022-36087
+was unbounded here. It parses redirect URIs on the token-acquisition path. **A transitive
+dependency you name no floor on is one you cannot bound.**
+
+**Dev floors raised** (`pytest`, `pytest-cov`, `ruff`, `mypy`). No consumer cost, and for the two
+that gate CI it is not tidiness: they give materially different answers across majors, so a
+contributor was seeing a different verdict from the one that would block their PR.
+
+### What was deliberately not raised, and why it is written into `pyproject.toml`
+
+The runtime ranges stay lower-bound-only. Raising one excludes somebody on a perfectly good older
+release for no benefit; GA-#28 settled that in July and #188 says explicitly to leave the
+published ranges permissive. The reasoning is now a comment beside them, so the next reader finds
+a decision rather than an apparent oversight — the same failure mode as `_export.py`'s premise in
+#181, where correct reasoning sat in a comment with nothing tying it to the code it depended on.
+
+### A second correction to the audit, verified
+
+T28 (#191) states the `google-auth-oauthlib>=1.0` floor *"admits releases where the [PKCE] default
+is off."* Downloaded the sdists: **1.0.0 already defaults `autogenerate_code_verifier=True`**, as
+do 1.2.0 and 1.4.1. The floor does not admit a PKCE-off release, so raising it was not done.
+
+The substantive half of T28 stands — PKCE is *inherited rather than requested*, and no test covers
+it — and is fixed by passing it explicitly, which constrains what the code **does** rather than
+what may be **installed**. Recorded on the issue.
+
+---
+
+## T3 / #186 — the publish credential was held while third-party code ran
+
+**Status:** fixed · **Landed:** 0.30.4
+
+One job held `id-token: write` while `pip install` (lower-bound-only ranges), `pip-audit`,
+`bandit`, `pytest` and `python -m build` all executed. Any of it could mint a PyPI-audience token
+from the job environment and publish as us.
+
+Split exactly as the finding proposed: `build` runs all of it with no credential; `publish` holds
+the credential and downloads artifacts. **`publish` does not check out the repository**, so our
+code is not merely unexecuted there — it is absent.
+
+### The approval got better as a side effect
+
+The finding notes that the environment gate *"protects job start, so the human approves before the
+untrusted code runs."* Moving the gate to `publish` means it now waits **after** the suite and the
+sdist guard have passed: a reviewer approves a build they can see succeeded, rather than one about
+to begin. That was not the goal and is worth keeping.
+
+### Guarded structurally, because the property is one reasonable-looking step from gone
+
+`actions/checkout` added to `publish` "to read the version", or a `pip install` "to check
+something first", restores the whole exposure and would pass review. So
+`tests/test_release_workflow_shape.py` asserts it as shape rather than as a list of banned
+strings: the credential-holding job may not check out, may not run shell, and may use only actions
+on a named allowlist that a new entry has to join deliberately.
+
+**Verified to fail against the pre-split workflow — 14 of 17 assertions do.** It also asserts the
+split dropped no gate, that every action is still SHA-pinned, and that `if-no-files-found: error`
+is set, without which an empty `dist/` uploads cleanly and a green publish ships nothing.

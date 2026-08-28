@@ -77,7 +77,11 @@ xlsx = ["openpyxl>=3.1"]
 # and `mypy` give materially different answers across majors, so a contributor on ruff 0.6 or
 # mypy 1.x sees a different verdict from the one that will block their PR.
 dev = ["pytest>=9.0", "pytest-cov>=7.0", "ruff>=0.16", "mypy>=2.0", "mcp>=2.1",
-       'typing_extensions>=4.0; python_version < "3.12"', "openpyxl>=3.1"]
+       'typing_extensions>=4.0; python_version < "3.12"', "openpyxl>=3.1",
+       # tests/test_release_workflow_shape.py parses .github/workflows/release.yml to assert
+       # the publish job holds no project code. Declared rather than assumed present: it was
+       # installed ad hoc in a local venv, passed locally, and failed all five CI matrix jobs.
+       "PyYAML>=6.0"]
 
 [project.scripts]
 csa-google-workspace-mcp = "csa_google_workspace.mcp:main"

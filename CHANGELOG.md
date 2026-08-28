@@ -10,6 +10,48 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-27 — v0.30.4 (the job that can publish runs nothing of ours) — not released yet; pending, not abandoned
+
+Supply-chain hardening from audit
+[`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md).
+**Nothing in the package changes** — this is entirely about how it gets built and published.
+
+`release.yml` did everything in one job holding `id-token: write`: `pip install` resolving
+lower-bound-only ranges, `pip-audit`, `bandit`, the full test suite, and `python -m build`. Every
+one of those executes third-party code, and any of it could read
+`ACTIONS_ID_TOKEN_REQUEST_URL` / `_TOKEN` from the job environment, mint a PyPI-audience OIDC
+token, and publish arbitrary artifacts as `csa-google-workspace`.
+
+That is **amplification** rather than a vulnerability of ours: it needs a compromised dependency
+first, which is outside our control. What it does is turn *"a dependency was compromised"* into
+*"our published artifact was compromised"* — and that lands on every operator holding a full-Drive
+token. `build==1.5.0` and `twine==6.2.0` were already pinned in that job, which made the two
+unpinned `pip install` lines look like an omission rather than a decision.
+
+**Now two jobs.** `build` runs all of it and holds no credential. `publish` holds
+`id-token: write` and does nothing but download the artifacts and hand them to the PyPA action —
+**it does not even check out the repository**, so project code is not present in the job that can
+publish.
+
+**The approval moved with the credential**, and improved: the `pypi` environment gate is now on
+`publish`, so the run waits *after* the suite and the sdist guard have passed. A reviewer approves
+a build they can see succeeded rather than one about to start.
+
+### Guarded, because the property is one careless step from gone
+
+Adding `actions/checkout` to `publish` "to read the version", or a `pip install` "to check
+something first", restores the exact exposure — and would look entirely reasonable in review. So
+`tests/test_release_workflow_shape.py` asserts the shape structurally: the credential-holding job
+may not check out the repository, may not run shell at all, and may use only actions on a named
+allowlist. **Verified to fail against the pre-split workflow — 14 of its 17 assertions do.**
+
+It also asserts the split did not quietly drop a gate: `pip-audit`, `bandit`, `pytest`,
+`python -m build`, `twine check` and the sdist guard are all still on the path, every action is
+still pinned to a commit SHA, and `if-no-files-found: error` is set — without which an empty
+`dist/` uploads cleanly and the publish succeeds having shipped nothing.
+
+Closes [#186](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/186).
+
 ## 2026-08-27 — v0.30.3 (raise the floors that matter, leave the rest alone)
 
 Dependency work from audit
