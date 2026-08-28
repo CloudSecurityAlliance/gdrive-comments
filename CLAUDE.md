@@ -81,6 +81,10 @@ These are the things no test will catch for you unless you add one.
 
 ```bash
 pip install -e ".[dev]"        # install (src/ layout, Python >=3.10)
+                                # CI does NOT install this way - it installs the hash-pinned
+                                # closure in requirements/ (see requirements/README.md). If you
+                                # add a dependency to pyproject.toml, run scripts/lock.sh, or
+                                # tests/test_lockfiles.py fails on your PR.
 pytest -q                       # unit suite — no network, no credentials (uses FakeBackend).
                                 # Currently ~730 passed, 12 skipped, a few seconds. The 12 skips
                                 # are the two gated suites below (9 integration + 3 oauth) —

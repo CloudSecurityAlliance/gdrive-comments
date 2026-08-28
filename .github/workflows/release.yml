@@ -37,19 +37,38 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
-      - name: Security gate (pip-audit + bandit, runtime closure)
+      # Deliberately NOT hash-pinned: pip-audit's job is to observe what a real install of
+      # this package resolves to. Auditing our own lockfile would be auditing the one
+      # environment nobody installs. See requirements/README.md.
+      - name: Security gate (pip-audit + bandit, unpinned runtime closure on purpose)
         run: |
-          python -m pip install --upgrade pip
           pip install -e . pip-audit bandit
           pip-audit --skip-editable
           bandit -r src
+      # From here everything is hash-pinned, because from here the steps produce the artifact.
+      # The suite that gates the tag and the toolchain that writes the wheel both run against
+      # a closure recorded in this repository rather than whatever PyPI resolves today.
       - name: Unit suite (never publish a red tag)
+        # `--no-build-isolation` with the backend installed from the pinned file: otherwise
+        # the editable install fetches setuptools from PyPI unpinned. PIP_CONSTRAINT would be
+        # the obvious tool and cannot be used here - a hashed constraints file puts pip in
+        # hash-checking mode, and an editable install then fails with "no single file to hash".
         run: |
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements/dev.txt
+          pip install --require-hashes -r requirements/build-backend.txt
+          pip install -e . --no-deps --no-build-isolation
           pytest -q
-      - name: Build sdist + wheel
+      # PIP_CONSTRAINT is the load-bearing half. `python -m build` creates its OWN isolated
+      # venv and installs `build-system.requires` (setuptools) into it straight from PyPI, so
+      # pinning `build` and `twine` here reaches everything EXCEPT the code that actually
+      # writes the wheel. Verified by falsification: with a constraint contradicting
+      # build-system.requires the build fails with a resolver conflict, so this is applied
+      # rather than silently ignored.
+      - name: Build sdist + wheel (build backend pinned through the isolated env)
+        env:
+          PIP_CONSTRAINT: requirements/build-backend.txt
         run: |
-          pip install build==1.5.0 twine==6.2.0
+          pip install --require-hashes -r requirements/build.txt
           python -m build
       - name: Check metadata + guard dist contents
         run: |

@@ -10,8 +10,13 @@ updates:
         patterns: ["*"]
 
   # Flag newly-disclosed CVEs / updates in the Python dependency closure.
+  #
+  # `/requirements` is listed explicitly: Dependabot does not recurse, and without it the
+  # hash-pinned CI lockfiles would freeze in place - which is the failure mode a lockfile
+  # invites. It is also how the "does the new version break us?" signal survives pinning CI:
+  # the bump arrives as a PR and the five-Python matrix runs against it before auto-merge.
   - package-ecosystem: pip
-    directory: /
+    directories: ["/", "/requirements"]
     schedule:
       interval: weekly
     groups:

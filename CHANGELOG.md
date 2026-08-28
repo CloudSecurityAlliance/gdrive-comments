@@ -10,6 +10,64 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.8 (CI installs what this repository says it installs)
+
+Closes **#188** (T18). No runtime change; the whole of it is in `.github/` and `requirements/`.
+
+### The gap
+
+Nothing in the tree pinned what the automation installed. Every job resolved lower-bound-only
+ranges live from PyPI — **including the release job whose entire output is the artifact
+published under our name**. A compromised transitive dependency of `build`, `twine` or the dev
+closure could alter the wheel or turn a red suite green, and nothing in this repository recorded
+what was installed when a given tag was cut.
+
+`requirements/dev.txt`, `build.txt` and `build-backend.txt` are hash-pinned closures, generated
+by `scripts/lock.sh` and maintained by Dependabot (which now covers `/requirements` explicitly —
+it does not recurse, and an unmaintained lockfile is the failure mode a lockfile invites).
+
+**The published ranges stay permissive.** Pinning a *library's* dependencies pushes a resolution
+problem onto every application that installs it. The 2026-07-22 audit called those ranges "benign
+and standard for a library" and the 2026-08-27 one called unpinned CI a supply-chain gap; both are
+right about different questions.
+
+### The half a lockfile does not reach
+
+`python -m build` creates **its own isolated venv** and installs `build-system.requires`
+(setuptools) into it straight from PyPI. Pinning `build` and `twine` in the outer environment
+leaves the code that actually writes the wheel resolving freely — in the one job whose only
+output is the artifact. `PIP_CONSTRAINT` reaches inside it, **verified by falsification**: a
+constraint contradicting `build-system.requires` makes the build fail with a resolver conflict,
+so it is applied rather than silently ignored.
+
+The same hole exists in `pip install -e .`, which builds through PEP 517. The pinned installs now
+put the backend in from `build-backend.txt` and pass `--no-build-isolation`.
+
+### Three things measured rather than assumed
+
+* **`uv pip compile --universal` resolves against the interpreter it runs on**, not the floor in
+  `requires-python`, even with that same `pyproject.toml` as input. On 3.12 it pinned
+  `rpds-py==2026.6.3` (requires >=3.11) — a lock that installs on four matrix legs and fails the
+  fifth, at install time in CI. `--python-version 3.10` is load-bearing.
+* **`PIP_CONSTRAINT` cannot be used for the editable installs.** A constraints file carrying
+  hashes puts pip in hash-checking mode for the whole invocation, and an editable requirement
+  then fails with *"no single file to hash"*. It appears on exactly one step as a result.
+* **`pip install --upgrade pip` is gone from both workflows.** It was an unpinned fetch from PyPI
+  by the tool about to verify every other hash. The runner's pip is used as shipped — removing
+  the fetch rather than pinning it.
+
+### Two carve-outs, asserted as carve-outs
+
+The `security` job still resolves **freely**, and so does its editable build. `pip-audit` exists
+to observe what a real install resolves to; pointing it at our lockfile would have it audit the
+one environment nobody installs, and a CVE in the version users actually get would stop being
+reported. `tests/test_lockfiles.py` fails if someone "fixes the inconsistency", with the reason
+attached.
+
+`tests/test_lockfiles.py` (24 tests, 7 of which fail against the pre-fix workflows) also fails when
+`pyproject.toml` declares a dependency the lock does not carry — on the PR that introduces it,
+rather than as an `ImportError` mid-matrix.
+
 ## 2026-08-28 — v0.30.7 (the configuration reference now describes the configuration)
 
 Closes **#196**. Documentation only in effect, but one item of it was a wrong answer being
