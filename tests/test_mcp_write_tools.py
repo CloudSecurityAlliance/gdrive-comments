@@ -79,13 +79,20 @@ def test_update_cells_writes_and_counts():
     assert be._writes, "the write did not reach the backend"
 
 
-def test_update_cells_defaults_to_raw_and_user_entered_is_opt_in():
-    """CHANGED in 0.30.0 (#181). This asserted USER_ENTERED "so formulas work" - true, and the
-    wrong default: it made Google evaluate text derived from untrusted comment bodies as a
-    formula, server-side, where IMPORTXML and friends fetch outbound. The legitimate half of
-    the original intent is kept below - a formula is still writable, just deliberately.
+def test_update_cells_always_stores_values_verbatim():
+    """CHANGED TWICE, and both changes are worth knowing about.
 
-    Full reasoning and the payload shapes: tests/test_raw_is_the_default.py.
+    Originally it asserted `USER_ENTERED` "so formulas work" — true, and the wrong default: it
+    had Google evaluate text derived from untrusted comment bodies as a formula, server-side,
+    where IMPORTXML and friends fetch outbound. 0.30.0 (#181) flipped the default to RAW and
+    kept `USER_ENTERED` as a deliberate opt-in, which this test then asserted.
+
+    0.30.13 removed the opt-in from this layer entirely. What guarded it was a docstring saying
+    *do not pass this* — an instruction to the model, on a surface whose premise is that content
+    can instruct the model. The library keeps the option; the MCP tools do not offer it.
+
+    So both halves of the old assertion are now the same assertion: values are stored verbatim,
+    however the call is made. Full reasoning: tests/test_raw_is_the_default.py.
     """
     app, be = _app()
     _out(app, "update_cells", {"fileId": "s", "a1Range": "A1", "values": [["=SUM(B1:B2)"]]})
@@ -95,8 +102,8 @@ def test_update_cells_defaults_to_raw_and_user_entered_is_opt_in():
     app, be = _app()
     _out(app, "update_cells", {"fileId": "s", "a1Range": "A1", "values": [["=SUM(B1:B2)"]],
                                "valueInputOption": "USER_ENTERED"})
-    assert any("USER_ENTERED" in str(w) for w in be._writes), \
-        "writing a real formula on purpose must still work"
+    assert not any("USER_ENTERED" in str(w) for w in be._writes), \
+        "asking for USER_ENTERED must no longer reach Google - the parameter was removed"
 
 
 def test_update_cells_rejects_a_flat_list():

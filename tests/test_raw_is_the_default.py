@@ -100,28 +100,76 @@ class TestTheToolsDefaultToRaw:
         assert options_used(backend) == ["RAW"]
 
 
-class TestUserEnteredIsStillAvailable:
-    """The feature is legitimate. Removing it would be its own regression."""
+class TestUserEnteredIsNoLongerReachableThroughMcp:
+    """**This class asserted the opposite until v0.30.13**, and the reversal is the point.
 
-    def test_explicitly_asking_for_user_entered_is_honoured(self):
+    v0.30.1 made `RAW` the default and kept `USER_ENTERED` reachable, under the heading *"the
+    feature is legitimate; removing it would be its own regression"*. Half right: the feature is
+    legitimate, and it stays in the library. What did not survive review is exposing it *here*.
+
+    After the fix, the only thing standing between an injected agent and server-side formula
+    evaluation was a docstring saying **DO NOT pass `USER_ENTERED` for anything derived from
+    document or comment content** — an instruction to the model, on a surface whose entire
+    premise (T2) is that third-party content can instruct the model.
+
+    Invariant #10 records that *a type is not a contract with the model; the description is*.
+    Here it inverts: **a description is not a control either.** So the parameter is gone rather
+    than gated — the same shape as raw `batch_update`, which the library exposes and this layer
+    withholds.
+
+    What it costs is real and was weighed: an agent cannot compose a spreadsheet with live
+    formulas through this server. `Sheet.update(..., value_input_option="USER_ENTERED")` is one
+    import away for anyone who has decided.
+    """
+
+    def test_the_tools_no_longer_accept_it(self):
+        app, _ = build()
+        schemas = {t.name: t.input_schema for t in asyncio.run(app.list_tools())}
+        for name in ("update_cells", "append_rows"):
+            properties = schemas[name].get("properties", {})
+            assert "valueInputOption" not in properties, (
+                f"{name} still publishes valueInputOption; a parameter the schema advertises is "
+                f"a parameter an injected agent can be told to set")
+
+    @pytest.mark.parametrize("tool,a1", [("update_cells", "Tab1!A1"), ("append_rows", "Tab1")])
+    def test_passing_it_anyway_is_ignored_and_raw_is_used(self, tool, a1):
+        """Absent from the schema is not the same as rejected, so this checks what a caller who
+        sends it regardless actually gets.
+
+        Measured: the SDK **silently drops** the unknown argument and the write proceeds as
+        `RAW`. A first draft of this test asserted it should *raise* — wrong, and wrong in the
+        less safe direction.
+
+        Silently ignoring an unknown parameter is normally a smell. Here it is the fail-safe
+        outcome, because the value being ignored is the dangerous one: the only thing an
+        injected agent achieves by sending the old parameter is the behaviour it was trying to
+        avoid. Worth asserting explicitly rather than leaving to the SDK's discretion, since an
+        SDK that later started honouring extra kwargs would reopen T15 in silence.
+        """
         app, backend = build()
-        call(app, "update_cells", fileId=SHEET, a1Range="Tab1!A1",
-             values=[["=SUM(A1:A2)"]], valueInputOption="USER_ENTERED")
-        assert options_used(backend) == ["USER_ENTERED"]
+        call(app, tool, fileId=SHEET, a1Range=a1, values=[["=SUM(A1:A2)"]],
+             valueInputOption="USER_ENTERED")
+        assert options_used(backend) == ["RAW"], (
+            "an unknown valueInputOption reached the backend; the parameter was removed from "
+            "the surface precisely so it could not")
 
-    def test_and_on_append_rows_too(self):
+    @pytest.mark.parametrize("tool,a1", [("update_cells", "Tab1!A1"), ("append_rows", "Tab1")])
+    def test_a_formula_shaped_string_is_stored_as_text(self, tool, a1):
+        """The behaviour that matters, stated without reference to the parameter at all."""
         app, backend = build()
-        call(app, "append_rows", fileId=SHEET, a1Range="Tab1",
-             values=[["=SUM(A1:A2)"]], valueInputOption="USER_ENTERED")
-        assert options_used(backend) == ["USER_ENTERED"]
+        call(app, tool, fileId=SHEET, a1Range=a1, values=[["=IMPORTXML(\"http://x\",\"//a\")"]])
+        assert options_used(backend) == ["RAW"]
 
-    def test_the_docstring_no_longer_teaches_user_entered_as_the_norm(self):
+    def test_the_docstring_no_longer_argues_with_the_model_about_it(self):
+        """A description that says "do not pass X" is a description that has to be believed. The
+        replacement states what happens, and offers nothing to override."""
         app, _ = build()
         tools = {t.name: (t.description or "") for t in asyncio.run(app.list_tools())}
         text = tools["update_cells"]
-        assert "RAW" in text, "the description must say what the default now is"
-        assert "USER_ENTERED` (the default" not in text, (
-            "the description still calls USER_ENTERED the default")
+        assert "USER_ENTERED" not in text, (
+            "the description still names USER_ENTERED - there is nothing to name any more, and "
+            "naming it teaches a parameter that does not exist")
+        assert "verbatim" in text, "it must still say what DOES happen to the values"
 
 
 class TestEveryLibraryDeclarationStillDefaultsToRaw:
