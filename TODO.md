@@ -414,6 +414,33 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       `lint` job. It already treated an unreachable PyPI as *skip the comparison* rather than a
       failure, so no guard was needed. Earns its place: it caught v0.27.0, which the changelog
       claimed was released and which had never been published.
+- [x] **Assert the externally-enforced controls** — **done 2026-08-28** (v0.30.9, #189).
+      `scripts/check_controls.py` checks the Trusted Publisher's environment binding, the `pypi`
+      environment's required reviewers, and branch protection on `main`; weekly, and in the
+      release build so a removed reviewer stops the release it would otherwise let through
+      unattended. Reports OK / VIOLATED / **UNVERIFIABLE** and never counts the third as the
+      first.
+- [ ] **Cover branch protection in CI, via an optional read-only `CONTROLS_TOKEN`** — **deferred
+      to 1.0.0, 2026-08-28, at the CINO's direction** (*"don't worry about branch protection yet,
+      lets make that a 1.0.0 thing"*).
+
+      Two of the three controls above verify with **no credential at all**. Branch protection
+      needs admin rights, and a workflow's `GITHUB_TOKEN` cannot be granted them — there is no
+      `administration` permission to put in a `permissions:` block, so this is not a matter of
+      asking for more scope. Covering it in CI means a fine-grained PAT with
+      `administration:read` stored as a repository secret.
+
+      **Why deferring is reasonable rather than lazy:** the control is checked *today* whenever
+      the check is run locally with `gh auth token`, which `RELEASING.md` puts in the pre-tag
+      checklist — so the release path, the place it matters, is covered by a human-run check. The
+      gap is only the unattended weekly run. Against that, adding a long-lived credential to a
+      **public** repository is a real and permanent cost, and it is the kind of thing to decide
+      deliberately at a 1.0 review rather than to acquire as a side effect of closing an issue.
+
+      When it is taken up: fine-grained, single-repository, `administration:read` **only**, and
+      the weekly workflow already reads `secrets.CONTROLS_TOKEN` if present — no code change,
+      just the secret. Worth pairing with a decision on rotation, since an unrotated PAT is how
+      this kind of thing ages badly.
 
 - [ ] **C6 List the server in the official MCP Registry** —
       [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/). Added as a
