@@ -30,6 +30,7 @@ import contextlib
 import csv
 import os
 import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,46 @@ from typing import Any
 from ._export import ACTIONS, COLUMNS, COMPLETED, XLSX_SUFFIX
 
 DONE = "yes"
+
+# An .xlsx is a zip, and a caller-supplied one may be a decompression bomb: a few KB that
+# expands to gigabytes. `_cellmap.py` already bounds the SAME archive class - two parsers of
+# .xlsx in one codebase should not have opposite postures - so the caps mirror it. (#190/T23)
+#
+# NOT about XXE or entity expansion: openpyxl auto-detects `defusedxml` (env
+# OPENPYXL_DEFUSEDXML, on by default) and defusedxml is a hard dependency here, so that class
+# is already handled. This is denial of service, nothing more, and the fix should not be sold
+# as more.
+MAX_REGISTER_UNCOMPRESSED = 200 * 1024 * 1024   # a 205-comment register is well under a MB
+MAX_REGISTER_MEMBERS = 512
+
+
+def _check_archive_bounds(path: Path) -> None:
+    """Refuse an oversized .xlsx BEFORE openpyxl opens it.
+
+    Read from the zip central directory: `file_size` is the DECLARED uncompressed size, so a
+    bomb is refused without expanding any of it. Measuring after decompression would be the
+    thing the cap exists to prevent.
+
+    A declared size can lie - it is attacker-controlled metadata - but only downwards, and a
+    member that declares small then expands large still has to get past openpyxl itself. The
+    cheap header check removes the cheap attack; it is not claimed to be a complete one.
+    """
+    try:
+        with zipfile.ZipFile(path) as archive:
+            infos = archive.infolist()
+    except (zipfile.BadZipFile, OSError):
+        return                     # not our error to raise - let openpyxl report it in context
+    if len(infos) > MAX_REGISTER_MEMBERS:
+        raise ValueError(
+            f"{path.name} contains {len(infos)} archive members, over the "
+            f"{MAX_REGISTER_MEMBERS} a register should need. Refusing to parse it.")
+    total = sum(i.file_size for i in infos)
+    if total > MAX_REGISTER_UNCOMPRESSED:
+        raise ValueError(
+            f"{path.name} declares {-(-total // (1024 * 1024))} MiB uncompressed, over the "
+            f"{MAX_REGISTER_UNCOMPRESSED // (1024 * 1024)} MiB limit for a register. Refusing "
+            f"to parse it - nothing was decompressed. (Rounded UP, so a file one byte over the "
+            f"cap does not report as exactly the cap and read like an off-by-one.)")
 
 # The decision columns are THREE-state, and saying so in the type is the point. A bool that
 # also had to carry "not decided" was how pre-filling `FALSE` came to mean "reopen every
@@ -139,6 +180,7 @@ def read_rows(path: Path) -> list[dict]:
         except ImportError as e:                  # pragma: no cover - environment-dependent
             raise ValueError("reading .xlsx needs openpyxl: pip install "
                              "'csa-google-workspace[xlsx]'") from e
+        _check_archive_bounds(path)
         ws = load_workbook(path, data_only=True).active
         it = ws.iter_rows(values_only=True)
         header = [str(h) if h is not None else "" for h in next(it, ())]
@@ -156,7 +198,23 @@ def write_back(path: Path, rows: list[dict], header: list[str]) -> None:
     Temp file plus rename, because the whole point of the markers is surviving a crash, and a
     half-written register would be a worse state than the one being protected against.
     """
-    if path.suffix.lower() == XLSX_SUFFIX:
+    suffix = path.suffix.lower()
+    # The one piece of `resolve_export_path`'s inertness that transfers. The other two do not,
+    # and the reasons belong here rather than reading as omissions: NEVER-OVERWRITE cannot
+    # apply, because overwriting the register in place is the entire job and a `-<stamp>` copy
+    # would strand the completed markers in a file nobody re-applies; and EXPORT_DIR
+    # CONFINEMENT would break the documented flow, since a reviewer may hand the file back from
+    # anywhere. The temp file in `path.parent` is likewise required rather than lax - an atomic
+    # rename needs it on the same filesystem as the target. (#190/T13)
+    #
+    # What actually bounds this path is stronger than any of them: `read_rows` must parse the
+    # file as a register first, so a path that is not already one is never reached.
+    if suffix not in (XLSX_SUFFIX, ".csv"):
+        raise ValueError(
+            f"a register is a .csv or {XLSX_SUFFIX} file; {path.name!r} is neither, so nothing "
+            f"was written. Pass the file export_comments produced.")
+    if suffix == XLSX_SUFFIX:
+        _check_archive_bounds(path)
         from openpyxl import load_workbook
         wb = load_workbook(path)
         ws = wb.active
