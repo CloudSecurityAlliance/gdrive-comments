@@ -532,3 +532,91 @@ The release build step was rehearsed locally with its exact command pair — `pi
 --require-hashes -r requirements/build.txt` then `PIP_CONSTRAINT=... python -m build` — producing
 an sdist and wheel that pass `twine check`. A release path is a bad place to discover a wiring
 error, since it only runs on a tag.
+
+---
+
+## #189 — T19/T27 · assert the externally-enforced controls (v0.30.9)
+
+The finding was precise: `RELEASING.md:29-38` analyses the self-referential case correctly, and
+the residual is that the analysis is prose. `scripts/check_controls.py` turns each of the three
+into a check, run weekly and **in the release build**.
+
+### Why the release build and not only the schedule
+
+A weekly run finds drift within a week. A release is the moment drift costs something: if the
+`pypi` environment's required reviewers had been removed, **that very run would publish
+unattended** — the exact failure the gate exists to prevent, at the exact moment it is load-
+bearing. The check therefore sits in `build` (which holds no credential), not in `publish`
+(which does, and deliberately runs no project code — a test asserts it stays out).
+
+### The three states, and why the third is the whole design
+
+`OK` / `VIOLATED` / `UNVERIFIABLE`, never collapsed:
+
+* a violation exits non-zero — the setting is wrong, now;
+* unverifiable prints as loudly as a failure but does not fail on its own, because the usual
+  cause is a token without admin rights, which is a fact about the caller;
+* **everything unverifiable exits non-zero**, because a run that verified nothing must not read
+  as a clean bill of health.
+
+That last clause is the point. A control check that cannot reach its evidence and exits 0 is
+worse than no check — it reads as a control from the outside while asserting nothing, which is
+the failure mode this audit and its predecessor keep finding here in other forms: an sdist grep
+matching filenames only, a test asserting a default it never set, a configuration reference
+restating a policy from memory.
+
+It is also what makes the check safe on a release path. An outage cannot redden a release; only
+a genuinely violated control stops one. A check that failed on unreachability would have to be
+removed from that path the first time PyPI had a bad minute.
+
+### How each control is actually verified
+
+| Control | Evidence | Credential |
+|---|---|---|
+| Publisher constrained to `pypi` | the published **PEP 740 provenance**, which carries `publisher.environment` | none |
+| `pypi` environment has reviewers | `GET /repos/{o}/{r}/environments` | none — answers unauthenticated for a public repo |
+| Branch protection on `main` | `GET /repos/{o}/{r}/branches/main/protection` | **admin** |
+
+The publisher check deserves a caveat stated plainly rather than glossed: PyPI does not expose a
+project's publisher *configuration* publicly, so this asserts the **consequence** — what did
+publish, not what would be accepted. A binding widened but never abused looks identical to a
+constrained one. PyPI's own *"can be made more secure"* email covers the other end, and the two
+together bound it; the script says so in its docstring rather than implying more.
+
+Branch protection cannot be read by a workflow's `GITHUB_TOKEN` at all — there is **no
+`administration` permission** to grant in a `permissions:` block, so this is not a matter of
+asking for more. In CI it reports unverifiable unless an optional read-only `CONTROLS_TOKEN`
+(fine-grained, `administration:read`) is configured. Left to the operator on purpose: adding a
+long-lived credential to a public repository is a real cost, and it should not be paid silently
+to satisfy one check. The workflow runs and checks two of three without it, and says which.
+
+### Two bugs the check had, found by running it rather than reading it
+
+1. **A 406 that read as "unreachable".** GitHub's `Accept: application/vnd.github+json` was
+   being sent to PyPI's integrity endpoint, which rejects it. The publisher control degraded to
+   `UNVERIFIABLE` and the script exited 0 — a check that had silently stopped checking, which is
+   the precise thing it was written to prevent. The header is now per-host, and
+   `test_a_406_is_not_read_as_success` pins it.
+
+2. **A GitHub token was sent to PyPI.** The `Authorization` header was attached to every
+   request. A credential sent to a host that did not ask for it is a credential leaked to it.
+   Now conditional on the request going to GitHub, asserted by a test reading the source.
+
+### Scope, stated so the check is not read as more than it is
+
+It detects **drift**: a setting changed by hand, a reviewer list emptied, a rule dropped during
+unrelated repo surgery. It does **not** defend against an attacker who can edit this repository,
+because they can edit the check. Same limit `RELEASING.md` already analyses for the publisher
+binding, same answer: what survives repo compromise is what PyPI and GitHub enforce, not the
+file asserting it. Both the script docstring and the workflow header say this, so a green badge
+is not mistaken for a stronger claim.
+
+### Verification
+
+`tests/test_controls_check.py` — 30 tests, exercising the classification offline by substituting
+the HTTP layer, because the interesting behaviour is not "can it reach GitHub" but "what does it
+conclude, and what does it do when it cannot tell". Each of the four branch-protection
+weakenings (no required checks, admins exempt, force pushes, deletions) is asserted on its own:
+checking only the first would pass a branch anyone can force-push over.
+
+Run live against the real repository during development — all three controls currently verify.
