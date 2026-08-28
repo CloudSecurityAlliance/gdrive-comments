@@ -19,10 +19,26 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
-      - name: Install package + dev deps
+      - name: Install package + dev deps (hash-pinned)
+        # Three lines, and each one is the way it is for a reason:
+        #
+        # 1. `--require-hashes` is all-or-nothing, so the project cannot go in with the
+        #    closure - hence the separate editable install with `--no-deps`.
+        # 2. `pip install -e .` builds through PEP 517 and would fetch the backend from PyPI
+        #    unpinned, so setuptools is installed from the same pinned file the release uses
+        #    and `--no-build-isolation` makes the build use it.
+        # 3. `PIP_CONSTRAINT` is NOT used here even though it is the obvious tool: a
+        #    constraints file carrying hashes puts pip in hash-checking mode for the whole
+        #    invocation, and an editable install then fails outright with "no single file to
+        #    hash". Measured, not assumed.
+        #
+        # No `pip install --upgrade pip` anywhere in this file: that was an unpinned fetch
+        # from PyPI by the tool about to verify every other hash. The runner's pip is used
+        # as shipped.
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements/dev.txt
+          pip install --require-hashes -r requirements/build-backend.txt
+          pip install -e . --no-deps --no-build-isolation
       - name: Lint (ruff)
         run: ruff check src tests
       - name: Type-check (mypy)
@@ -47,10 +63,26 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install package + dev deps
+      - name: Install package + dev deps (hash-pinned)
+        # Three lines, and each one is the way it is for a reason:
+        #
+        # 1. `--require-hashes` is all-or-nothing, so the project cannot go in with the
+        #    closure - hence the separate editable install with `--no-deps`.
+        # 2. `pip install -e .` builds through PEP 517 and would fetch the backend from PyPI
+        #    unpinned, so setuptools is installed from the same pinned file the release uses
+        #    and `--no-build-isolation` makes the build use it.
+        # 3. `PIP_CONSTRAINT` is NOT used here even though it is the obvious tool: a
+        #    constraints file carrying hashes puts pip in hash-checking mode for the whole
+        #    invocation, and an editable install then fails outright with "no single file to
+        #    hash". Measured, not assumed.
+        #
+        # No `pip install --upgrade pip` anywhere in this file: that was an unpinned fetch
+        # from PyPI by the tool about to verify every other hash. The runner's pip is used
+        # as shipped.
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements/dev.txt
+          pip install --require-hashes -r requirements/build-backend.txt
+          pip install -e . --no-deps --no-build-isolation
       - name: Run unit suite + coverage (fail_under gate from pyproject)
         run: pytest -q --cov --cov-report=term-missing
 
@@ -63,9 +95,14 @@ jobs:
           python-version: "3.12"
       # Install the RUNTIME closure only (not [dev]) so pip-audit scans shipped deps,
       # plus the two scanners themselves.
-      - name: Install package (runtime deps) + scanners
+      #
+      # DELIBERATELY NOT HASH-PINNED, unlike every other install in this repository's CI.
+      # pip-audit exists to observe what a REAL install of this package resolves to; pointing
+      # it at requirements/dev.txt would have it audit our own lockfile - the one environment
+      # we do not need told about - and a CVE in the version users actually get would stop
+      # being reported here. The free resolution IS the signal. See requirements/README.md.
+      - name: Install package (runtime deps, unpinned on purpose) + scanners
         run: |
-          python -m pip install --upgrade pip
           pip install -e . pip-audit bandit
       - name: Dependency CVE scan (pip-audit)
         run: pip-audit --skip-editable
