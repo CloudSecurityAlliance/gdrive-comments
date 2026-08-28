@@ -147,13 +147,21 @@ This library needs full `drive` scope by design — it opens arbitrary files the
 `drive.file` cannot reach (`SECURITY.md`, *Scope breadth*). Having given up Google's upstream
 enforcement, it owes you an equivalent, and these are it.
 
-| Variable | Bounds | Unset |
-|---|---|---|
-| `CSA_GW_ALLOWLIST_READ` | which files may be **read** | **nothing** — fail closed |
-| `CSA_GW_ALLOWLIST_MODIFY` | which files may be **changed, added to or deleted** | **nothing** — fail closed |
-| `CSA_GW_PROFILE` | **what kind** of mutation, by name — `reader`, `commenter`, `editor`, `full` | `editor` |
-| `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile |
-| `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | — |
+| Variable | Bounds | Unset | Widened all the way, that exposes |
+|---|---|---|---|
+| `CSA_GW_ALLOWLIST_READ` | which files may be **read** | **nothing** — fail closed | `*`: every file the authorized account can open — including ones merely *shared with* it, and shared drives it is a member of. Not just what you had in mind when you installed this |
+| `CSA_GW_ALLOWLIST_MODIFY` | which files may be **changed, added to or deleted** | **nothing** — fail closed | `*`: every file that account can edit. This is the one to leave narrow — see below |
+| `CSA_GW_PROFILE` | **what kind** of mutation, by name — `reader`, `commenter`, `editor`, `full` | `editor` | `full`: the three operations nothing undoes — edit a comment, delete a comment, share a file |
+| `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile | whatever you name, *ignoring the profile*. Naming one capability to unblock one task is how an install ends up more permissive than the profile it appears to be running |
+| `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | writes are **on** | — (this only ever narrows) |
+
+**The two allowlists are not symmetrical, and should not be set symmetrically.** Widening the
+read list exposes *content to a model*; widening the modify list exposes *your documents to
+whatever that model then decides to do*. Prompt injection through document text is this
+project's named primary risk (`SECURITY.md`), and it converts the first into the second — a
+comment in a file you read is the attacker's input, and the modify allowlist is what bounds
+the blast radius. `READ="*"` with a short, explicit `MODIFY` is a coherent posture. The reverse
+is not, and `*` on both is the configuration this section exists to talk you out of.
 
 **Profiles**, so "what may this install do?" has a short answer:
 

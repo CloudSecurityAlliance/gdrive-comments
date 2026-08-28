@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-25
+**Last verified:** 2026-08-27 (v0.30.7)
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -52,12 +52,24 @@ it means installing it and importing it.
   csa-google-workspace-mcp login          # once, interactive: browser consent
   claude mcp add csa-google-workspace -- csa-google-workspace-mcp
   ```
-- **Surface:** nine tools, each with structured output (`outputSchema`) and
-  read-only/destructive annotations — `open_document`, `read_text`,
-  `list_comments`, `get_comment`, `comments_by_cell`, `create_comment`,
-  `reply_comment`, `resolve_comment`, `reopen_comment`. Content-write tools
-  (Docs/Sheets/Slides edits) are **not** exposed through MCP yet; the library
-  API has them.
+- **Surface:** 34 tools, each with structured output (`outputSchema`) and
+  read-only/destructive annotations, across five groups — discovery and file
+  lifecycle (`search_files`, `list_recent_files`, `get_file_metadata`,
+  `get_file_permissions`, `create_file`, `copy_file`, `update_file`,
+  `share_file`, `trash_file`), content read (`read_file_content`,
+  `download_file_content`, `list_slides`, `list_suggestions`), **content write**
+  (`replace_text`, `append_text`, `insert_slide_text`, `update_cells`,
+  `append_rows`), comments (`list_comments`, `get_comment`, `comments_by_cell`,
+  `create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`,
+  `edit_comment`, `delete_comment`, `export_comments`,
+  `apply_comment_actions`), and the server describing itself
+  (`describe_configuration`, `read_server_resource`, `report_a_problem`,
+  `demonstration_plan`, `authenticate`).
+
+  Content writes shipped in **v0.13.0** and Docs suggestions in **v0.20.0**, so
+  the server now reaches everything the library does. An earlier version of this
+  file said content writes were not exposed; that was true at v0.2.3 and wrong
+  for roughly fifteen releases after.
 - **Auth:** per-user Google OAuth, inheriting the library's BYO-credentials
   model. Requires an **installed/desktop-app** OAuth client and the Drive, Docs,
   Sheets, and Slides APIs enabled. Each user authorizes as themselves; there is
@@ -68,7 +80,7 @@ it means installing it and importing it.
   `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a cached token carries its
   own client id and secret).
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped**, v0.2.0 onward (2026-08-24).
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.30.7.
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a
@@ -76,7 +88,7 @@ it means installing it and importing it.
   ```bash
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"healthcheck","version":"0"}}}}' | csa-google-workspace-mcp
   ```
-  Expect a JSON-RPC result listing nine tools.
+  Expect a JSON-RPC result listing 34 tools.
 - **Owner:** Kurt Seifried
 - **Notes:** A missing or expired token does **not** stop the server starting —
   it starts and reports the remedy through a tool error. So "the process is

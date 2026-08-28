@@ -27,9 +27,11 @@ from .._environment import describe_environment
 from ..policy import (
     _GATES,
     ALL_CAPABILITIES,
+    CAPABILITY_NOTES,
     DEFAULT_DISABLED,
     DEFAULT_ENABLED,
     MODIFY,
+    PROFILES,
     READ,
     Policy,
     Scope,
@@ -39,6 +41,45 @@ from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
 
 CONFIG_URI = "csa-gw://config"
 HELP_URI = "csa-gw://help/configuration"
+
+
+
+def _profile_rows() -> list[str]:
+    """The profile table, rendered from `PROFILES` rather than restated.
+
+    `PROFILES` nests - reader < commenter < editor < full - so each row can say "the above,
+    plus" and stay short. That nesting is a property of today's profiles, not a rule, so it is
+    CHECKED rather than assumed: a future non-nested profile renders its full list instead of
+    silently claiming to include a capability it dropped.
+    """
+    rows: list[str] = []
+    previous: frozenset[str] = frozenset()
+    previous_name = ""
+    for name, caps in PROFILES.items():
+        if not caps:
+            rows.append(f"| `{name}` | **nothing** - read and report only, whatever the "
+                        f"allowlists say |")
+        else:
+            builds_on = bool(previous) and previous <= caps
+            shown = sorted(caps - previous) if builds_on else sorted(caps)
+            labels = " · ".join(CAPABILITY_NOTES[c][0] for c in shown)
+            rows.append(f"| `{name}` | "
+                        + (f"everything `{previous_name}` may, plus {labels} |"
+                           if builds_on else f"{labels} |"))
+        previous, previous_name = caps, name
+    return rows
+
+
+def _capability_rows() -> list[str]:
+    """Every capability with its name, meaning and whether it can be undone.
+
+    The `CSA_GW_CAPABILITIES` names were documented nowhere a reader could find them - the
+    reference said "an explicit capability list" and left them to be guessed from an error
+    message.
+    """
+    return [f"| `{name}` | {meaning} | {undo} |"
+            for name, (meaning, undo) in
+            sorted(CAPABILITY_NOTES.items(), key=lambda kv: kv[0])]
 
 
 def _scope_lines(label: str, scope: Scope, variable: str) -> list[str]:
@@ -143,6 +184,8 @@ def render_help() -> str:
     """The configuration reference. Static, so it can be read before anything goes wrong."""
     reads = sorted(n for n, g in _GATES.items() if g.access == READ and g.capability is None)
     modifies = sorted(n for n, g in _GATES.items() if g.access == MODIFY)
+    profile_rows = "\n".join(_profile_rows())
+    capability_rows = "\n".join(_capability_rows())
     return f"""# Configuring csa-google-workspace
 
 Three independent bounds, all environment variables, set wherever this server is declared —
@@ -156,22 +199,51 @@ a shell, `.mcp.json`, or Claude Desktop's config. Each is a ceiling: none can wi
 | `CSA_GW_CAPABILITIES` | an explicit capability list — overrides the profile | see profile |
 | `CSA_GW_READ_ONLY=1` | everything — no writes, narrower OAuth scopes | off |
 
+Four further variables are **settings, not ceilings** — none of them widens what the three
+bounds above allow, which is why they are listed separately rather than mixed in:
+
+| Variable | Sets | Unset |
+|---|---|---|
+| `CSA_GW_TOKEN` | where the cached OAuth token is read and written | `~/.csa_google_workspace/token.json` |
+| `CSA_GW_CLIENT_SECRETS` | the installed-app OAuth client, for `login` **only** | none — `login` fails |
+| `CSA_GW_EXPORT_DIR` | where a `.csv` lands when the caller names one without a path | `~/Downloads` |
+| `CSA_GW_DEMO_REPO` | source repo for `demonstration_plan` | this project's repo |
+| `CSA_GW_DEMO_SHARE` | who a demonstration's files are shared with | nobody |
+
+A cached token carries its own client id and secret, which is why `CSA_GW_CLIENT_SECRETS`
+is needed for `login` and never afterwards.
+
+`CSA_GW_EXPORT_DIR` is the one worth a second look, because it is the only variable here that
+names **a location on the machine running this server** rather than something in Drive. It
+does not authorize the write — `destination="file"` is a capability an operator turns on —
+but it decides where an authorized one lands. A full path given by the caller is honoured
+over it, deliberately: what makes that safe is that the failure modes are inert, not that the
+path is validated.
+
 ## Profiles
 
 `CSA_GW_PROFILE` names a capability set, so "what may this install do?" has a short answer:
 
 | Profile | May |
 |---|---|
-| `reader` | nothing — read and report only, whatever the allowlists say |
-| `commenter` | comment, reply, resolve. Not edit content, not delete a thread, not touch the file |
-| `editor` | the above, plus edit content, tidy comments, create new files |
-| `full` | everything, including rename/move, trash and share |
+{profile_rows}
 
 Profiles cover **capabilities only**. The file allowlists are deliberately not profiled: which
 documents a deployment may touch is specific to that deployment, and a named default for it
 would be a named default for "which of your files an agent may change".
 
-`CSA_GW_CAPABILITIES` overrides a profile if both are set, and says so in the log.
+`CSA_GW_CAPABILITIES` overrides a profile if both are set, and says so in the log. These are
+the names it accepts:
+
+| Capability | Lets an install | Can it be undone? |
+|---|---|---|
+{capability_rows}
+
+**The line between `editor` and `full` is drawn on that last column** — not on how alarming
+the verb sounds. `file.trash` is in `editor` because Drive's bin is 30 days the file's owner
+can see and reverse; `comment.edit` is in `full` because Google keeps no edit history at all.
+"Content edits are versioned so editing is safe" holds for document content and is false for
+comments, which is the assumption the older grouping encoded.
 
 ## The usual posture
 

@@ -86,6 +86,31 @@ DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CON
 # the organisation.
 DEFAULT_DISABLED = frozenset({COMMENT_EDIT, COMMENT_DELETE, FILE_SHARE})
 
+# What each capability lets an install do, and whether Google gives you a way to undo it.
+#
+# This lives HERE, beside the constants, because it was previously restated from memory by
+# every surface that explains the policy - the README, the `csa-gw://help/configuration`
+# resource, `describe_configuration` - and the copies had drifted apart. The help resource
+# had `editor` able to "tidy comments" (it cannot: `comment.edit` and `comment.delete` are
+# `full`) and put rename/move and trash under `full` (they are `editor`). A model reads that
+# resource to explain a refusal, so a wrong copy there is worse than a wrong README: it
+# becomes an answer given to a user with the server's authority behind it.
+#
+# The recoverability column is the same one the comment above draws the default line on. It
+# is stated once and rendered, rather than retyped per surface.
+CAPABILITY_NOTES: dict[str, tuple[str, str]] = {
+    COMMENT_CREATE:  ("start a comment thread", "yes - delete it, or it stays visible"),
+    COMMENT_REPLY:   ("reply to a thread", "yes - the reply can be deleted"),
+    COMMENT_RESOLVE: ("resolve or reopen a thread", "yes - and either way it posts a visible reply"),
+    CONTENT_WRITE:   ("edit document, sheet and slide content", "yes - Drive revision history"),
+    FILE_CREATE:     ("create a new file", "n/a - nothing that exists is touched"),
+    FILE_UPDATE:     ("rename or move a file", "yes - rename or move it back"),
+    FILE_TRASH:      ("put a file in the trash", "yes, 30 days - the owner can restore it"),
+    COMMENT_EDIT:    ("edit an existing comment", "NO - Google keeps no visible edit history"),
+    COMMENT_DELETE:  ("delete a comment", "NO - the soft delete strips content and author"),
+    FILE_SHARE:      ("share a file with someone else", "NO, in effect - a copy taken is not revocable"),
+}
+
 # Named capability sets, so "what may this install do?" has an answer shorter than a list.
 #
 # Profiles cover *capabilities only*. The file allowlists are not profiled and never will be:
