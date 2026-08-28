@@ -10,6 +10,50 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.12 (Dependabot cannot maintain a lockfile; something else does)
+
+No runtime change. Fixes a claim shipped in v0.30.8 that the first real run disproved.
+
+### What broke
+
+`requirements/README.md` said *"Dependabot bumps them like any other manifest."* It does not.
+Dependabot **edits individual pinned lines**; a fully-pinned transitive lock has to be
+**re-resolved as a graph**.
+
+PR #225 was the proof: it bumped `pydantic-core` 2.46.4 → 2.48.0 in `requirements/dev.txt` and
+left `pydantic==2.13.4`, which pins `pydantic-core==2.46.4`. Every job failed with
+`ResolutionImpossible`. That would have recurred weekly.
+
+### The replacement
+
+`/requirements` is out of `dependabot.yml` — Dependabot keeps watching `pyproject.toml`, which is
+what it is genuinely good at: advisories against declared ranges.
+`.github/workflows/relock.yml` runs `scripts/lock.sh --upgrade` weekly and **opens an issue** when
+the pins have moved.
+
+**An issue rather than a pull request, deliberately.** A PR created with the repository's
+`GITHUB_TOKEN` does not trigger other workflows — GitHub blocks that to prevent recursion — so it
+would arrive with **zero checks**, could never merge past branch protection, and would *look*
+reviewed while nothing had run against it. Opening one properly needs a write-scoped PAT stored in
+a public repository, and that trade was declined. So the workflow notices, a human or agent runs
+the regeneration, and the resulting PR gets the full five-Python matrix like any other change —
+which is where the "did the new version break us?" signal was supposed to arrive all along.
+
+`uv` itself is now hash-pinned (`requirements/uv.txt`), so the tool that regenerates the locks is
+not an unpinned download, and no third-party action is used for the same reason.
+
+### Guarded
+
+`tests/test_lockfiles.py` gains five tests, including one that fails if `/requirements` is ever
+put back into `dependabot.yml` — with the reason attached, so the omission does not read as an
+oversight somebody should tidy up. **Verified to fail against the old configuration.**
+
+### Also
+
+`scripts/lock.sh` takes `--upgrade`. Re-resolving collapsed the two marker-conditional `rpds-py`
+entries into one — `0.30.0` satisfies all of 3.10–3.14, so the split was never needed. Verified to
+install on both extremes; the 3.10-specific pins that remain (`exceptiongroup`, `tomli`) are real.
+
 ## 2026-08-28 — v0.30.11 (the threat model is now a living document at the root)
 
 Closes **#197**. Docs only.

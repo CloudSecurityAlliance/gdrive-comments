@@ -1,0 +1,82 @@
+name: lockfiles are current
+
+# Dependabot CANNOT maintain these lockfiles, and this workflow exists because it tried.
+#
+# On 2026-08-28 it opened PR #225 bumping `pydantic-core` 2.46.4 -> 2.48.0 in
+# requirements/dev.txt and leaving `pydantic==2.13.4`, which pins `pydantic-core==2.46.4`.
+# Every job failed with ResolutionImpossible. That is not a bug in the PR, it is what
+# Dependabot does: it patches individual pinned lines. A fully-pinned transitive lock has to be
+# RE-RESOLVED as a graph, not edited a line at a time.
+#
+# So `/requirements` was removed from dependabot.yml (it still watches pyproject.toml, which is
+# what it is good at - advisories against declared ranges) and this took over.
+#
+# WHY IT OPENS AN ISSUE RATHER THAN A PULL REQUEST. A PR created with the repository's
+# GITHUB_TOKEN does not trigger other workflows - GitHub blocks that to prevent recursion. Such
+# a PR would arrive with zero checks and, because `main` requires status checks, could never
+# merge. It would also *look* reviewed while nothing had run against it, which is worse than
+# not opening it. Opening a PR properly needs a write-scoped PAT stored in a public repository,
+# and that trade was deliberately declined (see TODO.md, Gate D2).
+#
+# The fix is therefore: this notices, a human or agent runs `scripts/lock.sh --upgrade`, and the
+# resulting PR gets the full matrix like any other change.
+on:
+  schedule:
+    - cron: "23 6 * * 2"     # Tuesdays, 06:23 UTC — after Dependabot's Monday pyproject run,
+                             # so an advisory bump and a re-resolve do not collide.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      # uv is hash-pinned like everything else, so the tool that regenerates the locks is not
+      # itself an unpinned download. No third-party action is used for the same reason.
+      - name: Install uv (hash-pinned)
+        run: pip install --require-hashes -r requirements/uv.txt
+      - name: Re-resolve the lockfiles
+        run: ./scripts/lock.sh --upgrade
+      - name: Report if anything moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- requirements/; then
+            echo "Lockfiles are current."
+            exit 0
+          fi
+          echo "### Lockfiles have moved" >> "$GITHUB_STEP_SUMMARY"
+          git diff --stat -- requirements/ >> "$GITHUB_STEP_SUMMARY"
+
+          # One open issue at a time. A weekly duplicate would train people to close it unread,
+          # which is how a maintenance signal stops being one.
+          existing=$(gh issue list --state open --label lockfile --limit 1 --json number \
+                       --jq '.[0].number // empty')
+          {
+            echo "\`scripts/lock.sh --upgrade\` produces a different lockfile, so the pinned"
+            echo "closure in \`requirements/\` is behind what would be resolved today."
+            echo
+            echo '```'
+            git diff --stat -- requirements/
+            echo '```'
+            echo
+            echo "To update: run \`./scripts/lock.sh --upgrade\`, review the diff, and open a PR."
+            echo "The five-Python matrix runs against the new pins, which is the point of"
+            echo "pinning CI at all — the \"did the new version break us?\" signal arrives there."
+            echo
+            echo "_Opened automatically by \`.github/workflows/relock.yml\`._"
+          } > body.md
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+          else
+            gh issue create --title "Lockfiles are behind the current resolution" \
+              --label lockfile --body-file body.md
+          fi

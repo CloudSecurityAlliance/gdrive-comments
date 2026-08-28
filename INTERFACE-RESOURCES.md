@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-27 (v0.30.11)
+**Last verified:** 2026-08-27 (v0.30.12)
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -80,7 +80,7 @@ it means installing it and importing it.
   `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a cached token carries its
   own client id and secret).
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.30.11.
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.30.12.
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a
