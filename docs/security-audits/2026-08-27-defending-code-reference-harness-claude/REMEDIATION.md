@@ -371,3 +371,84 @@ on a named allowlist that a new entry has to join deliberately.
 **Verified to fail against the pre-split workflow — 14 of 17 assertions do.** It also asserts the
 split dropped no gate, that every action is still SHA-pinned, and that `if-no-files-found: error`
 is set, without which an empty `dist/` uploads cleanly and a green publish ships nothing.
+
+---
+
+## #196 — configuration options undocumented, and counts stale (v0.30.7)
+
+The issue reads as housekeeping. One item in it is not.
+
+### `csa-gw://help/configuration` was giving out a wrong profile table
+
+The reference's profile table was hand-written and had drifted from `policy.PROFILES` in **both**
+directions:
+
+| It said | Actually |
+|---|---|
+| `editor` may "tidy comments" | `comment.edit` and `comment.delete` are `full`; `editor` has neither |
+| `full` adds rename/move, trash, share | rename/move (`file.update`) and trash (`file.trash`) are **`editor`** |
+
+Why this outranks a stale README: the server's own instructions tell the model to read this
+resource **to explain a refusal**. So the wrong copy is not sitting in a file nobody opens — it is
+delivered to a user as an answer, with the server's authority behind it. And an operator picking a
+profile from it reads `editor` as more dangerous than it is and `full` as the only route to trash,
+which is precisely the inversion the v0.21.0 "can this be undone?" rework existed to remove. Both
+of those push a deployment toward `full`.
+
+**Fixed by removing the copy, not correcting it.** The table renders from `PROFILES`; the
+per-capability meanings and reversibility live in `policy.CAPABILITY_NOTES`, beside the constants,
+because four surfaces (README, this resource, `describe_configuration`, the module docstrings) were
+each restating them from memory. The generator checks the nesting it relies on rather than assuming
+it, so a future non-nested profile renders its own full list instead of quietly claiming to inherit
+a capability it dropped.
+
+The values of `CSA_GW_CAPABILITIES` were, separately, **documented nowhere**: the reference called
+it "an explicit capability list" and left the ten names to be guessed from an error message.
+
+### The reference claimed to be complete and named half the variables
+
+It opens with *"Every variable"* and described five of the ten `CSA_GW_*` the code reads. Missing:
+`CSA_GW_TOKEN` (points at the cached credential), `CSA_GW_CLIENT_SECRETS`, `CSA_GW_EXPORT_DIR`
+(decides where an authorized `.csv` lands **on the host**), and the two demonstration variables.
+
+A partial list under a completeness claim is worse than no list: the omissions read as *there are
+no others*. All ten are documented now, and separated into the three bounds and the settings that
+are **not** ceilings — so the "three independent bounds" framing stays true while the count stops
+being a lie.
+
+### Guarded by discovery, not by a hand-maintained list
+
+`tests/test_docs_do_not_drift.py` finds the variables by scanning `src/**/*.py` for
+`CSA_GW_[A-Z_]+`, so a new one documented nowhere fails in CI rather than in somebody's
+configuration. It caught a real mistake within minutes of being written: shortening a table row to
+`CSA_GW_DEMO_REPO / _SHARE` to satisfy the 120-column limit removed the only full occurrence of
+`CSA_GW_DEMO_SHARE`, and the test failed on it.
+
+It also asserts:
+
+* no profile row advertises a capability that profile lacks — the specific defect above;
+* the capabilities described as irreversible are **exactly** `DEFAULT_DISABLED`, tying the prose
+  "the line is drawn on: can this be undone?" to the data it claims to describe;
+* only *mechanical* claims (tool count, capability count, version). Comparative claims about
+  Google's server or the claude.ai connector are deliberately **not** asserted — they cannot be
+  computed from here, and they carry a verification date instead. The first draft of the test
+  flagged the README's "8 tools" for *Google's* server as our own drift, which is the failure mode
+  a test like this has.
+
+### The counts it was actually filed about
+
+`CLAUDE.md` said 32 tools; `INTERFACE-RESOURCES.md` said nine and reported itself verified at
+v0.2.3; the README said 34, which was right. `INTERFACE-RESOURCES.md` also still stated content
+writes were *"not exposed through MCP yet"* — false since **v0.13.0**, fifteen releases earlier,
+and it understated the server by an entire capability axis.
+
+That claim survived the first version of the guard, which searched for the literal string while the
+file carried it as `are **not** exposed through MCP yet`. Markdown emphasis defeated it. The test
+now strips emphasis and collapses whitespace before matching — a guard an ordinary edit can slip
+past is not a guard.
+
+### What is not claimed
+
+Nothing here changes an enforcement path. `PolicyBackend` was correct throughout; it was the
+*description* of it that was wrong. The exposure is that operators and models were making decisions
+from that description.

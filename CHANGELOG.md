@@ -10,6 +10,59 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.7 (the configuration reference now describes the configuration)
+
+Closes **#196**. Documentation only in effect, but one item of it was a wrong answer being
+given to users with the server's authority behind it.
+
+### The profile table in `csa-gw://help/configuration` was wrong in both directions
+
+It gave `editor` the ability to *"tidy comments"* — `comment.edit` and `comment.delete` are
+`full`, and `editor` has neither — and listed rename/move, trash and share together under
+`full`, when the first two are `editor`.
+
+This is a **model-facing** resource: the server's own instructions tell the model to read it
+when explaining a refusal. So the stale copy was not sitting in a README nobody opens; it was
+being handed to a user as an answer. An operator choosing a profile from it would have read
+`editor` as more dangerous than it is, and `full` as the only way to get trash — the exact
+inversion the v0.21.0 "can this be undone?" rework existed to remove.
+
+It is now **rendered from `PROFILES`**, alongside a new table naming every value
+`CSA_GW_CAPABILITIES` accepts with what it permits and whether Google gives you any way to
+undo it. Those meanings live in `policy.CAPABILITY_NOTES`, beside the constants, because four
+separate surfaces were each restating them from memory.
+
+`tests/test_docs_do_not_drift.py` asserts a profile row can never advertise a capability that
+profile lacks, and that the capabilities described as irreversible are exactly `DEFAULT_DISABLED`
+— tying the prose "the line is drawn on: can this be undone?" to the data it claims to describe.
+
+### The reference called itself complete and named half the variables
+
+It opened by promising *"every variable"* and documented five of the ten the code reads.
+`CSA_GW_TOKEN` (which points at the credential), `CSA_GW_CLIENT_SECRETS`, `CSA_GW_EXPORT_DIR`
+(which decides where an authorized `.csv` write lands on the host) and the two demonstration
+variables appeared nowhere. Omissions in a document that claims completeness read as *"there
+are no others"*.
+
+All ten are now documented, split into the three bounds and the settings that are not ceilings.
+The test discovers them by scanning `src/`, so adding one and documenting it nowhere fails in
+CI rather than in somebody's configuration.
+
+### The README config table now says what each option *leaves exposed*
+
+`Bounds` and `Unset` said what a variable does and what happens if you skip it, but not what
+you are accepting when you widen it — the question an operator actually has. Added a fourth
+column, plus the asymmetry between the two allowlists: widening `READ` exposes content to a
+model, widening `MODIFY` exposes your documents to what that model then does with it, and
+prompt injection is what converts the first into the second.
+
+### Stale counts
+
+`CLAUDE.md` said 32 tools, `INTERFACE-RESOURCES.md` said nine and reported itself verified at
+v0.2.3, and both are now 34 against the registry. `INTERFACE-RESOURCES.md` also still claimed
+content-write tools were not exposed through MCP — false since v0.13.0, fifteen releases. Each
+number was right when written, which is the argument for a test rather than a correction.
+
 ## 2026-08-28 — v0.30.6 (register bounds, and a stray request can no longer eat your login)
 
 **Also**: `check_release_history.py` no longer fails on a publish in flight. Both PyPI endpoints
