@@ -94,6 +94,19 @@ JSON
 Then verify **before** reporting it done: the per-version PyPI endpoint, the simple index, and a
 clean-venv install.
 
+**Checking PEP 740 attestations: use the integrity endpoint, not the project JSON.**
+
+```bash
+curl -s -H 'Accept: application/vnd.pypi.integrity.v1+json' \
+  "https://pypi.org/integrity/csa-google-workspace/$V/csa_google_workspace-$V-py3-none-any.whl/provenance" \
+  | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["attestation_bundles"]), "bundle(s)")'
+```
+
+The `/pypi/<name>/<version>/json` response has **no `provenance` key at all** — for any release,
+attested or not. Reading its absence as "attestations are missing" wrongly suggested the
+build/publish split had broken them; the integrity endpoint showed one bundle for both the new
+release and the one before it.
+
 **Do not add steps to the `publish` job.** Anything that runs there — a checkout, a `pip install`,
 a version check — executes beside a live publishing credential, which is precisely what the split
 removed. `tests/test_release_workflow_shape.py` asserts the shape, including an allowlist of the
