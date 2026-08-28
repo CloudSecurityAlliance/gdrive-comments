@@ -50,6 +50,11 @@ jobs:
       # outage cannot redden an unrelated PR.
       - name: Reconcile changelog, tags and PyPI
         run: python scripts/check_release_history.py
+      # The audit index's tables are generated from per-audit front matter, and its coverage
+      # claim is computed against the tracked tree. Checked rather than trusted because a
+      # stale one does not merely look untidy: it says an audit covered code it never saw.
+      - name: Audit index is current
+        run: python scripts/gen_audit_index.py --check
 
   test:
     runs-on: ubuntu-latest

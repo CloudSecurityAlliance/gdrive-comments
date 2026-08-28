@@ -10,6 +10,67 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.10 (the audit index is generated, and its coverage claim is checked)
+
+Closes **#198**. No runtime change.
+
+### The last shared file is gone
+
+`docs/security-audits/README.md` was the one file every audit had to edit — its index row and
+the coverage-by-module table — in a workflow deliberately built so that parallel audit agents
+never touch a shared document. It was therefore the only thing two concurrent audits could
+collide over, and the index said so about itself.
+
+Both tables now come from per-audit front matter via `scripts/gen_audit_index.py`, checked in
+CI. An audit writes **only its own directory**. `SCHEMA.md` now says *do not update the index*
+where it used to say the opposite.
+
+### Coverage is computed against the tree, not restated
+
+This is the half that matters. The old table was hand-maintained, and a hand-maintained coverage
+claim is exactly how the July-to-August gap stayed invisible: both 2026-07-22 audits cover
+v0.1.0's **16** modules, the tree is now **53**, and everything implementing the read-to-act path
+was written afterwards — but the table said "first covered by" and nothing compared it to what
+exists.
+
+Each audit declares `modules_covered` as globs; a group counts as covered only when an audit's
+globs match **every tracked file** in it. Less is rendered `partial — n/m`, and a group nothing
+matches reads **not yet audited**. So a newly-added module surfaces as uncovered *by itself*.
+
+It immediately reported something the hand table never did: **`scripts/`, `tests/`,
+`experiments/` and `research/` are not yet audited.** True, and previously easy to overlook.
+
+The two 2026-07-22 records gained front matter so the index has one mechanism rather than a
+generated table plus hand-written rows. **Only front matter was added** — no finding, rating or
+wording was touched — and their coverage is **enumerated, not globbed**, because a glob there
+would silently absorb every module written since and claim coverage that never existed. That is
+the direction this error actually goes, so `SCHEMA.md` and a test both require it.
+
+### Three bugs, all found by reading output rather than code
+
+Worth recording because they are one failure in three forms — a generated table that is
+confidently wrong while looking plausible, which is worse than the hand-written one it replaced
+because nobody re-reads a generated file.
+
+* **A glob claims the future**, and the fix reproduced the very overstatement it was written to
+  prevent. The 2026-08-27 record first declared `.github/workflows/*.yml`; that audit's commit is
+  `95c6afa` and the directory gained `controls.yml` the next day, so the table read *fully
+  covered* for a directory whose newest file no audit had seen. **Coverage is enumerated now** —
+  produced from `git ls-tree -r <target_commit>`, the only source that cannot be optimistic — and
+  a test rejects a glob in that field. `.github/workflows/` correctly reads `partial — 3/4`.
+
+* **`fnmatch`'s `*` crosses `/`.** `src/csa_google_workspace/*.py` matched every module in every
+  subpackage, so the top-level group reported 53 files instead of 20 and rendered
+  *"partial — 16/53"* for a group that is fully covered. Matching is now segment-wise.
+* **"First covered by" broke on the first audit covering *any* file in a group**, so an earlier
+  partial hid a later complete pass: `src/` top level read *"partial — 12/20 at 2026-07-22"*
+  while the 2026-08-27 audit covers all twenty. It now reports the earliest audit achieving
+  **full** coverage, falling back to the best partial.
+
+`tests/test_audit_index.py` — 19 tests, including that every tracked Python file falls into some
+coverage group. An unlisted directory does not show as uncovered, it does not show at all, which
+reads as nothing to report.
+
 ## 2026-08-28 — v0.30.9 (the controls outside this repository are now checked)
 
 Closes **#189** (T19/T27). No runtime change.

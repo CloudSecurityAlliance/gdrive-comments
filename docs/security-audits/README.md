@@ -22,11 +22,13 @@ Structure, naming, front-matter schema and conventions: [`SCHEMA.md`](SCHEMA.md)
 
 Newest first.
 
+<!-- BEGIN GENERATED INDEX -->
 | audit | date | tool | model | interaction | automation | depth | findings | remediation |
 |---|---|---|---|---|---|---|---|---|
-| [2026-08-27 · defending-code-reference-harness / claude](2026-08-27-defending-code-reference-harness-claude/) | 2026-08-27 | claude-code + anthropics/defending-code-reference-harness | claude-opus-5 | heavy | assisted | adversarial | 35 total · 1 exploitable · 15 hardening | deferred by design · [16 issues prepared](2026-08-27-defending-code-reference-harness-claude/ISSUES.md), file after merge |
-| [2026-07-22 · Security audit](../SECURITY-AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code + pip-audit, bandit, defusedxml fuzzing | — | moderate | assisted | standard | 4 (SEC-1…SEC-4) | findings-only |
+| [2026-08-27 · defending-code-reference-harness / claude](2026-08-27-defending-code-reference-harness-claude/) | 2026-08-27 | claude-code + anthropics/defending-code-reference-harness | claude-opus-5 | heavy | assisted | adversarial | 35 total · 1 exploitable · 15 hardening | in progress — see [REMEDIATION.md](2026-08-27-defending-code-reference-harness-claude/REMEDIATION.md) |
 | [2026-07-22 · Code audit, security-lensed](../AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code | — | moderate | assisted | standard | 29 (#1…#29) | findings-only |
+| [2026-07-22 · Security audit](../SECURITY-AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code + pip-audit, bandit, defusedxml fuzzing | — | moderate | assisted | standard | 4 (SEC-1…SEC-4) | findings-only |
+<!-- END GENERATED INDEX -->
 
 † Predates this directory and still lives in `docs/`, because `SECURITY.md`
 references those paths. Migrating them into `2026-07-22-claude-code/` means
@@ -42,17 +44,33 @@ At v0.28.0 the tree is ~8,500 LOC across 53 modules, and everything implementing
 the read-to-act path was written afterwards. That gap was invisible until it was
 looked for, which is the reason this table exists.
 
-| module group | first covered by |
-|---|---|
-| `workspace.py`, `backend.py`, `comments.py`, `documents/`, `auth.py`, `_cellmap.py`, `_errors.py` | 2026-07-22 (both) |
-| `mcp/` — server, 34 tools, auth flow, config, resources, schemas | **2026-08-27 · claude** |
-| `policy.py`, `allowlist.py`, `permissions.py` | **2026-08-27 · claude** |
-| `_apply.py`, `_export.py`, `_environment.py`, `_content.py`, `files.py`, `demo/` | **2026-08-27 · claude** |
-| `.github/workflows/`, packaging, secret-scanning config | **2026-08-27 · claude** |
-| `tests/` as code | **not yet audited** |
-| `experiments/`, `research/` | **not yet audited** |
+<!-- BEGIN GENERATED COVERAGE -->
+| group | files | first covered by |
+|---|---|---|
+| `src/csa_google_workspace/` — top level | 20 | 2026-08-27 · claude-code |
+| `documents/` — per-type content | 4 | 2026-07-22 · claude-code |
+| `mcp/` — server, auth flow, config, resources | 13 | 2026-08-27 · claude-code |
+| `mcp/_tools/` — the tool registrations | 11 | 2026-08-27 · claude-code |
+| `demo/` | 5 | 2026-08-27 · claude-code |
+| `tests/` as code | 98 | **not yet audited** |
+| `.github/workflows/` | 4 | **partial** — 3/4 at 2026-08-27 |
+| packaging and secret-scanning config | 3 | 2026-08-27 · claude-code |
+| `scripts/` | 4 | **not yet audited** |
+| `experiments/` | 12 | **not yet audited** |
+| `research/` | 6 | **not yet audited** |
+<!-- END GENERATED COVERAGE -->
 
-When adding a record, update this table.
+**Both tables above are generated** by `scripts/gen_audit_index.py` from each audit's
+front matter, and CI fails if the committed copy has drifted. Do not edit them by hand.
+
+Coverage is **computed against the tracked tree**, not restated: each audit declares
+`modules_covered` as globs, and a group counts as covered only when an audit's globs match
+*every* tracked file in it. Partial coverage says so, with the count. A group no audit matches
+reads **not yet audited** — so a newly-added module surfaces as uncovered by itself, rather
+than when somebody thinks to look. That is the failure being fixed: not a stale table, but a
+coverage claim that reads as broader than it is.
+
+
 
 ## What an audit may commit
 
@@ -71,9 +89,11 @@ Two reasons, and the second is the load-bearing one:
    That property disappears the moment an audit is allowed to edit a document
    outside its own directory.
 
-The one exception is this index and `SCHEMA.md`, which every audit needs to
-update. That is a known contention point: see the open issue on generating the
-index from the per-audit front matter, which removes the last shared file.
+**There is no longer an exception.** This index used to be one — every audit had to add its
+row and update the coverage table — and it was the last shared mutable file in a workflow built
+so that parallel audits never touch one. Both tables are now generated from per-audit front
+matter (#198), so an audit writes its own directory and nothing else. `SCHEMA.md` changes only
+when the schema does, which is not something an audit does in passing.
 
 ## Why fixes are not made in the audit context
 
