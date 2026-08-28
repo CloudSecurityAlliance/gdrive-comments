@@ -23,11 +23,17 @@ import json
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# How recently a tag must have been cut for "PyPI does not have it" to read as a publish in
+# flight rather than a defect. Generous: a release takes a couple of minutes and CDN propagation
+# a few more, while the failure this check exists to catch (v0.27.0) sat wrong for a day.
+FRESH_TAG_SECONDS = 45 * 60
+
 PROJECT = "csa-google-workspace"
 SRC = ROOT / "src" / "csa_google_workspace" / "__init__.py"
 HEADING = re.compile(r"^## \d{4}-\d{2}-\d{2} — v([0-9]+(?:\.[0-9]+)*)(.*)$", re.M)
@@ -58,6 +64,24 @@ def current_version() -> str:
     if not match:
         raise SystemExit(f"could not find __version__ in {SRC}")
     return match.group(1)
+
+
+def tag_age_seconds(version: str) -> float | None:
+    """How long ago `v<version>` was tagged, or None if unknown.
+
+    Exists to separate two things that look identical to a PyPI query: a release that was
+    claimed and never published, and one published thirty seconds ago that a CDN edge has not
+    caught up with. The first is the defect this whole script was written for - v0.27.0 sat
+    claimed-but-absent for a day. The second is normal and unavoidable, and failing on it has
+    now happened twice, which is exactly how a check earns a reputation for being re-run rather
+    than read.
+    """
+    try:
+        out = subprocess.run(["git", "log", "-1", "--format=%ct", f"v{version}"],
+                             capture_output=True, text=True, check=True)
+        return time.time() - float(out.stdout.strip())
+    except (subprocess.CalledProcessError, ValueError, OSError):
+        return None
 
 
 def git_tags() -> set[str]:
@@ -193,13 +217,24 @@ def main() -> int:
             problems.append(
                 f"v{version}: on PyPI, but the changelog does not claim it was released. "
                 f"People can install it; the changelog should say so.")
-        # Corroborate against the simple index before calling this a discrepancy: the JSON
-        # endpoint lags per CDN edge, and a false alarm here is the expensive kind.
+        # Corroborate before calling this a discrepancy, in two ways, because a false alarm
+        # here is the expensive kind: it fires at release time, on a claim that is true.
         on_index = simple_index_versions() if claimed - published else None
         for version in sorted(claimed - published, key=_key):
             if on_index is not None and version in on_index:
                 print(f"  ! v{version} is on the simple index but not yet in the JSON endpoint "
                       f"- a CDN lag, not a discrepancy. Resolves itself within minutes.")
+                continue
+            # Both endpoints can be stale on the SAME edge, which is how this still failed
+            # after the simple-index corroboration was added. A tag minutes old that PyPI has
+            # not surfaced yet is a publish in flight; a tag hours old that PyPI does not have
+            # is the v0.27.0 defect. The age is what tells them apart.
+            age = tag_age_seconds(version)
+            if age is not None and age < FRESH_TAG_SECONDS:
+                print(f"  ! v{version} was tagged {int(age // 60)} minute(s) ago and PyPI has "
+                      f"not surfaced it yet - a publish in flight, not a discrepancy. This "
+                      f"becomes an error once the tag is older than "
+                      f"{FRESH_TAG_SECONDS // 60} minutes.")
                 continue
             problems.append(
                 f"v{version}: the changelog claims it was released, but it is not on PyPI. "

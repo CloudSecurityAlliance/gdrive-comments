@@ -12,6 +12,12 @@
 
 ## 2026-08-28 — v0.30.6 (register bounds, and a stray request can no longer eat your login)
 
+**Also**: `check_release_history.py` no longer fails on a publish in flight. Both PyPI endpoints
+can be stale on the same CDN edge — which is how this still failed after the simple-index
+corroboration was added in 0.30.0 — so a claimed version PyPI has not surfaced is now checked
+against the **age of its git tag**. A tag minutes old is a publish propagating; a tag hours old is
+the v0.27.0 defect. Both directions verified by simulating a stale edge.
+
 The last two code findings from audit
 [`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md).
 
