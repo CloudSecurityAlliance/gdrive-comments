@@ -11,12 +11,18 @@ updates:
 
   # Flag newly-disclosed CVEs / updates in the Python dependency closure.
   #
-  # `/requirements` is listed explicitly: Dependabot does not recurse, and without it the
-  # hash-pinned CI lockfiles would freeze in place - which is the failure mode a lockfile
-  # invites. It is also how the "does the new version break us?" signal survives pinning CI:
-  # the bump arrives as a PR and the five-Python matrix runs against it before auto-merge.
+  # `/requirements` IS DELIBERATELY NOT LISTED, and adding it back will break CI.
+  #
+  # It was listed from v0.30.8 until 2026-08-28, when the first run proved Dependabot cannot
+  # maintain a fully-pinned transitive lock: PR #225 bumped `pydantic-core` 2.46.4 -> 2.48.0 in
+  # requirements/dev.txt and left `pydantic==2.13.4`, which pins `pydantic-core==2.46.4`. Every
+  # job failed with ResolutionImpossible. Dependabot edits individual pinned lines; a lock has
+  # to be RE-RESOLVED as a graph.
+  #
+  # `.github/workflows/relock.yml` took that job over. Dependabot keeps watching pyproject.toml,
+  # which is what it is actually good at - advisories against declared ranges.
   - package-ecosystem: pip
-    directories: ["/", "/requirements"]
+    directory: /
     schedule:
       interval: weekly
     groups:

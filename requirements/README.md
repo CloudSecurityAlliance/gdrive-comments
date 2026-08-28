@@ -1,13 +1,22 @@
 # CI and release lockfiles
 
 Hash-pinned closures for **what this repository's automation installs**. Regenerate with
-[`scripts/lock.sh`](../scripts/lock.sh); Dependabot bumps them like any other manifest.
+[`scripts/lock.sh`](../scripts/lock.sh); use `--upgrade` to re-resolve to the newest compatible
+versions.
+
+**Dependabot does not maintain these, and must not be pointed at them.** An earlier version of
+this file said it did. The first run disproved it: Dependabot bumped `pydantic-core`
+2.46.4 → 2.48.0 and left `pydantic==2.13.4`, which pins `pydantic-core==2.46.4`, and every CI job
+failed with `ResolutionImpossible`. Dependabot edits individual pinned lines; **a fully-pinned
+transitive lock has to be re-resolved as a graph**, not patched. `.github/workflows/relock.yml`
+does that weekly and opens an issue when the pins have moved.
 
 | File | Pins | Used by |
 |---|---|---|
 | `dev.txt` | the `.[dev]` closure | `lint`, the five-Python `test` matrix, and the release build's suite step |
 | `build.txt` | `build` + `twine` | the release build's "Build sdist + wheel" step |
 | `build-backend.txt` | `setuptools` | the same step, via `PIP_CONSTRAINT` — see below |
+| `uv.txt` | `uv` itself | `relock.yml`, so the tool that regenerates the locks is not an unpinned download |
 
 `*.in` are the inputs; `*.txt` are generated and should never be hand-edited.
 

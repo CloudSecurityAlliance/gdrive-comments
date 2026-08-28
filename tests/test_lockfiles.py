@@ -264,3 +264,61 @@ class TestTheConstraintTrapStaysDocumented:
         assert "hash-checking mode" in combined or "no single file to hash" in combined, (
             "the trap has to be recorded next to the code it explains, or the next reader "
             "reaches for PIP_CONSTRAINT and finds out in CI")
+
+
+class TestDependabotDoesNotTouchTheLockfiles:
+    """It cannot maintain them, and it proved it.
+
+    `/requirements` was in `dependabot.yml` from v0.30.8 until 2026-08-28. The first run opened
+    PR #225 bumping `pydantic-core` 2.46.4 -> 2.48.0 in `requirements/dev.txt` while leaving
+    `pydantic==2.13.4`, which pins `pydantic-core==2.46.4`. Every job failed with
+    `ResolutionImpossible`.
+
+    That is not a bug in the PR. **Dependabot edits individual pinned lines**, and a fully-pinned
+    transitive lock has to be *re-resolved as a graph*. Pointing it back at this directory would
+    reintroduce a weekly red PR, so this test states the reason rather than leaving the omission
+    to look like an oversight somebody should tidy up.
+    """
+
+    DEPENDABOT = ROOT / ".github/dependabot.yml"
+    RELOCK = ROOT / ".github/workflows/relock.yml"
+
+    def test_dependabot_does_not_target_requirements(self):
+        text = self.DEPENDABOT.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if "director" in stripped and "requirements" in stripped:
+                pytest.fail(
+                    f"dependabot.yml targets requirements/ ({stripped!r}). It cannot maintain a "
+                    f"fully-pinned lock - it patches single lines and cannot re-resolve. See "
+                    f"PR #225. relock.yml does this job.")
+
+    def test_dependabot_still_watches_pyproject(self):
+        """Removing the lockfiles must not remove advisory coverage of the declared ranges,
+        which is the thing Dependabot is genuinely good at."""
+        text = self.DEPENDABOT.read_text(encoding="utf-8")
+        assert "package-ecosystem: pip" in text
+
+    def test_the_replacement_exists_and_is_scheduled(self):
+        text = self.RELOCK.read_text(encoding="utf-8")
+        assert "schedule:" in text and "cron:" in text
+        assert "lock.sh --upgrade" in text, "the whole point is re-resolving, not patching"
+
+    def test_the_replacement_holds_no_write_permission_on_contents(self):
+        """It reports; it does not push. A PR opened with the repository's GITHUB_TOKEN does not
+        trigger other workflows, so it would arrive with zero checks and could never merge past
+        branch protection - while looking reviewed. Opening one properly needs a write-scoped PAT
+        in a public repo, which was declined."""
+        text = self.RELOCK.read_text(encoding="utf-8")
+        assert "contents: read" in text
+        assert "contents: write" not in text
+
+    def test_uv_itself_is_hash_pinned(self):
+        """The tool that regenerates the locks must not be an unpinned download - that would put
+        the whole chain back where it started."""
+        assert (REQS / "uv.txt").exists()
+        assert "uv" in pins(lock("uv.txt"))
+        assert "--require-hashes -r requirements/uv.txt" in self.RELOCK.read_text(
+            encoding="utf-8")

@@ -56,7 +56,7 @@ looked for, which is the reason this table exists.
 | `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
 | `demo/` | 2026-08-27 · claude-code |
 | `tests/` as code | **not yet audited** |
-| `.github/workflows/` | **partial** — 3/4 at 2026-08-27 |
+| `.github/workflows/` | **partial** — 3/5 at 2026-08-27 |
 | packaging and secret-scanning config | 2026-08-27 · claude-code |
 | `scripts/` | **not yet audited** |
 | `experiments/` | **not yet audited** |
