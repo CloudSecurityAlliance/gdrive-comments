@@ -155,6 +155,38 @@ use". That was written before the bundled MCP server existed and read as broader
 the objection is to *hosted, multi-tenant* use, not to a local process that happens to speak a
 protocol.
 
+## What the capability model is, and is not
+
+The profiles and allowlists in this server are **client-side enforcement, and client-side
+enforcement never binds the client.** Anyone who can configure this server can also bypass it:
+call the Drive API directly, use `Workspace.from_credentials` and skip the policy wrapper, or fork
+the package and delete the checks. Nothing here restrains the operator, and it is not trying to.
+The operator holds the token; every action this server can take is one they could already perform
+in a browser.
+
+**It is meaningful against what runs inside the client.** The agent cannot fork the package. An
+instruction injected through a comment cannot edit `policy.py`, cannot reach the Drive API
+directly, and cannot widen the policy in-band — no tool changes it. It can only call the tools it
+was given. The model constrains the *deputy*, not the *principal*, which is the frame this
+document opens with: the delta is never capability, it is **who decides**.
+
+**And it grants nothing.** A capability we enable is not a permission we give. Every call still
+executes as the authorizing user against Google's own ACLs — `CSA_GW_PROFILE=organizer` on a file
+where that user is merely a Commenter still cannot edit it, because the API returns 403 and no
+setting here changes that. The capability model is a **ceiling below Drive's**, never an expansion
+of it.
+
+Three things to hold onto, because believing the opposite of any of them leads to a bad decision:
+
+1. **This does not restrain you.** It restrains the agent acting on your behalf.
+2. **This grants nothing.** Your Drive permissions remain the binding constraint.
+3. **Drive is where durable policy lives.** Sharing restrictions, ACLs, DLP, audit logging and
+   version history are enforced where the data is, and survive a forked or compromised client.
+
+The right reason to narrow the configuration here is *"I want this agent doing less than I can"* —
+scoping a project, limiting blast radius on unattended runs, keeping an experiment away from
+production documents. It is not *"this is how my data is secured."*
+
 ## Read-only by default
 
 The single most effective bound on both risks. Instantiate a `read_only=True` `Workspace` and

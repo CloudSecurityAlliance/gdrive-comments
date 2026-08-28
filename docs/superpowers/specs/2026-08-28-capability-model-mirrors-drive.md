@@ -4,6 +4,60 @@
 [`FINDINGS.md` §5](../../security-audits/2026-08-27-defending-code-reference-harness-claude/FINDINGS.md).
 **Closes:** #195.
 
+## 0. What this model is, and what it is not
+
+Stated first because everything below reads differently once it is settled, and because getting
+it wrong is how a capability model comes to be trusted for something it never did.
+
+### It is not a boundary against the operator
+
+Anyone who can configure this server can also bypass it. They can call the Drive API directly,
+use `Workspace.from_credentials` and skip `PolicyBackend` entirely, or fork the package and
+delete the checks. **This is client-side enforcement, and client-side enforcement never binds the
+client.** Pretending otherwise would be the classic mistake, and this project should not make it
+while having a threat model that names Drive as the primary control layer.
+
+The operator is not the adversary. They hold the token, and every action this server can take is
+one they could already perform in a browser.
+
+### It is meaningful against what runs *inside* the client
+
+The distinction that makes the model worth building anyway: **the agent cannot fork the package.**
+An injected instruction in a comment cannot edit `policy.py`, cannot reach the Drive API directly,
+and cannot widen the policy in-band — no tool changes it. It can only call the tools it was given.
+
+So the model constrains the *deputy*, not the *principal*. That is exactly the confused-deputy
+frame `SECURITY.md` opens with: the delta is never capability, it is **who decides**. A seatbelt
+does not stop you choosing not to wear one; it changes what happens in a crash.
+
+### It can only ever subtract from Drive
+
+The second half, and it is what makes §3a's permissive default far less alarming than it sounds:
+**a capability we enable is not a permission we grant.** Every call still executes as the
+authorizing user against Google's own ACLs. `CSA_GW_PROFILE=organizer` on a file where that user
+is merely a Commenter still cannot edit it — the Docs API returns 403, and no configuration here
+changes that.
+
+The capability model is therefore a **ceiling below Drive's**, never an expansion of it. Enabling
+everything means *"subtract nothing; let Drive decide"* — which is not an abdication but a
+restatement of the architecture this project already committed to: for activities on Google Drive,
+Drive is where policy belongs.
+
+### What follows for the documentation
+
+Three claims must appear wherever the profiles are explained, because an operator who believes
+the opposite of any of them will make a bad decision:
+
+1. **This does not restrain you.** It restrains the agent acting on your behalf.
+2. **This grants nothing.** Your Drive permissions remain the binding constraint; a capability
+   only decides whether the agent may *attempt* what you could already do.
+3. **Drive is where durable policy lives.** Sharing restrictions, ACLs, DLP, audit logging and
+   version history are enforced where the data is, and survive a compromised or forked client.
+
+The right reason to narrow the configuration here is *"I want this agent doing less than I can"* —
+scoping a project, limiting blast radius during unattended runs, keeping an experiment away from
+production documents. It is not *"this is how my data is secured."*
+
 ## The decision in one line
 
 **Use Google Drive's own roles, with nothing added.** Five profiles named exactly as the Drive
