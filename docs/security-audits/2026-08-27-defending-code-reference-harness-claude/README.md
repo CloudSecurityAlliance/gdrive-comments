@@ -51,6 +51,34 @@ findings_informational: 19
 remediation_status: in-progress           # T32 fixed on branch fix/refuse-a-huge-download-before-fetching, not yet on main
 remediation_context: "separate session — see Handoff"
 supersedes: null
+
+# --- index metadata, added 2026-08-28 for #198 -------------------------------------------
+# docs/security-audits/README.md is now GENERATED from these fields, so the index is no longer
+# a shared file every audit has to edit. Only metadata was added here: no finding, rating,
+# scope statement or wording of this record was changed.
+#
+# `modules_covered` restates, in a machine-readable form, the coverage `scope_covered` above
+# already describes in prose ("all 53 modules, static read" plus workflows and packaging). It
+# is globs rather than an enumeration because this audit genuinely covered the directories
+# wholesale - unlike the 2026-07-22 records, whose 16 files are enumerated so that a glob
+# cannot silently absorb everything written since.
+#
+# `tests/`, `experiments/` and `research/` are deliberately absent, matching `scope_excluded`:
+# tests were read for coverage claims only, not audited as code. The generated table therefore
+# reports them as not yet audited, which is true and was previously easy to overlook.
+index_label: "2026-08-27 · defending-code-reference-harness / claude"
+modules_covered:
+  - "src/csa_google_workspace/*.py"
+  - "src/csa_google_workspace/documents/*.py"
+  - "src/csa_google_workspace/mcp/*.py"
+  - "src/csa_google_workspace/mcp/_tools/*.py"
+  - "src/csa_google_workspace/demo/*.py"
+  - ".github/workflows/*.yml"
+  - "pyproject.toml"
+  - ".gitignore"
+  - ".gitleaks.toml"
+findings_summary: "35 total · 1 exploitable · 15 hardening"
+remediation_summary: "in progress — see [REMEDIATION.md](2026-08-27-defending-code-reference-harness-claude/REMEDIATION.md)"
 ---
 
 # Threat model and code review, 2026-08-27

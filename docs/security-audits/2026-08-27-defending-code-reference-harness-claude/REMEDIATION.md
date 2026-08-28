@@ -620,3 +620,75 @@ weakenings (no required checks, admins exempt, force pushes, deletions) is asser
 checking only the first would pass a branch anyone can force-push over.
 
 Run live against the real repository during development — all three controls currently verify.
+
+---
+
+## #198 — generate the audit index from front matter (v0.30.10)
+
+The issue's own framing is the right one: this index was *"the single contention point in a
+workflow otherwise designed so parallel audit agents never share a file."* Both its tables now
+come from per-audit front matter via `scripts/gen_audit_index.py`, checked in CI. An audit writes
+only its own directory, and `SCHEMA.md` now says **do not update the index** where it previously
+said the opposite.
+
+### The coverage table is the half that mattered
+
+The issue named the consequence precisely — *"an audit whose coverage is recorded wrongly will
+later be mistaken for broader than it was, which is exactly how the July-to-August gap went
+unnoticed."* A generated-but-still-declarative table would not have fixed that. So coverage is
+**computed against the tracked tree**:
+
+* each audit declares `modules_covered` as globs;
+* a group counts as covered only when an audit's globs match **every tracked file** in it;
+* less renders as `partial — n/m`; nothing matching renders **not yet audited**.
+
+A module added tomorrow therefore surfaces as uncovered on its own, rather than when somebody
+thinks to look. On its first run it reported what the hand table never had: **`scripts/`,
+`tests/`, `experiments/` and `research/` are not yet audited** — all true, and all previously
+easy to read past.
+
+### The legacy records
+
+The two 2026-07-22 audits gained front matter, so the index has one mechanism rather than a
+generated table plus hand-written rows. **Only front matter was added** — no finding, rating,
+scope statement or wording changed, and each file says so in a comment at the top.
+
+Their `modules_covered` is **enumerated, not globbed**: the 16 files that existed at `v0.1.0`,
+taken from `git ls-tree -r v0.1.0`. A glob there would silently absorb every module written since
+and claim coverage those audits never had — which is the direction this error actually goes, so
+`SCHEMA.md` requires enumeration for a legacy record and `test_audit_index.py` enforces it.
+
+The 2026-08-27 record gained `index_label`, `modules_covered`, `findings_summary` and
+`remediation_summary` on the same terms: metadata only, marked as added, and `modules_covered`
+restates in machine-readable form what its `scope_covered` already said in prose. `tests/`,
+`experiments/` and `research/` are deliberately absent from it, matching its own
+`scope_excluded` — so the generated table now reports them as unaudited, which its prose always
+implied and the old index did not show.
+
+### Two bugs in the generator, both found by reading its output rather than the code
+
+Recorded because they are one failure in two forms: **a generated table that is confidently
+wrong while looking plausible.** That is worse than the hand-written table it replaced, because
+nobody re-reads a generated file.
+
+1. **`fnmatch`'s `*` crosses `/`.** `src/csa_google_workspace/*.py` matched every module in every
+   subpackage. The top-level group reported 53 files instead of its own 20, and the verdict
+   rendered as *"partial — 16/53"* for a group that is in fact fully covered. Matching is now
+   segment-wise, in a named function with five tests, because the wrong version produced output
+   that read as a considered finding.
+
+2. **"First covered by" broke on the first audit covering *any* file in a group.** An earlier
+   partial therefore hid a later complete pass: `src/` top level read *"partial — 12/20 at
+   2026-07-22"* while the 2026-08-27 audit covers all twenty. It now reports the earliest audit
+   achieving **full** coverage and falls back to the best partial. Understating coverage is the
+   safer direction to be wrong in, and it is still wrong.
+
+### Verification
+
+`tests/test_audit_index.py` — 19 tests. Beyond the two bugs above, the one worth naming asserts
+that **every tracked Python file falls into some coverage group**: an unlisted directory does not
+render as uncovered, it does not render at all, which reads as nothing to report. That is the
+same shape as the omission the coverage table exists to prevent, one level up.
+
+CI runs `gen_audit_index.py --check`, which regenerates in memory and diffs. It never writes, so
+the committed index stays the reviewed one.

@@ -192,6 +192,29 @@ not say so will be read as more current than it is.
   first.
 - **State severity reasoning, not just a label.** Where two audits disagree on a
   rating, the reasoning is what lets a reader decide; the label alone does not.
-- **Update the index** in [`README.md`](README.md), including its
-  coverage-by-module table. An audit whose coverage is not recorded there will
-  later be mistaken for broader than it was.
+- **Do NOT update the index.** [`README.md`](README.md)'s index table and
+  coverage table are **generated** from the front matter above by
+  `scripts/gen_audit_index.py`, and CI fails if the committed copy has drifted.
+  This used to be the one file every audit had to edit, and therefore the only
+  thing two parallel audits could collide over. An audit now writes its own
+  directory and nothing else.
+
+  What an audit owes instead is **`modules_covered`** — the coverage claim in a
+  form that can be checked. Get it right, and prefer understating:
+
+  - **Globs** (`src/csa_google_workspace/mcp/*.py`) when the audit genuinely
+    covered a directory wholesale. `*` does **not** cross a `/`, so a top-level
+    glob does not silently claim a subpackage.
+  - **Enumerated paths** when it did not. The 2026-07-22 records list their 16
+    files individually, because a glob there would absorb every module written
+    since and claim coverage that never existed. That is the failure this field
+    exists to prevent, and it is the direction the error actually goes.
+
+  A group counts as covered only when an audit's globs match **every** tracked
+  file in it; anything less renders as `partial — n/m`, and a group nothing
+  matches renders as **not yet audited**. So an unaudited module surfaces on its
+  own rather than when somebody thinks to look — which is how the gap between
+  v0.1.0's 16 modules and today's 53 went unnoticed.
+
+  Add `index_label`, `findings_summary` and `remediation_summary` if the
+  generated defaults read badly; they override the computed values.
