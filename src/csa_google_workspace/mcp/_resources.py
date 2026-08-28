@@ -41,6 +41,7 @@ from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
 
 CONFIG_URI = "csa-gw://config"
 HELP_URI = "csa-gw://help/configuration"
+CEILING_URI = "csa-gw://help/capabilities"
 
 
 
@@ -323,6 +324,74 @@ general authorization model, and a broader design is being worked on separately.
 """
 
 
+
+def render_ceiling() -> str:
+    """What this server cannot do, and why — written for the MODEL, not for an evaluator.
+
+    A limitations list in a README is read by somebody choosing a tool. This is read by an agent
+    mid-task that has just been asked to accept a suggestion, and the alternative to telling it
+    is letting it find out by failing — then inventing a workaround, which is the expensive
+    outcome: retries, a plausible-sounding account of why it "should" work, or a detour through
+    some other integration.
+
+    Every entry says whether the limit is Google's or ours, because those call for different
+    responses. A Google limit means stop and tell the user. One of ours means an operator could
+    change it.
+    """
+    return f"""# What this server cannot do
+
+Read this before concluding a task is impossible, and before working around a refusal.
+
+Two kinds of limit, and they call for different responses. **Google's limits cannot be
+configured away** — say so and stop. **Ours can** — an operator may be able to change the
+configuration, so say which one it is.
+
+## Google's limits — no configuration changes these
+
+**Accept or reject a suggestion.** The Docs API exposes no endpoint for it, proven by full API
+enumeration rather than assumed. You *can* read suggestions (`list_suggestions`) and preview the
+outcome (`read_file_content(suggestions=...)`); applying one is something only the Docs web
+interface can do.
+
+**Create a comment anchored to a specific cell.** The Sheets anchor is an opaque
+`workbook-range` id that an API client cannot construct. `create_comment(cell=...)` posts a
+file-level comment carrying a deep link to the cell instead, which is the closest thing that
+exists.
+
+**Tell which tab a spreadsheet comment belongs to.** `Location.tab` is unresolved for multi-tab
+files; the mapping needs a detour through the workbook's internal XML.
+
+## This project's limits — deliberate, and an operator could revisit them
+
+**Permanently delete anything, or empty the trash.** There is no permanent delete here and no
+capability that empties the bin. The worst any configuration can do to a file is trash it, where
+its owner can see it and restore it.
+
+**Change a file's access settings** — *"Allow editors to change permissions and share"*, *"Limit
+access to…"*. These decide who may *set* policy rather than use the file, and one of them
+silently **removes** access from people who are not present; Google's own dialog warns *"Some
+people may lose access."* Governance decisions belong in Drive's interface with a human.
+
+**Revoke or downgrade a permission.** Not deliberate — a gap, and tracked. Sharing can be
+granted here and taken back only in Drive.
+
+**Write a live formula into a spreadsheet.** `update_cells` and `append_rows` store values
+verbatim. Formula-writing exists in the library for a developer who has decided; it is not
+offered here, because content passing through this server is frequently derived from untrusted
+document text.
+
+## If you hit one of these
+
+Say which limit it is, and stop. Do **not** substitute a different mechanism to reach the same
+end — editing a document's body to simulate accepting a suggestion, or using another integration
+to do what this server declined. A refusal is information, not an obstacle.
+
+For what this server is currently *permitted* to do, which is a different question, read
+`{CONFIG_URI}`.
+"""
+
+
+
 def register_resources(app: MCPServer, settings: Settings) -> None:
     @app.resource(CONFIG_URI, name="Effective configuration", mime_type="text/markdown",
                   description="What this server is currently permitted to read and change, "
@@ -335,3 +404,9 @@ def register_resources(app: MCPServer, settings: Settings) -> None:
                               "including what each kind of misconfiguration looks like.")
     def help_configuration() -> str:
         return render_help()
+
+    @app.resource(CEILING_URI, name="What this server cannot do", mime_type="text/markdown",
+                  description="The operations that are impossible here, split into Google's "
+                              "limits and this project's, so a refusal is not worked around.")
+    def help_capabilities() -> str:
+        return render_ceiling()

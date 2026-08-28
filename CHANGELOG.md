@@ -10,6 +10,62 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.13 (the T15 residual is deleted, and the server says what it cannot do)
+
+The first two pieces of the #195 spec, both independent of the capability model itself.
+
+### `valueInputOption` is gone from the MCP surface
+
+v0.30.1 made `RAW` the default and kept `USER_ENTERED` reachable, on the reasoning that writing a
+formula on purpose is legitimate. Half right — it is legitimate, and it stays in the **library**.
+What did not survive review is offering it *here*.
+
+After that fix, the only thing between an injected agent and server-side formula evaluation was a
+docstring saying **DO NOT pass `USER_ENTERED` for anything derived from document or comment
+content** — an instruction to the model, on a surface whose entire premise (T2) is that
+third-party content can instruct the model. Invariant #10 says *a type is not a contract with the
+model; the description is*. Here it inverts: **a description is not a control either.**
+
+So the parameter is **removed rather than gated** — the same shape as raw `batch_update`, which
+the library exposes and this layer withholds. That needed no capability Drive does not have: a
+human Editor may type a formula, and Google calls that `writer`.
+
+Measured while testing it: the SDK **silently drops** an unknown argument, so a caller that sends
+`valueInputOption` anyway gets `RAW`. A first draft of the test asserted it should *raise* —
+wrong, and in the less safe direction. Silently ignoring an unknown parameter is normally a smell;
+here the value being ignored is the dangerous one, so the only thing an injected agent achieves by
+sending it is the behaviour it was trying to avoid. Asserted explicitly, because an SDK that later
+honoured extra kwargs would reopen T15 in silence.
+
+**Cost, weighed:** an agent cannot compose a spreadsheet with live formulas through this server.
+`Sheet.update(..., value_input_option="USER_ENTERED")` is one import away for anyone who has
+decided.
+
+### `csa-gw://help/capabilities` — what this server cannot do
+
+A third resource, and unlike the other two it is written **for the model**. A limitations list in
+a README is read by somebody choosing a tool; this is read by an agent mid-task that has just been
+asked to accept a suggestion. The alternative to telling it is letting it find out by failing and
+then inventing a workaround — retries, a plausible account of why it "should" work, or a detour
+through another integration to reach the same end. That last one is the expensive failure, because
+it succeeds.
+
+It splits **Google's limits** (no endpoint for accept/reject — proven by API enumeration; the
+opaque `workbook-range` anchor; unresolved `Location.tab`) from **ours** (no permanent delete, no
+trash emptying, no access-settings changes, no permission revoke *yet*, no live formulas), because
+the two call for different responses: a Google limit means stop and say so, one of ours means an
+operator could change it. It ends by telling the agent **not to route around a refusal**, and
+points at `csa-gw://config` for the different question of what is currently *permitted*.
+
+Reachable through `read_server_resource`, since several clients surface resources only to the
+user and never to the model — a ceiling the model cannot read is not a ceiling.
+
+### Two tests had to be reversed
+
+`TestUserEnteredIsStillAvailable` and `test_update_cells_defaults_to_raw_and_user_entered_is_opt_in`
+both asserted the affordance now removed. Rewritten in place with the history attached rather than
+deleted — the second has now changed twice, and both changes are recorded in it.
+
 ## 2026-08-28 — v0.30.12 (Dependabot cannot maintain a lockfile; something else does)
 
 No runtime change. Fixes a claim shipped in v0.30.8 that the first real run disproved.

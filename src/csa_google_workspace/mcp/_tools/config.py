@@ -18,7 +18,7 @@ from ..._environment import describe_environment
 from ...policy import ALL_CAPABILITIES, Policy
 from .._capabilities import reachable_capabilities
 from .._config import Settings
-from .._resources import CONFIG_URI, HELP_URI, render_config, render_help
+from .._resources import CEILING_URI, CONFIG_URI, HELP_URI, render_ceiling, render_config, render_help
 from .._schemas import ConfigOut, ResourceOut
 from ._base import READ
 
@@ -83,8 +83,10 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
         something you could not reach. This tool is the route that always works.
 
         `uri` defaults to the configuration reference. Pass `csa-gw://config` for the live
-        policy instead."""
-        pages = {CONFIG_URI: lambda: render_config(settings), HELP_URI: render_help}
+        policy, or `csa-gw://help/capabilities` for what this server **cannot** do — read that
+        one before concluding a task is impossible or working around a refusal."""
+        pages = {CONFIG_URI: lambda: render_config(settings), HELP_URI: render_help,
+                 CEILING_URI: render_ceiling}
         render = pages.get(uri.strip())
         if render is None:
             raise ToolError(f"no such resource: {uri!r}. This server publishes "

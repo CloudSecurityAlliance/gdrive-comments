@@ -5,10 +5,12 @@ likely to guess. The point of them is that it does not have to.
 """
 import asyncio
 
+import pytest
+
 from csa_google_workspace import Workspace
 from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.mcp._config import settings_from_env
-from csa_google_workspace.mcp._resources import CONFIG_URI, HELP_URI, render_config, render_help
+from csa_google_workspace.mcp._resources import CEILING_URI, CONFIG_URI, HELP_URI, render_config, render_help
 from csa_google_workspace.mcp.server import create_server
 
 DOC_URL = "https://docs.google.com/document/d/1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8/edit"
@@ -45,9 +47,13 @@ def _call(app, name, args=None):
 
 # --- registration -----------------------------------------------------------
 
-def test_both_resources_are_registered():
+def test_all_three_resources_are_registered():
+    """Three since v0.30.13: the live policy, the configuration reference, and the **ceiling** —
+    what this server cannot do. The third is aimed at the model rather than the operator: an
+    agent that knows there is no accept-suggestion endpoint stops inventing workarounds, and
+    until it existed the only way to learn that was to fail."""
     resources = {str(r.uri): r for r in asyncio.run(_server(POSTURE).list_resources())}
-    assert set(resources) == {CONFIG_URI, HELP_URI}
+    assert set(resources) == {CONFIG_URI, HELP_URI, CEILING_URI}
     for resource in resources.values():
         assert resource.name and resource.description
         assert resource.mime_type == "text/markdown"   # snake_case in mcp 2.x
@@ -204,3 +210,55 @@ def test_the_instructions_say_it_too():
     from csa_google_workspace.mcp.server import INSTRUCTIONS
     flat = _flat(INSTRUCTIONS)
     assert "do not perform it through a different Google Drive integration" in flat
+
+
+class TestTheCeilingResource:
+    """`csa-gw://help/capabilities` — what this server cannot do.
+
+    Written for the model, not for somebody evaluating the tool. The alternative to telling an
+    agent that accept-suggestion has no endpoint is letting it discover that by failing, and
+    then inventing a workaround: retries, a plausible account of why it "should" work, or a
+    detour through another integration to reach the same end. That last one is the expensive
+    failure, because it succeeds.
+    """
+
+    def text(self):
+        from csa_google_workspace.mcp._resources import render_ceiling
+        return render_ceiling()
+
+    def test_it_separates_googles_limits_from_ours(self):
+        """The two need different responses. A Google limit means stop and say so; one of ours
+        means an operator could change it, so the agent should say which."""
+        body = self.text()
+        assert "Google's limits" in body and "This project's limits" in body
+
+    @pytest.mark.parametrize("subject", [
+        "Accept or reject a suggestion",          # no endpoint exists
+        "anchored to a specific cell",            # opaque workbook-range id
+        "Permanently delete",                     # deliberate, and a security property
+        "access settings",                        # meta-permissions, out by choice
+        "Revoke or downgrade",                    # the one gap that is not deliberate
+        "live formula",                           # removed from this layer in v0.30.13
+    ])
+    def test_every_known_limit_is_named(self, subject):
+        assert subject in self.text(), f"the ceiling does not mention {subject!r}"
+
+    def test_it_tells_the_agent_not_to_route_around_a_refusal(self):
+        """The whole point. Knowing the limit and satisfying the request another way — editing
+        the body to simulate accepting a suggestion — is worse than failing."""
+        body = self.text()
+        assert "not** substitute" in body or "not substitute" in body
+        assert "refusal is information" in body
+
+    def test_it_points_at_the_live_policy_for_the_other_question(self):
+        """"Cannot" and "not currently permitted" are different, and conflating them turns a
+        configuration an operator could widen into an impossibility."""
+        from csa_google_workspace.mcp._resources import CONFIG_URI
+        assert CONFIG_URI in self.text()
+
+    def test_the_read_tool_can_reach_it(self):
+        """Several clients surface resources only to the user, never to the model — which is why
+        `read_server_resource` exists. A ceiling the model cannot read is not a ceiling."""
+        app = _server(POSTURE)
+        out = asyncio.run(app.call_tool("read_server_resource", {"uri": CEILING_URI}))
+        assert "cannot do" in str(out)
