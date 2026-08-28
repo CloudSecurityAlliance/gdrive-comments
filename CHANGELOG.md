@@ -10,6 +10,68 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.5 (local hygiene: file modes, backups, and the ignore list) — not released yet; pending, not abandoned
+
+Hardening from audit
+[`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md).
+Nothing in the library changes; this is about what ends up on your disk and in your repository.
+
+### The desktop config is written `0600`, and its backups are capped
+
+`claude_desktop_config.json` was written with no explicit mode — whatever the umask gives,
+typically `0644` — and every changed run left a `.bak.<stamp>` that was never pruned.
+
+**No secret value lands there**, deliberately: `carried_env()` excludes `CSA_GW_CLIENT_SECRETS`
+and always has. What *does* land is `CSA_GW_TOKEN`, which points a local reader straight at the
+full-Drive token, and the allowlisted document URLs, which are the policy itself. World-readable
+is the wrong default for a file that is a map to the credential and a statement of what may be
+touched.
+
+Now `0600` on **every** run rather than only at creation, because rewriting is the one chance to
+tighten a file an older version left at `0644` — and skipping that would leave the exposure with
+exactly the people who have been using this longest. The backup gets the same treatment:
+`shutil.copy2` preserves the *source's* mode, so a `0644` config produced a `0644` backup, and a
+backup of a sensitive file is a sensitive file.
+
+Backups are **capped at three, not dropped**. They exist so a second run cannot destroy a
+hand-written file, and that reason survives. What does not survive is keeping every one since
+installation: each stale copy preserves **a policy the operator believes they have since
+tightened**, sitting beside the current one with an older timestamp. That is worse than clutter —
+it is a contradicting record. Pruning is by filename, which sorts by time, deliberately not by
+mtime, which a backup/restore cycle can reorder.
+
+Closes [#192](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/192).
+
+### `.gitignore` now covers the filenames this project actually produces
+
+It listed `credentials.json`, `token.json` and `token_full.json` — the names a generic Google
+tutorial produces — and **nothing matching this project's own documented default**,
+`~/.csa_google_workspace/client_secret.json`, nor the name Google's console emits,
+`client_secret_<id>.apps.googleusercontent.com.json`.
+
+History is verified clean (trufflehog 0/0 across 252 commits, gitleaks clean) and two backstops
+exist — the release-job sdist grep and gitleaks' own ruleset. The gap was that **the cheapest and
+earliest control was the one with the hole.**
+
+Also added `token.readonly.json`, which v0.30.2 introduced and nothing had covered. Asserted with
+`git check-ignore` rather than by reading patterns, because the question is what git does.
+
+Closes [#193](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/193).
+
+### T31 was already fixed — closed with evidence, not work
+
+[#194](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/194) reports a
+negative `Retry-After` reaching `time.sleep(-5)` and HTTP 401 never mapping to `AuthError`. Both
+guards were present **at the audited commit**, added in `6196ba2` — which is literally the
+2026-07-22 audit's GA-#8 and GA-#9, the items this finding cites as still open. Verified
+behaviourally (`retry-after: -5` yields sleeps of `[0.5, 1.0, 2.0]`, never negative) and already
+covered by `tests/test_errors_edge.py`.
+
+**The third finding in this set whose stated mechanism did not survive inspection**, after
+`_export.py`'s premise (#181) and T28's PKCE floor (#191). The surrounding analysis was useful
+each time. The transferable lesson is narrow: *a citation to a prior audit's open item is worth
+re-checking against the tree rather than inherited.*
+
 ## 2026-08-27 — v0.30.4 (the job that can publish runs nothing of ours)
 
 Supply-chain hardening from audit

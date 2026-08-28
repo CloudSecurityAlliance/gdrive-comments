@@ -103,6 +103,11 @@ def entry(env: Mapping[str, str]) -> dict:
     return out
 
 
+# How many timestamped backups of the client config to keep. Enough to recover from a run that
+# went wrong plus the one before it; not a permanent archive of every policy ever configured.
+KEEP_BACKUPS = 3
+
+
 def configure(path: Path | None = None, *, env: Mapping[str, str] | None = None,
               dry_run: bool = False) -> Result:
     """Merge this server into Claude Desktop's config, preserving everything else.
@@ -143,6 +148,45 @@ def configure(path: Path | None = None, *, env: Mapping[str, str] | None = None,
         # the file the user actually hand-wrote.
         backup = path.with_suffix(path.suffix + f".bak.{time.strftime('%Y%m%d-%H%M%S')}")
         shutil.copy2(path, backup)
+        # copy2 preserves the SOURCE's mode, so a config written by an older version at 0644
+        # produced a 0644 backup. A backup of a sensitive file is a sensitive file. (#192)
+        _restrict(backup)
+        _prune_backups(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(rendered)
+    # 0600 EXPLICITLY, and on every run rather than only at creation. No secret VALUE lands
+    # here - carried_env() excludes CSA_GW_CLIENT_SECRETS, deliberately - but CSA_GW_TOKEN
+    # points a local reader straight at the full-Drive token, and the allowlisted URLs are the
+    # policy itself. Rewriting an existing file is the only chance to tighten one an older
+    # version left at 0644, and skipping that would leave the exposure with exactly the people
+    # who have been using this longest. (#192)
+    _restrict(path)
     return Result(path=path, rendered=rendered, created=created, backup=backup, changed=changed)
+
+
+def _restrict(path: Path) -> None:
+    """Owner-only. Best-effort: a filesystem without POSIX modes must not fail a configure."""
+    try:
+        path.chmod(0o600)
+    except OSError:                       # pragma: no cover - platform-dependent
+        pass
+
+
+def _prune_backups(path: Path) -> None:
+    """Keep the newest `KEEP_BACKUPS`, delete the rest.
+
+    Capped rather than dropped: backups exist so a second run cannot destroy a hand-written
+    file, and that reason survives. What does not survive is keeping every one since
+    installation - each stale copy preserves **a policy the operator believes they have since
+    tightened**, sitting beside the current one with an older timestamp. That is worse than
+    clutter; it is a contradicting record.
+
+    Sorted by name, which is sorted by time: the stamp is `%Y%m%d-%H%M%S`. Deliberately not by
+    mtime, which a backup/restore cycle can reorder.
+    """
+    backups = sorted(path.parent.glob(path.name + ".bak.*"))
+    for stale in backups[:-KEEP_BACKUPS] if KEEP_BACKUPS else backups:
+        try:
+            stale.unlink()
+        except OSError:                   # pragma: no cover - racing another run
+            pass

@@ -126,3 +126,40 @@ class TestThePatternStillCatchesWhatItIsFor:
     def test_the_exemption_is_narrow(self):
         """`.py` only. A `.json` named like a test is still a data file and still flagged."""
         assert flagged(["pkg/tests/test_token.json"]) == ["pkg/tests/test_token.json"]
+
+
+class TestGitIgnoresEveryCredentialFilenameWeActuallyProduce:
+    """`.gitignore` is the cheapest and earliest control, and it had a hole.
+
+    It covered `credentials.json`, `token.json` and `token_full.json` — the filenames a generic
+    Google tutorial produces — and nothing matching this project's OWN documented default,
+    `~/.csa_google_workspace/client_secret.json`, or the name Google's console actually emits,
+    `client_secret_<id>.apps.googleusercontent.com.json`.
+
+    Checked against `git check-ignore` rather than by reading the patterns, because the question
+    is what git does, not what the file appears to say.
+    """
+
+    @pytest.mark.parametrize("name", [
+        "client_secret.json",                                    # our documented default
+        "client_secret_1234-abc.apps.googleusercontent.com.json",  # what Google emits
+        "credentials.json",
+        "token.json",
+        "token_full.json",
+        "token.readonly.json",   # introduced by the read-only posture in 0.30.2
+    ])
+    def test_a_credential_filename_is_ignored(self, name):
+        result = subprocess.run(["git", "check-ignore", "-q", name], cwd=ROOT)
+        assert result.returncode == 0, (
+            f"{name} is not ignored; this is a filename this project or Google actually "
+            f"produces, and .gitignore is the earliest place to stop it")
+
+    @pytest.mark.parametrize("name", [
+        "tests/test_sdist_guard.py",
+        "src/csa_google_workspace/auth.py",
+        "docs/security-audits/README.md",
+    ])
+    def test_a_source_file_is_not_ignored(self, name):
+        """The counterweight: a pattern broad enough to swallow source would hide real work."""
+        result = subprocess.run(["git", "check-ignore", "-q", name], cwd=ROOT)
+        assert result.returncode != 0, f"{name} is ignored, which would hide it from commits"
