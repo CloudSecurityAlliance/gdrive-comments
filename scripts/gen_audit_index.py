@@ -192,7 +192,12 @@ def render_index(audits: list[Audit]) -> str:
 
 def render_coverage(audits: list[Audit], files: list[str]) -> str:
     oldest_first = sorted(audits, key=lambda a: a.date)
-    header = "| group | files | first covered by |\n|---|---|---|"
+    # No standalone file-count column, deliberately. It made the table churn on every PR that
+    # added a test - the count moved, the verdict did not - so `--check` failed on changes that
+    # said nothing about coverage, and a check that fails for uninteresting reasons gets
+    # regenerated reflexively rather than read. The count survives where it carries information:
+    # inside a `partial - n/m` verdict, which by definition only appears when there IS a gap.
+    header = "| group | first covered by |\n|---|---|"
     rows = []
     for name, patterns in GROUPS:
         members = [f for f in files if any(matches(f, p) for p in patterns)]
@@ -214,7 +219,7 @@ def render_coverage(audits: list[Audit], files: list[str]) -> str:
             count = sum(1 for f in members if best.covers(f)) if best else 0
             verdict = (f"**partial** — {count}/{len(members)} at {best.date}"
                        if count else "**not yet audited**")
-        rows.append(f"| {name} | {len(members)} | {verdict} |")
+        rows.append(f"| {name} | {verdict} |")
     return "\n".join([header, *rows])
 
 

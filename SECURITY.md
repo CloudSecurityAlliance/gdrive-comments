@@ -3,10 +3,27 @@
 `csa-google-workspace` is a building block for tools — MCP servers, agents, automations —
 that act on a Google Workspace user's behalf, holding an OAuth token with **full-Drive**
 scope. That deployment model, not the library's own code, is where the real security
-surface lives. This document is the threat model and the division of responsibility
-between the library and the embedder. It complements the audit records in
+surface lives.
+
+**Two documents, and the split is deliberate.** This one is the **framing**: how the risk is
+shaped, and the division of responsibility between the library and the embedder. It is prose,
+it is aimed at somebody deciding whether and how to embed this, and it changes rarely.
+
+[**`THREAT_MODEL.md`**](THREAT_MODEL.md) is the **register**: 35 enumerated threats across 19
+entry points, each with an actor, a surface, an impact × likelihood rating, a current status and
+the evidence behind it, plus the deprioritised threats and why. It changes as the code does.
+
+Until 2026-08-28 this file described itself as "the threat model", which was true when there was
+no other. It is the wrong claim now: a reader looking for *what specifically is a threat and is
+it fixed* wants the register, and would not have found it from here.
+
+Audit records: [`docs/security-audits/`](docs/security-audits/) — the index there is generated
+from each audit's own front matter and reports **which audit covered which code**, including
+what is not yet covered. The two 2026-07-22 records still live at
 [`docs/AUDIT-2026-07-22.md`](docs/AUDIT-2026-07-22.md) and
-[`docs/SECURITY-AUDIT-2026-07-22.md`](docs/SECURITY-AUDIT-2026-07-22.md).
+[`docs/SECURITY-AUDIT-2026-07-22.md`](docs/SECURITY-AUDIT-2026-07-22.md); note that both cover
+**v0.1.0 only**, and that every module implementing the read-to-act path was written after
+them.
 
 ## The confused-deputy frame
 
