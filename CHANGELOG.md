@@ -10,6 +10,59 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-27 — v0.30.3 (raise the floors that matter, leave the rest alone) — not released yet; pending, not abandoned
+
+Dependency work from audit
+[`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md),
+and a deliberate decision about which floors to *not* raise.
+
+**`setuptools>=83`**, up from `>=77`. CVE-2026-59890 / GHSA-h35f-9h28-mq5c affects `<83.0.0`: a
+`MANIFEST` exclusion bypass via Unicode NFC/NFD filename collision on macOS APFS/HFS+. This
+project is maintained on macOS and publishes to PyPI, so a file deliberately excluded from the
+sdist could ship anyway. Build-time only, so it costs consumers nothing — and it removes the need
+to lean on the release job's sdist grep, which is a compensating control rather than a fix.
+Verified that 83 and 84 both declare `requires-python >=3.10`, matching ours exactly.
+Closes [#187](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/187).
+
+**`oauthlib>=3.2.2` is now declared.** It arrives transitively (`google-auth-oauthlib` →
+`requests-oauthlib`) and this project named no floor on it, so CVE-2022-36087 — affecting
+`>=3.1.1,<3.2.2` — was unbounded here. It parses redirect URIs on the token-acquisition path,
+which is not a place to accept whatever happens to resolve. A transitive dependency you name no
+floor on is one you cannot bound.
+
+**Dev floors raised**: `pytest>=9.0`, `pytest-cov>=7.0`, `ruff>=0.16`, `mypy>=2.0`. Nobody
+installing the library gets these, so a high floor costs nothing. For the two that **gate CI** it
+is more than tidiness: `ruff` and `mypy` give materially different answers across majors, so a
+contributor on ruff 0.6 or mypy 1.x saw a different verdict from the one that would block their
+PR.
+
+### The floors deliberately left alone
+
+`google-api-python-client`, `google-auth`, `defusedxml`, `mcp`, `openpyxl` stay lower-bound-only.
+Raising a runtime floor excludes somebody on a perfectly good older release for no benefit; the
+2026-07-22 audit settled this as *"benign and standard for a library"*, and the 2026-08-27 one
+says explicitly to leave the published ranges permissive. Reproducibility of CI and release is a
+different question and is [#188](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/188)
+— a lockfile there, not tighter ranges here. The reasoning is now a comment in `pyproject.toml`,
+so the next person to read those ranges finds the decision rather than an apparent oversight.
+
+### A correction to the audit, verified
+
+[#191](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/191) (T28) says the
+`google-auth-oauthlib>=1.0` floor *"admits releases where the [PKCE] default is off."* Checked by
+downloading the sdists: **1.0.0 already defaults `autogenerate_code_verifier=True`**, as do 1.2.0
+and the installed 1.4.1. The declared floor does not admit a PKCE-off release, so raising it would
+buy nothing and was not done.
+
+What remains of T28 stands and is the substantive half: **PKCE is inherited, not requested** —
+nothing asks for it, it works because a dependency's default happens to be right — and no test
+covers its presence. That is fixed by passing it explicitly, which constrains what we *do* rather
+than what may be *installed*.
+
+No known vulnerabilities in the resolved set (`pip-audit`), and everything resolves to current:
+`google-api-python-client` 2.199.0, `google-auth` 2.57.0, `google-auth-oauthlib` 1.4.1, `oauthlib`
+3.3.1, `mcp` 2.1.1, `openpyxl` 3.1.5, `ruff` 0.16.5, `mypy` 2.3.1.
+
 ## 2026-08-27 — v0.30.2 (read-only means a read-only credential)
 
 **Security fix**, and the audit calls it the load-bearing one. Third batch from
