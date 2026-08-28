@@ -17,11 +17,17 @@ v0.1.0's 16 modules, the tree is now 53, and *everything* implementing the read-
 written afterwards — but the table said "first covered by" and nothing checked it against what
 exists.
 
-So coverage is derived: each audit declares `modules_covered` as globs, the script walks the
-**tracked** files in each group, and a group is reported as covered only when an audit's globs
-match **every** file in it. Partial coverage is named as partial, with the count. A group no
+So coverage is derived: each audit **enumerates** the files it saw, the script walks the
+**tracked** files in each group, and a group is reported as covered only when an audit's list
+contains **every** one of them. Partial coverage is named as partial, with the count. A group no
 audit matches is reported as **not yet audited**, which means a newly-added module shows up as
 uncovered on its own rather than when somebody thinks to look.
+
+Enumerated rather than globbed because **a glob claims the future**. The first version of this
+had the 2026-08-27 record declaring `.github/workflows/*.yml`; that audit's commit is `95c6afa`
+and the directory gained `controls.yml` the next day, so the table read *fully covered* for a
+directory whose newest file no audit had seen. The overstatement this script exists to prevent,
+reproduced inside the fix for it. `tests/test_audit_index.py` now rejects a glob in that field.
 
 That last property is the point of doing this at all. The failure being fixed is not a stale
 table; it is a coverage claim that reads as broader than it is.

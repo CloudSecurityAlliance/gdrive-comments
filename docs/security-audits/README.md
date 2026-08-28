@@ -52,10 +52,10 @@ looked for, which is the reason this table exists.
 | `mcp/` — server, auth flow, config, resources | 13 | 2026-08-27 · claude-code |
 | `mcp/_tools/` — the tool registrations | 11 | 2026-08-27 · claude-code |
 | `demo/` | 5 | 2026-08-27 · claude-code |
-| `tests/` as code | 97 | **not yet audited** |
-| `.github/workflows/` | 4 | 2026-08-27 · claude-code |
+| `tests/` as code | 98 | **not yet audited** |
+| `.github/workflows/` | 4 | **partial** — 3/4 at 2026-08-27 |
 | packaging and secret-scanning config | 3 | 2026-08-27 · claude-code |
-| `scripts/` | 3 | **not yet audited** |
+| `scripts/` | 4 | **not yet audited** |
 | `experiments/` | 12 | **not yet audited** |
 | `research/` | 6 | **not yet audited** |
 <!-- END GENERATED COVERAGE -->

@@ -46,11 +46,18 @@ wording was touched — and their coverage is **enumerated, not globbed**, becau
 would silently absorb every module written since and claim coverage that never existed. That is
 the direction this error actually goes, so `SCHEMA.md` and a test both require it.
 
-### Two bugs in the generator, both found by reading its output
+### Three bugs, all found by reading output rather than code
 
-Worth recording because they are the same failure in two forms — a generated table that is
+Worth recording because they are one failure in three forms — a generated table that is
 confidently wrong while looking plausible, which is worse than the hand-written one it replaced
 because nobody re-reads a generated file.
+
+* **A glob claims the future**, and the fix reproduced the very overstatement it was written to
+  prevent. The 2026-08-27 record first declared `.github/workflows/*.yml`; that audit's commit is
+  `95c6afa` and the directory gained `controls.yml` the next day, so the table read *fully
+  covered* for a directory whose newest file no audit had seen. **Coverage is enumerated now** —
+  produced from `git ls-tree -r <target_commit>`, the only source that cannot be optimistic — and
+  a test rejects a glob in that field. `.github/workflows/` correctly reads `partial — 3/4`.
 
 * **`fnmatch`'s `*` crosses `/`.** `src/csa_google_workspace/*.py` matched every module in every
   subpackage, so the top-level group reported 53 files instead of 20 and rendered

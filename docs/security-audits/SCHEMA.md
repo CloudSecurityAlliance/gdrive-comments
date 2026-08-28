@@ -200,15 +200,23 @@ not say so will be read as more current than it is.
   directory and nothing else.
 
   What an audit owes instead is **`modules_covered`** — the coverage claim in a
-  form that can be checked. Get it right, and prefer understating:
+  form that can be checked.
 
-  - **Globs** (`src/csa_google_workspace/mcp/*.py`) when the audit genuinely
-    covered a directory wholesale. `*` does **not** cross a `/`, so a top-level
-    glob does not silently claim a subpackage.
-  - **Enumerated paths** when it did not. The 2026-07-22 records list their 16
-    files individually, because a glob there would absorb every module written
-    since and claim coverage that never existed. That is the failure this field
-    exists to prevent, and it is the direction the error actually goes.
+  **Enumerate the paths. Do not use globs.** Produce the list from the audited
+  tree itself, which is the only source that cannot be optimistic:
+
+  ```bash
+  git ls-tree -r <target_commit> --name-only | grep -E '<the paths you covered>'
+  ```
+
+  A glob claims the future, and this is not hypothetical: the 2026-08-27 record
+  was first written with `.github/workflows/*.yml`, whose directory gained
+  `controls.yml` the next day. The coverage table read *fully covered* for a
+  directory whose newest file no audit had seen. Enumeration cannot do that — a
+  file absent from the list is uncovered, so the group correctly flips to
+  `partial — 3/4` the moment something is added.
+
+  A test rejects a glob in this field for exactly that reason.
 
   A group counts as covered only when an audit's globs match **every** tracked
   file in it; anything less renders as `partial — n/m`, and a group nothing

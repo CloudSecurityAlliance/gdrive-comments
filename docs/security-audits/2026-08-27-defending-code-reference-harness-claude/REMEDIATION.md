@@ -692,3 +692,25 @@ same shape as the omission the coverage table exists to prevent, one level up.
 
 CI runs `gen_audit_index.py --check`, which regenerates in memory and diffs. It never writes, so
 the committed index stays the reviewed one.
+
+### Addendum — the fix reproduced the failure it was written to prevent
+
+Worth recording plainly. The first working version of `gen_audit_index.py` had each audit declare
+`modules_covered` as **globs**, and the 2026-08-27 record accordingly claimed
+`.github/workflows/*.yml`. That audit's target commit is `95c6afa`. The directory gained
+`controls.yml` on 2026-08-28 — written for #189, the day after the audit — and the generated table
+read **fully covered** for a directory whose newest file no audit had ever seen.
+
+A glob claims the future. That is the exact overstatement this issue exists to prevent, committed
+inside the fix for it, and it survived until the generated output was compared against
+`git ls-tree -r 95c6afa`.
+
+`modules_covered` is now **enumerated** for every record, produced from the audited tree itself,
+and `tests/test_audit_index.py` rejects a glob in that field with the reason attached. The table
+now reports `.github/workflows/` as `partial — 3/4`, which is the truth.
+
+The general shape is one this repository has now hit several times: **the guard was correct and
+the input to it was optimistic.** `decision()` was three-state while `_norm` discarded the value
+before it (#161) and a docstring invited the value it rejected (#162); here the coverage
+comparison was exact while the claim being compared was a glob. Checking the mechanism is not the
+same as checking what you feed it.

@@ -57,26 +57,80 @@ supersedes: null
 # a shared file every audit has to edit. Only metadata was added here: no finding, rating,
 # scope statement or wording of this record was changed.
 #
-# `modules_covered` restates, in a machine-readable form, the coverage `scope_covered` above
-# already describes in prose ("all 53 modules, static read" plus workflows and packaging). It
-# is globs rather than an enumeration because this audit genuinely covered the directories
-# wholesale - unlike the 2026-07-22 records, whose 16 files are enumerated so that a glob
-# cannot silently absorb everything written since.
+# `modules_covered` restates, in machine-readable form, the coverage `scope_covered` above
+# already describes in prose. It is ENUMERATED rather than globbed, and the reason is concrete:
+# this audit's target commit is 95c6afa, and a glob like `.github/workflows/*.yml` would claim
+# `controls.yml` - written 2026-08-28, which this audit never saw. A glob claims the future, and
+# claiming coverage of unaudited code is the exact failure #198 exists to prevent.
 #
-# `tests/`, `experiments/` and `research/` are deliberately absent, matching `scope_excluded`:
+# Produced from the audited tree itself, so it cannot overstate:
+#
+#   git ls-tree -r 95c6afa --name-only | grep -E '^(src/.*\.py|\.github/workflows/.*\.yml|...)$'
+#
+# `tests/`, `experiments/`, `research/` and `scripts/` are absent, matching `scope_excluded`:
 # tests were read for coverage claims only, not audited as code. The generated table therefore
 # reports them as not yet audited, which is true and was previously easy to overlook.
 index_label: "2026-08-27 · defending-code-reference-harness / claude"
 modules_covered:
-  - "src/csa_google_workspace/*.py"
-  - "src/csa_google_workspace/documents/*.py"
-  - "src/csa_google_workspace/mcp/*.py"
-  - "src/csa_google_workspace/mcp/_tools/*.py"
-  - "src/csa_google_workspace/demo/*.py"
-  - ".github/workflows/*.yml"
-  - "pyproject.toml"
+  - ".github/workflows/dependabot-auto-merge.yml"
+  - ".github/workflows/release.yml"
+  - ".github/workflows/tests.yml"
   - ".gitignore"
   - ".gitleaks.toml"
+  - "pyproject.toml"
+  - "src/csa_google_workspace/__init__.py"
+  - "src/csa_google_workspace/_apply.py"
+  - "src/csa_google_workspace/_cellmap.py"
+  - "src/csa_google_workspace/_content.py"
+  - "src/csa_google_workspace/_environment.py"
+  - "src/csa_google_workspace/_errors.py"
+  - "src/csa_google_workspace/_export.py"
+  - "src/csa_google_workspace/_formats.py"
+  - "src/csa_google_workspace/_services.py"
+  - "src/csa_google_workspace/allowlist.py"
+  - "src/csa_google_workspace/auth.py"
+  - "src/csa_google_workspace/backend.py"
+  - "src/csa_google_workspace/base.py"
+  - "src/csa_google_workspace/comments.py"
+  - "src/csa_google_workspace/demo/__init__.py"
+  - "src/csa_google_workspace/demo/_cli.py"
+  - "src/csa_google_workspace/demo/_feedback.py"
+  - "src/csa_google_workspace/demo/_plan.py"
+  - "src/csa_google_workspace/demo/_runner.py"
+  - "src/csa_google_workspace/documents/__init__.py"
+  - "src/csa_google_workspace/documents/doc.py"
+  - "src/csa_google_workspace/documents/sheet.py"
+  - "src/csa_google_workspace/documents/slides.py"
+  - "src/csa_google_workspace/exceptions.py"
+  - "src/csa_google_workspace/files.py"
+  - "src/csa_google_workspace/mcp/__init__.py"
+  - "src/csa_google_workspace/mcp/__main__.py"
+  - "src/csa_google_workspace/mcp/_auth_flow.py"
+  - "src/csa_google_workspace/mcp/_capabilities.py"
+  - "src/csa_google_workspace/mcp/_config.py"
+  - "src/csa_google_workspace/mcp/_desktop.py"
+  - "src/csa_google_workspace/mcp/_inline.py"
+  - "src/csa_google_workspace/mcp/_login.py"
+  - "src/csa_google_workspace/mcp/_resources.py"
+  - "src/csa_google_workspace/mcp/_schemas.py"
+  - "src/csa_google_workspace/mcp/_success_page.py"
+  - "src/csa_google_workspace/mcp/_tools/__init__.py"
+  - "src/csa_google_workspace/mcp/_tools/_base.py"
+  - "src/csa_google_workspace/mcp/_tools/auth.py"
+  - "src/csa_google_workspace/mcp/_tools/comments.py"
+  - "src/csa_google_workspace/mcp/_tools/config.py"
+  - "src/csa_google_workspace/mcp/_tools/content.py"
+  - "src/csa_google_workspace/mcp/_tools/content_write.py"
+  - "src/csa_google_workspace/mcp/_tools/demo.py"
+  - "src/csa_google_workspace/mcp/_tools/feedback.py"
+  - "src/csa_google_workspace/mcp/_tools/files.py"
+  - "src/csa_google_workspace/mcp/_tools/suggestions.py"
+  - "src/csa_google_workspace/mcp/cli.py"
+  - "src/csa_google_workspace/mcp/server.py"
+  - "src/csa_google_workspace/permissions.py"
+  - "src/csa_google_workspace/policy.py"
+  - "src/csa_google_workspace/suggestions.py"
+  - "src/csa_google_workspace/workspace.py"
 findings_summary: "35 total · 1 exploitable · 15 hardening"
 remediation_summary: "in progress — see [REMEDIATION.md](2026-08-27-defending-code-reference-harness-claude/REMEDIATION.md)"
 ---

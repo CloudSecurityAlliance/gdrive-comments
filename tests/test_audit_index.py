@@ -5,13 +5,14 @@ row and the coverage-by-module table — in a workflow built so that parallel au
 share a file. It was the last shared mutable document, and so the only thing two concurrent
 audits could collide over.
 
-Both tables now come from per-audit front matter. The half that matters is coverage: it is
-**computed against the tracked tree**, so a group no audit's globs cover reads *not yet
-audited* by itself. A hand-maintained coverage claim is how the July-to-August gap stayed
-invisible — the tree went from 16 modules to 53 and the table still said "first covered by".
+Both tables now come from per-audit front matter. The half that matters is coverage: each audit
+**enumerates** the files it saw, and the table is computed against the tracked tree, so a group
+nothing covers reads *not yet audited* by itself. A hand-maintained coverage claim is how the
+July-to-August gap stayed invisible — the tree went from 16 modules to 53 and the table still
+said "first covered by".
 
-**Two bugs in the generator, both found by looking at its output rather than reading it**, and
-both of the same kind: it produced a table that was confidently wrong while looking plausible.
+**Three bugs, all found by looking at output rather than reading code**, all the same kind: a
+table that was confidently wrong while looking plausible.
 
 1. `fnmatch`'s `*` crosses `/`, so `src/csa_google_workspace/*.py` matched every module in
    every subpackage. The top-level group reported 53 files instead of 20 and rendered
@@ -19,6 +20,11 @@ both of the same kind: it produced a table that was confidently wrong while look
 2. "First covered by" broke on the first audit covering *any* file in a group, so an earlier
    partial hid a later full pass — `src/` top level read "partial — 12/20 at 2026-07-22" while
    the 2026-08-27 audit covers all twenty.
+3. **A glob claims the future.** The 2026-08-27 record declared
+   `.github/workflows/*.yml`; its target commit is `95c6afa`, and the directory gained
+   `controls.yml` the next day. The table read *fully covered* for a directory whose newest
+   file no audit had seen — the precise overstatement this issue exists to prevent, reproduced
+   by the fix for it. Coverage is enumerated now, and a test rejects a glob in that field.
 
 A generated table that is wrong is worse than the hand-written one it replaced, because nobody
 re-reads a generated file. Hence tests on the matcher and on the verdict logic, not just on
@@ -157,14 +163,29 @@ class TestEveryRecordCarriesWhatTheIndexNeeds:
             assert isinstance(covered, list) and all(isinstance(c, str) for c in covered), (
                 f"{audit.path.name}: modules_covered must be a list of glob strings")
 
-    def test_the_legacy_records_enumerate_rather_than_glob(self, gen):
-        """The 2026-07-22 audits saw 16 specific files at v0.1.0. A glob there would silently
-        absorb every module written since and claim four years of coverage it never had - the
-        exact overstatement #198 exists to prevent."""
+    def test_every_record_enumerates_rather_than_globs(self, gen):
+        """A glob claims the future, and that is not hypothetical.
+
+        The 2026-08-27 record was first written with `.github/workflows/*.yml`, and its target
+        commit is 95c6afa. That glob claimed `controls.yml` - written the following day, which
+        the audit never saw - and the coverage table read "fully covered" for a directory whose
+        newest file was unaudited. Caught by checking the generated output against
+        `git ls-tree`, not by reading the front matter.
+
+        Enumeration cannot overstate: a file absent from the list is uncovered, so a group
+        correctly flips to `partial - 3/4` the moment something is added. The lists come from
+        the audited tree itself (`git ls-tree -r <target_commit>`), which is both easy and the
+        only source that cannot be optimistic.
+
+        Globs stay valid for `GROUPS` in the generator, where they describe the repository's
+        layout rather than anyone's coverage claim.
+        """
         for audit in gen.load_audits():
-            if audit.meta.get("legacy_location"):
-                assert not any("*" in c for c in audit.meta["modules_covered"]), (
-                    f"{audit.path.name} uses a glob; enumerate what it actually saw")
+            globbed = [c for c in audit.meta["modules_covered"] if "*" in c or "?" in c]
+            assert globbed == [], (
+                f"{audit.path.name} claims coverage by glob {globbed}. A glob matches files "
+                f"added after the audit ran. Enumerate from "
+                f"`git ls-tree -r {audit.meta.get('target_commit', '<commit>')}`.")
 
 
 class TestTheCommittedIndexIsCurrent:
