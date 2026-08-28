@@ -332,6 +332,9 @@ posture. `organizer` is the top of our ladder and is still narrower than Drive's
 | permanently delete anything | Deliberate. There is no permanent delete in the library and no capability that empties the trash. The worst an `organizer` install can do to a file is put it in the bin, where its owner can see and restore it. |
 | empty the trash | Same. |
 | resolve `Location.tab` for a multi-tab spreadsheet | Needs `workbook.xml` + rels parsing; tracked as a deferral. |
+| change a file's **access settings** — "Allow editors to change permissions and share" (`writersCanShare`) and "Limit access to…" (`inheritedPermissionsDisabled`) | **Deliberate, and this is the strongest deliberate omission in the list.** These are *meta-permissions*: policy about who may set policy, rather than use of the file. `writersCanShare` decides who else may grant access; `inheritedPermissionsDisabled` is the only action in this area that **removes** access, silently, from people who are not in the room — Google's own UI warns *"Some people may lose access."* An injected agent flipping it on a shared folder locks out a team with no notification. Governance decisions belong in Drive's UI with a human. |
+| disable download/print/copy for readers (`copyRequiresWriterPermission`, `DownloadRestriction`) | Same category. Also largely fiction as a control — see §2's view ≈ download argument, which applies to this Drive feature exactly as it applies to ours. |
+| **revoke or downgrade a permission** (`permissions.delete`, `permissions.update`) | **Not deliberate — a gap, and worth closing.** See below. |
 
 This goes in three places, because three different readers need it and only one of them reads the
 README:
@@ -341,6 +344,28 @@ README:
    This is the one with real value: a model that knows there is no accept-suggestion endpoint stops
    inventing workarounds, and today it can only find out by failing.
 3. **`THREAT_MODEL.md`** — "cannot permanently delete" is a security property, not a limitation.
+
+### The one gap in this list that should be closed
+
+Everything above is a ceiling by choice except the last row. The `Backend` has `list_permissions`
+and `create_permission` and nothing else: **this library can grant a permission and cannot take
+one back.**
+
+That matters more since §3a put `file.share` in the default set. When `PROVENANCE.md` calls
+sharing *"irreversible in effect"*, half of that is Drive's doing — a copy the recipient already
+took cannot be recalled — and **half is ours**: the grant itself *is* revocable in Drive, and we
+simply have no method for it. An operator who discovers a wrong share has to leave this tool and
+go to the Drive UI.
+
+Adding `permissions.delete` and `permissions.update` is therefore the unusual case of a
+**mutating capability that makes the surface safer**: the agent can undo its own mistake, and an
+operator can clean up in the tool where they found the problem. It needs no new vocabulary — if
+you may grant, you may ungrant, so both sit under `file.share`.
+
+It also improves the honesty of the reversibility table, which currently rates `file.share` as
+irreversible partly because of a limitation we chose rather than one Drive imposes.
+
+Tracked as **#235**; it is additive and does not depend on the model changing.
 
 ## 7. Compatibility
 
