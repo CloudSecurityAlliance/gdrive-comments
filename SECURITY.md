@@ -290,6 +290,62 @@ The right reason to narrow the configuration here is *"I want this agent doing l
 scoping a project, limiting blast radius on unattended runs, keeping an experiment away from
 production documents. It is not *"this is how my data is secured."*
 
+## Logging is the same shape
+
+Everything above applies again, unchanged: **if you want an audit trail, it has to be server-side.
+What this project provides locally is a convenience.**
+
+### Why a local log is not an audit trail
+
+An audit trail has to survive the thing it is auditing. A log written by this process, on the
+machine running this process, does not: **anyone who compromises the MCP client can delete or
+forge it, and cleaning the logs is the first thing they will do.** A local log is evidence about
+accident and confusion — a tool that misfired, an agent that did something surprising, a bug worth
+reproducing. It is not evidence about an adversary, and it must never be presented as though it
+were.
+
+The durable record is Google Workspace's own audit logging, which is outside the reach of anyone
+who owns the laptop. It records the API method, the acting user, and the **App ID and app name**
+of the OAuth client that made the call — so "this action came from this MCP server rather than
+from a browser" is answerable there, and only there.
+
+### What local logging is genuinely for
+
+Debugging, and understanding what happened in a session. Both are real needs and neither is
+served by a Workspace admin console the operator may not even have access to. So it is worth
+building — for the same reason the capability model is worth building, and with the same honesty
+about which question it answers.
+
+The posture: **quiet by default — real errors only** — with options to raise verbosity, up to full
+debug for troubleshooting. Nobody should have to opt out of noise to use the tool, and nobody
+should have to guess at flags when something breaks.
+
+### The hazard that is specific to logging
+
+The domain models here carry hand-written, redacting `__repr__`s — no document text, no quoted
+content, no author email — precisely because embedders log these objects, and
+`tests/test_repr_redaction.py` guards it.
+
+**A verbose logging mode is the natural way to defeat that**, and it would do so at the worst
+moment: full debug is exactly when somebody is reproducing a problem, capturing everything, and
+likely to paste the result into an issue. Untrusted document content in a debug log is also a
+persistence step for an injection payload, which then sits on disk outside Drive's retention and
+outside the MCP client's.
+
+So the rule the design must carry: **raising the log level raises detail about the *operation*,
+never about the *content*.** More verbosity should mean more about which call was made, with which
+file id, why it was refused and what the API returned — not more of what the document said. Where
+content genuinely helps a diagnosis, it belongs behind an explicit, separately-named opt-in that
+says what it will write, not behind a number that somebody turned up to eleven.
+
+### And the same gap
+
+Workspace audit logging tells you **what** our app did under your identity. It cannot tell you
+*which session*, *which prompt*, or *whether a human or the model decided* — the same intention
+gap named above, from the other side. An audit trail that recorded provenance and intent would
+answer the question people actually ask after an incident, which is not "what happened" but "who
+decided this should happen".
+
 ## Read-only by default
 
 The single most effective bound on both risks. Instantiate a `read_only=True` `Workspace` and
