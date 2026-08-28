@@ -10,6 +10,78 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.6 (register bounds, and a stray request can no longer eat your login) — not released yet; pending, not abandoned
+
+The last two code findings from audit
+[`2026-08-27-01`](docs/security-audits/2026-08-27-defending-code-reference-harness-claude/README.md).
+
+### A register is bounded before it is parsed
+
+`read_rows` and `write_back` handed a caller-supplied `.xlsx` to `openpyxl` with no size caps,
+while `_cellmap.py` applies member, total and count bounds to **the same archive class** — two
+parsers of one format in one codebase with opposite postures.
+
+Bounds are read from the **zip central directory**, not by decompressing and measuring, which is
+the only way a cap helps: `file_size` is the declared uncompressed size, so a bomb is refused
+before any of it expands. A 154-byte archive declaring 4 GiB is now rejected without touching it.
+
+**Not oversold:** XXE and entity expansion were *already* covered — openpyxl auto-detects
+`defusedxml`, which is a hard dependency here. What this closes is decompression amplification: a
+denial of service, nothing more.
+
+**And `write_back` now enforces the suffix**, so a register can only be written over a `.csv` or
+`.xlsx`. The other two rules from `resolve_export_path` are deliberately *not* copied, and the
+code says why rather than leaving them as apparent omissions: *never-overwrite* cannot apply,
+since overwriting in place is the entire job and a stamped copy would strand the completed markers
+in a file nobody re-applies; *`export_dir` confinement* would break the documented flow, since a
+reviewer may hand the file back from anywhere; and the temp file in `path.parent` is **required**
+for an atomic rename, not lax.
+
+What actually bounds that path is stronger than any of them and was already true: `read_rows` must
+parse the file as a register first.
+
+Closes [#190](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/190).
+
+### PKCE is asked for, not inherited
+
+`build_flow` never passed `autogenerate_code_verifier`, so PKCE S256 was active only because the
+library's default happens to be on. **This changes no behaviour** — it changes what we rely on. A
+security property nothing asks for and no test observes is one a future release can remove
+silently.
+
+The audit proposed raising the `google-auth-oauthlib` floor instead, on the grounds that `>=1.0`
+*"admits releases where the default is off"*. Downloading the sdists showed **1.0.0 already
+defaults it on**, so that was not done. An explicit argument is the better fix anyway: a version
+bound constrains what may be *installed*, this constrains what the code *does*.
+
+### A stray request can no longer consume your login
+
+The loopback that receives the OAuth redirect accepted **any path and any method**, and served
+exactly one request. So the first thing to hit that port won — and it sits on `127.0.0.1` for 300
+seconds while a browser is open. A local port scanner, a page issuing a cross-origin GET, or **a
+browser fetching `/favicon.ico`** consumed it, and the real redirect was then refused.
+
+Availability only: `state` and PKCE still prevent a forged code being exchanged. It was a path to
+a login that fails for reasons nobody can diagnose.
+
+Now only a request carrying `state` **and** either `code` or `error` ends the wait, and the server
+serves until one arrives. `error` counts because a user clicking **Cancel** sends
+`?error=access_denied&state=…`, and treating that as noise would hang the login for the full
+timeout with nothing on screen. Anything else gets `204 No Content` — answered rather than
+dropped, since a hanging scanner is one still holding a connection to a listener waiting for a
+credential.
+
+Closes [#191](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/191).
+
+### A defect introduced and caught in the same change
+
+Serving in a loop meant the thread had to survive the caller closing the socket. `server_close()`
+sets the descriptor to `-1`, and `handle_request()` then fails inside `selectors` with
+`ValueError: Invalid file descriptor: -1` — **not** an `OSError`, so the first version left an
+unhandled exception in a daemon thread on every login. Invisible in normal use; noise in any log
+that captures thread errors. Caught by pytest's unhandled-thread-exception warning, and now has
+its own regression test.
+
 ## 2026-08-28 — v0.30.5 (local hygiene: file modes, backups, and the ignore list)
 
 Hardening from audit

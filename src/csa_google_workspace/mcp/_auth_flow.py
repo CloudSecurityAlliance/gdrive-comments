@@ -24,6 +24,7 @@ listener is not optional.
 from __future__ import annotations
 
 import threading
+import urllib.parse
 import wsgiref.simple_server
 import wsgiref.util
 from dataclasses import dataclass, field
@@ -40,8 +41,32 @@ class _Collector:
         self.arrived = threading.Event()
 
     def __call__(self, environ, start_response):
+        uri = wsgiref.util.request_uri(environ)
+        query = urllib.parse.parse_qs(environ.get("QUERY_STRING", ""))
+
+        # ONLY AN OAUTH REDIRECT ENDS THE WAIT. This used to accept any path and any method,
+        # so the first request to arrive won - and the listener sits on 127.0.0.1 for 300
+        # seconds while a browser is open. A favicon fetch, a local port scanner, or any page
+        # issuing a cross-origin GET consumed it, and the real redirect was then refused.
+        # A stray /favicon.ico does it by accident. (#191/T30)
+        #
+        # `state` is the discriminator because Google always sends it back, on success and on
+        # cancel alike, and nothing else hitting a random high port will carry it. This is not
+        # a security check - `state` and PKCE are validated later by oauthlib, during the token
+        # exchange - it is a "was this meant for me" check, and the defect was availability.
+        #
+        # `error` counts as an answer: the user clicking Cancel sends
+        # ?error=access_denied&state=..., and treating that as noise would hang the login for
+        # the full timeout with nothing on screen explaining why.
+        wanted = "state" in query and ("code" in query or "error" in query)
+        if not wanted:
+            # Answered, not dropped: a hanging scanner is one still holding a connection to a
+            # listener that is waiting for a credential.
+            start_response("204 No Content", [("Content-Length", "0")])
+            return [b""]
+
         start_response("200 OK", [("Content-type", "text/html; charset=utf-8")])
-        self.redirect_uri = wsgiref.util.request_uri(environ)
+        self.redirect_uri = uri
         self.arrived.set()
         return [SUCCESS_HTML.encode("utf-8")]
 
@@ -72,13 +97,37 @@ class Loopback:
 
 
 def start_loopback() -> Loopback:
-    """Bind 127.0.0.1 on a free port and serve exactly one request, off-thread."""
+    """Bind 127.0.0.1 on a free port and serve until the OAuth redirect arrives, off-thread.
+
+    Serving in a LOOP rather than exactly once, because one-shot handling meant the first
+    request to arrive won whether or not it was the redirect (#191/T30). The loop ends when the
+    collector has its answer; the caller closes the server, and the thread is a daemon so a
+    process exiting mid-consent is not held open by it.
+    """
     collector = _Collector()
     # allow_reuse_address off: fail fast rather than silently share a port.
     wsgiref.simple_server.WSGIServer.allow_reuse_address = False
     server = wsgiref.simple_server.make_server("127.0.0.1", 0, collector,
                                                handler_class=_QuietHandler)
-    thread = threading.Thread(target=server.handle_request, daemon=True)
+    server.timeout = 0.5          # so the loop notices `arrived` even with no traffic
+
+    def serve_until_answered() -> None:
+        while not collector.arrived.is_set():
+            try:
+                server.handle_request()
+            except (OSError, ValueError):
+                # The caller closed the socket while this thread was between iterations.
+                # BOTH are needed and the second is not obvious: `server_close()` sets the
+                # descriptor to -1, and `handle_request()` then fails inside `selectors` with
+                # `ValueError: Invalid file descriptor: -1` rather than an OSError. Catching
+                # only OSError left an unhandled exception in a daemon thread on every login -
+                # invisible in normal use, and noise in any log that captures thread errors.
+                #
+                # The race is inherent to closing from another thread, so the exception IS the
+                # stop signal rather than a failure to handle one.
+                return
+
+    thread = threading.Thread(target=serve_until_answered, daemon=True)
     thread.start()
     return Loopback(port=server.server_port, _server=server,
                     _collector=collector, _thread=thread)
@@ -99,7 +148,17 @@ def build_flow(client_secrets: str, read_only: bool, redirect_uri: str):
     """A google_auth_oauthlib Flow pointed at our loopback, with our scopes."""
     from google_auth_oauthlib.flow import Flow
 
-    flow = Flow.from_client_secrets_file(client_secrets, scopes=scopes_for(read_only))
+    # autogenerate_code_verifier EXPLICITLY. It is already the library default, so this
+    # changes no behaviour today - it changes what we are relying on. PKCE S256 is a property
+    # this flow depends on, and depending on somebody else's default means a future release
+    # could turn it off silently. (#191/T28)
+    #
+    # Note the audit's stated reason for this did NOT hold: it proposed raising the
+    # google-auth-oauthlib floor because ">=1.0 admits releases where the default is off", and
+    # 1.0.0 already defaults it on. A version bound would constrain what may be INSTALLED; this
+    # constrains what the code DOES, which is the thing worth constraining.
+    flow = Flow.from_client_secrets_file(client_secrets, scopes=scopes_for(read_only),
+                                         autogenerate_code_verifier=True)
     flow.redirect_uri = redirect_uri
     return flow
 
