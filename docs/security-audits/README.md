@@ -8,11 +8,14 @@ The **living** documents are elsewhere and are what to read first:
 
 - [`SECURITY.md`](../../SECURITY.md) — the standing threat framing and the
   division of responsibility between this library and its embedders.
-- `THREAT_MODEL.md` at the repository root — the current threat model, once
-  adopted. Each audit directory keeps the model as that audit produced it; an
-  audit **proposes** the living model by filing an issue rather than editing the
-  root file, so parallel audits cannot collide over it. The 2026-08-27 audit's
-  model is [here](2026-08-27-defending-code-reference-harness-claude/THREAT_MODEL.md).
+- [`THREAT_MODEL.md`](../../THREAT_MODEL.md) at the repository root — the living
+  threat model, **adopted 2026-08-28** from audit `2026-08-27-01` (#197). Its
+  threat text is as that audit wrote it; its `status` column is current, and §0
+  accounts for every row that has moved since. Each audit directory keeps the
+  model as that audit produced it — the frozen snapshot behind its findings — and
+  an audit **proposes** changes to the living model by filing an issue rather than
+  editing the root file, so parallel audits cannot collide over it. The 2026-08-27
+  snapshot is [here](2026-08-27-defending-code-reference-harness-claude/THREAT_MODEL.md).
 
 Structure, naming, front-matter schema and conventions: [`SCHEMA.md`](SCHEMA.md).
 

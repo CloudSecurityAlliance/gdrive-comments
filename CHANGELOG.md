@@ -10,6 +10,63 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.11 (the threat model is now a living document at the root)
+
+Closes **#197**. Docs only.
+
+### Adopted, not copied
+
+Audit `2026-08-27-01` produced a 35-threat model across 19 entry points, committed inside its own
+directory because an audit commits only its own directory. It is now `THREAT_MODEL.md` at the
+repository root: banner stripped, relative links rewritten to resolve from the root, and the audit
+directory keeping the frozen snapshot behind its findings.
+
+The part that was not mechanical: the audit ran against `95c6afa`, **v0.28.0**, and by adoption the
+tree was v0.30.10 with **thirteen threats moved**. A living threat model that lists fixed threats as
+`unmitigated` is not cautious, it is unusable — nobody trusts a document that is wrong about the
+things they can check, and then nobody reads the rows about the things they cannot.
+
+So the threat *text* is verbatim from the audit — what a threat **is** did not change because it was
+fixed, and rewriting it would destroy the comparison a later reader needs — and only `status` moved,
+with a new **§0** accounting for every difference: T3, T9, T17, T18, T23, T27, T28, T30, T31, T32
+and T35 to `mitigated`; T15 and T34 to `partially_mitigated`. T13 and T19 are listed too, as
+partial-to-partial, so work that did not move a status is still visible.
+
+**T1 carried forward unchanged**, as the issue required: `CSA_GW_ALLOWLIST_READ="*"` remains a
+deliberate interim posture with a documented 1.0.0 path. **T2 is unchanged** and remains the highest
+row; none of the remediation narrows who decides.
+
+### T15 earned `partially_mitigated` and not more
+
+Worth stating because the tempting answer was `mitigated`. `update_cells` and `append_rows` default
+to `RAW` now, and every library path always did — but `valueInputOption` is still a tool parameter,
+so `USER_ENTERED` is one argument away. What stands between an injected agent and server-side
+formula evaluation is the tool description telling it not to.
+
+That is an instruction to the model, on a surface whose whole premise (T2) is that third-party
+content can instruct the model. This project's own invariant #10 — *a type is not a contract with
+the model; the description is* — cuts the other way here: **a description is not a control either.**
+Refusing `USER_ENTERED` unless an operator names a capability would make it one, which is a
+capability-model change and belongs with #195 rather than an adoption commit.
+
+### SECURITY.md was calling itself the threat model
+
+A collision the adoption created and had to resolve rather than paper over. `SECURITY.md` is now
+explicitly the **framing** — how the risk is shaped, who owns which part, prose, changes rarely —
+and `THREAT_MODEL.md` is the **register**: enumerated threats, ratings, statuses, evidence, changes
+with the code. `SECURITY.md` says so, including that its old self-description was true when there
+was no other document and is the wrong claim now. It also stops implying the two 2026-07-22 audits
+are the whole record, and points at the generated index.
+
+### The guard
+
+`tests/test_threat_model.py` (15 tests) asserts **§0 accounts for every status differing from the
+frozen snapshot** — no more, no fewer. The snapshot is a baseline nothing in this repository can
+edit, which makes it the only available check on a claim of progress: a status cannot quietly
+improve, and a regression cannot be left implicit. It also asserts adoption dropped no threat id,
+invented none, that every status is from the audit's closed vocabulary, and that every relative
+link resolves from the root.
+
 ## 2026-08-28 — v0.30.10 (the audit index is generated, and its coverage claim is checked)
 
 Closes **#198**. No runtime change.
