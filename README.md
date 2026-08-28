@@ -782,27 +782,39 @@ itself to either of their capability sets when you want one predictable surface.
 Details, including per-tool behaviour read from live schemas:
 [`research/drive-mcp-servers-and-api-surface.md`](./research/drive-mcp-servers-and-api-surface.md).
 
+## Why this exposes everything the API can do
+
+**A design goal, not an oversight: this project aims to expose every capability the Google
+Workspace APIs offer.** People adopt AI tooling to get work done, and the tool has to be able to
+do the work.
+
+That is not in tension with the security posture, for a reason worth being explicit about:
+**withholding a capability does not prevent the action.** Every action here is one the
+authorizing user can already perform in a browser or in fifty lines of their own Python against
+the same API. Leaving a method out does not stop anybody — it sends them to a client with no
+policy layer, no allowlist, no tool annotations and no logging. Capability withheld is utility
+lost and risk unchanged.
+
+What this *does* add is a **decision path**: a third party who can leave a comment can influence
+what an agent does with authority that was never theirs. That is real, it is the reason the
+controls exist, and it is the part we own. See [`SECURITY.md`](./SECURITY.md) — including why the
+profiles are best understood as a **privilege simulator** (let the agent act as a less-privileged
+user than you are) rather than as a fence, and where the industry-level gap sits: access control
+today authenticates *identity* and authorizes *actions*, and has no concept of *intention* or of
+*which tool is acting*.
+
 ## Capability boundaries
 
-The library is **document-scoped**. Two of the limits below are genuine — the Google APIs
-cannot do those things at all, proven by enumeration and by probe. The third is a scope
-*choice* we have not revisited, and is marked as such.
+The limits below are genuine — the Google APIs cannot do these things at all, proven by
+enumeration and by probe — with one deliberate exclusion marked as such.
 
 - **Suggestions are read/preview only.** `Doc.suggestions` reads suggesting-mode edits and `as_text(suggestions="accepted"|"rejected")` previews the outcome, but **accepting/rejecting is impossible via the API** (`UnsupportedOperation`) — Google exposes no endpoint. Reserved for a future `PlaywrightBackend`.
-- **No document discovery — *our choice, not an API limit*.** You hand the library a file
-  id/URL (`Workspace.open(id)`); there is no `files.list`/search. `files.list` works perfectly
-  well, as the workaround below demonstrates; the library simply does not wrap it, to keep its
-  surface to comments and content on documents you name. Being candid: that trade looks weaker
-  than it did. The workaround needs a Drive client anyway, so the boundary saves the caller
-  nothing but the loop — and for the MCP server there is no host application to supply a file
-  id, so every interaction has to start with a human pasting a URL. Tracked in `TODO.md`.
-  ```python
-  files = drive.files().list(q="mimeType='application/vnd.google-apps.document'",
-                             fields="files(id)").execute()["files"]
-  for f in files:
-      doc = ws.open(f["id"])
-      ...
-  ```
+- **Drive's access-settings menu is deliberately not exposed** — "Allow editors to change
+  permissions and share" (`writersCanShare`) and "Limit access to…" (`inheritedPermissionsDisabled`).
+  These are *meta-permissions*: policy about who may set policy, rather than use of the file. The
+  second is the only action in this area that **removes** access, silently, from people who are
+  not in the room — Google's own dialog warns *"Some people may lose access."* Governance
+  decisions belong in Drive's UI with a human.
 - **Sheets cell-anchored comments can't be created via the API** — `sheet.create_comment(text, cell=…)` posts a file-level comment with a `#gid=…&range=…` deep-link instead.
 
 ## Using it on a user's behalf (production)

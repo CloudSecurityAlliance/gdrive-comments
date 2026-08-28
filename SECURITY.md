@@ -155,6 +155,91 @@ use". That was written before the bundled MCP server existed and read as broader
 the objection is to *hosted, multi-tenant* use, not to a local process that happens to speak a
 protocol.
 
+## Why this exposes everything the API can do
+
+A stated design goal, not an oversight to be walked back: **this project aims to expose every
+capability the Google Workspace APIs offer.** People adopt AI tooling to get work done, and that
+means the tool has to be able to do the work.
+
+That sounds like it sits badly with a security document. It does not, and the reasons are worth
+setting out, because they determine what the controls in this repository are actually *for*.
+
+### Withholding a capability does not prevent the action
+
+Every action this library can take is one the authorizing user can already perform — in a
+browser, with `curl`, or with fifty lines of their own Python against the same API. Leaving a
+method out does not stop anyone; it sends them around us, to a client with no policy layer, no
+allowlist, no annotations and no logging. **Capability withheld is utility lost and risk
+unchanged**, and often risk increased, because the thing they build instead has none of the care
+this one does.
+
+So completeness is not in tension with safety here. The tension people expect comes from a model
+where the tool is the boundary. It is not.
+
+### What we genuinely do add — and it is not capability
+
+The delta is not *what* can be done, it is **who decides**. A third party who can leave a comment
+on a document can influence what an agent does with authority that was never theirs. That is a
+real thing this project creates and would not otherwise exist, and it is why controls exist here
+at all. It is also why they are described honestly: they narrow the deputy's options, and they
+are not a boundary against anybody who holds the token.
+
+Both halves are true at once. For the **principal**, we add convenience and no risk. For the
+**deputy**, we add a decision path — and that is ours to own.
+
+### The controls are a privilege simulator, not a fence
+
+The most useful way to read the profiles and allowlists: they let an agent **act as a
+less-privileged user than you are.** You may own the document; the agent can run as a commenter.
+You may reach every file in the organisation; the agent can reach four.
+
+That is a *capability*, not a restriction. It is what makes unattended runs, scoped projects and
+experiments against production documents reasonable to attempt. Nobody narrows this because the
+software forced them to; they narrow it because "do less than I can" is a useful thing to be able
+to ask for, and until now there was no way to ask.
+
+### Where real enforcement lives, and where it is going
+
+Durable policy belongs where the data is: Drive ACLs, sharing restrictions, target audiences, DLP,
+Context-Aware Access, audit logging, retention. Those survive a forked client, a compromised
+laptop and a rewritten policy file. Nothing in this repository does.
+
+But the current generation of that machinery has a gap this project runs into constantly, and it
+is the interesting one: **access control authenticates identity and authorizes actions, and has
+no concept of intention or of the tool acting.** Drive sees the user. It does not see:
+
+- whether the request came from a human keystroke or a model's inference;
+- whether the client is the official web interface, a vetted third-party tool, or something the
+  user wrote this morning;
+- whether the device is managed or a public machine;
+- which session, task or approval chain an action belongs to.
+
+Some of this is purchasable today with third-party tooling, and Context-Aware Access covers the
+device half. None of it yet distinguishes *the human decided* from *the agent decided*, which is
+precisely the distinction the confused-deputy problem turns on. An access decision that could
+factor in tool provenance and request intention would solve at the server what no client-side
+capability model can.
+
+**That is a research problem, and this project is partly a testbed for it.** CSA builds tools it
+needs and studies what building them reveals; this repository has produced an unusual amount of
+the second kind of output, and this gap is the largest.
+
+### What this project therefore owes you
+
+1. **Completeness** — every capability the API offers, exposed and documented, including the ones
+   we would rather you thought about first.
+2. **Honesty about what the controls are.** They constrain the agent, they grant nothing, and
+   they do not restrain you. Anywhere they might be mistaken for a boundary, they say so.
+3. **Narrowing that is easy and legible** — Google's own role vocabulary, a policy that cannot be
+   widened in-band, and a configuration you can read and know what it permits.
+4. **Naming what is not covered**, including the industry-level gap above, rather than implying
+   the capability model closes it.
+
+If a write this library permitted causes damage, that is a bad outcome and we would rather it had
+not happened — but the honest accounting is that the same user could have done it with their own
+client, and the part that is genuinely ours is the decision path, which is what the controls,
+annotations, defaults and this document exist to address.
+
 ## What the capability model is, and is not
 
 The profiles and allowlists in this server are **client-side enforcement, and client-side
