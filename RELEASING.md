@@ -37,6 +37,26 @@ If you ever see PyPI email *"Trusted Publisher … can be made more secure"*, th
 unconstrained — fix it by adding the constrained publisher first, confirming it appears, then
 removing the unconstrained one, so the project is never left without a working publisher.
 
+**This is now checked, not just written down.** `scripts/check_controls.py` asserts all three
+externally-configured controls — the constrained publisher, this environment's required
+reviewers, and branch protection on `main`:
+
+```bash
+GITHUB_TOKEN=$(gh auth token) python scripts/check_controls.py
+```
+
+It runs weekly (`.github/workflows/controls.yml`) and in the release build, so a removed
+reviewer stops the release that would otherwise publish unattended. Two of the three need no
+credential at all; branch protection needs admin rights, so in CI it reports `????` unless an
+optional read-only `CONTROLS_TOKEN` secret is configured. Run it locally before a release and
+you get all three.
+
+The check reports **OK / VIOLATED / UNVERIFIABLE** and never collapses the third into the
+first: a control check that cannot reach its evidence and exits 0 reads as a control while
+asserting nothing. It detects **drift**, not an attacker with repo access — who could edit the
+check. That is the same self-referential limit as above, with the same answer: what survives is
+what PyPI and GitHub enforce.
+
 ## Version numbers: an audit opens `x.y.0`, its fixes continue in `x.y.*`
 
 **Decided 2026-08-27.** Two rules, and the first is the useful one.

@@ -1,0 +1,59 @@
+name: external controls
+
+# Asserts the controls configured OUTSIDE this repository (#189, audit T19/T27): the PyPI
+# Trusted Publisher binding constrained to the `pypi` environment, that environment still
+# having required reviewers, and branch protection on `main`. Each was recorded only as prose,
+# and prose does not notice a setting toggled and forgotten.
+#
+# Weekly plus on demand. NOT on push or pull_request: it observes state that lives outside the
+# tree and changes on its own schedule, so tying it to a code change would report yesterday's
+# answer on an unrelated PR and go quiet when nobody is committing - which is precisely when
+# drift would sit unnoticed.
+#
+# WHAT IT CANNOT DO, stated here so the badge is not read as more than it is: this runs inside
+# the repository it checks, so it does not defend against someone who can edit it. It detects
+# DRIFT. The controls that survive an attacker with repo access are the ones PyPI and GitHub
+# enforce, not this file - which is the same self-referential point RELEASING.md makes about
+# the publisher binding.
+on:
+  schedule:
+    - cron: "17 7 * * 1"     # Mondays, 07:17 UTC. Off the hour on purpose: the top of the
+                             # hour is GitHub's busiest slot and scheduled runs are delayed.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Assert the externally-enforced controls
+        env:
+          # CONTROLS_TOKEN is OPTIONAL and read-only. Two of the three controls need no
+          # credential at all - GitHub answers /environments unauthenticated for a public
+          # repo, and PyPI serves the publisher's environment claim in the public PEP 740
+          # provenance. Only branch protection needs admin rights, and a workflow's
+          # GITHUB_TOKEN cannot be granted them: there is no `administration` permission.
+          #
+          # Without the secret this job still checks two of three and says so. With a
+          # fine-grained PAT holding only `administration:read`, it checks all three. That
+          # trade is deliberately the operator's: adding any long-lived credential to a public
+          # repository is a real cost, and it should not be paid silently for one check.
+          GITHUB_TOKEN: ${{ secrets.CONTROLS_TOKEN }}
+        run: |
+          python scripts/check_controls.py | tee controls.txt
+      - name: Publish the result to the run summary
+        if: always()
+        run: |
+          {
+            echo "## Externally-enforced controls"
+            echo
+            echo '```'
+            cat controls.txt 2>/dev/null || echo "the check did not produce output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

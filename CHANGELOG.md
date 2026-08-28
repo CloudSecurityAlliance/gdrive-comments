@@ -10,6 +10,72 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.9 (the controls outside this repository are now checked)
+
+Closes **#189** (T19/T27). No runtime change.
+
+### Three controls that lived only in prose
+
+This project depends on three settings configured in GitHub and PyPI rather than in the tree:
+the **Trusted Publisher binding constrained to the `pypi` environment** (without it the approval
+gate is enforced only by a line of YAML inside the repo being published), the **`pypi`
+environment still having required reviewers** — which it lost once already, noted in v0.21.0 —
+and **branch protection on `main`**, the stated premise of `dependabot-auto-merge.yml`, the only
+workflow holding `contents: write` on a PR trigger.
+
+`RELEASING.md` reasons about the first correctly and at length. The residual the audit named is
+that the reasoning is prose, and prose does not notice a setting toggled and forgotten.
+
+`scripts/check_controls.py` asserts all three. It runs weekly, and **in the release build** —
+where it matters most, since a removed reviewer would otherwise let that very run publish
+unattended.
+
+### OK / VIOLATED / UNVERIFIABLE, and the third is the design
+
+A control check that cannot reach its evidence and exits 0 is worse than no check: it reads as
+a control from the outside while asserting nothing. That is the failure this repository keeps
+finding in its own history — an sdist grep matching filenames only, a test asserting a default
+it never set, a config reference restating a policy from memory. So the three states are never
+collapsed: a violation exits non-zero, an unverifiable control is printed as loudly as a failure
+but does not fail on its own, and a run where **everything** was unverifiable fails, because it
+verified nothing.
+
+That discipline is also what makes it safe on the release path: an outage cannot redden a
+release, while an actually-violated control stops it before anything is built.
+
+### Two of the three need no credential
+
+`GET /repos/{owner}/{repo}/environments` answers **unauthenticated** for a public repo, and PyPI
+serves the publisher's environment claim in the public PEP 740 provenance — so the binding is
+verified from what actually published rather than from configuration PyPI does not expose.
+
+Branch protection needs admin rights: it 401s unauthenticated, and a workflow's `GITHUB_TOKEN`
+cannot be granted them — there is **no `administration` permission** to put in a `permissions:`
+block. In CI it therefore reports unverifiable unless an optional read-only `CONTROLS_TOKEN` is
+configured. That trade is left to the operator: adding a long-lived credential to a public
+repository is a real cost and should not be paid silently for one check.
+
+### Two bugs found by running it
+
+* **A 406 that read as "unreachable".** The first draft sent GitHub's
+  `Accept: application/vnd.github+json` to PyPI's integrity endpoint, which rejects it. The
+  publisher check degraded to unverifiable and the run still exited 0 — a check that had
+  stopped checking. The `Accept` header is now per-host.
+* **A GitHub token was being sent to PyPI.** The `Authorization` header was attached to every
+  request. A credential sent to a host that did not ask for it is a credential leaked to it.
+
+### Scope
+
+It detects **drift** — a setting changed by hand, a reviewer list emptied, a rule dropped during
+unrelated repo surgery. It does not defend against someone who can edit this repository, because
+they can edit the check. Same self-referential limit `RELEASING.md` analyses for the publisher
+binding, same answer: what survives an attacker with repo access is what PyPI and GitHub
+enforce, not the file asserting it.
+
+`tests/test_controls_check.py` — 30 tests exercising the classification offline, including each
+of the four branch-protection weakenings on its own, since checking only the first would pass a
+branch anyone can force-push over.
+
 ## 2026-08-28 — v0.30.8 (CI installs what this repository says it installs)
 
 Closes **#188** (T18). No runtime change; the whole of it is in `.github/` and `requirements/`.
