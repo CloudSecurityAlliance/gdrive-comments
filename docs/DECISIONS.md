@@ -18,6 +18,18 @@ Read a row, then read the thing it points at. Newest first.
 Where a decision was **corrected**, the correction is a row of its own rather than an edit. Being
 able to see that we believed something wrong is more useful than a clean record.
 
+## 2026-08-28 — the capability model mirrors Drive
+
+| Settled | Decision | Evidence | Superseded |
+|---|---|---|---|
+| 2026-08-28 | **The profiles are Google Drive's roles, named as the Drive API names them** — `reader`, `commenter`, `writer`, `fileOrganizer`, `organizer`. An operator already holds Google's model; a more precise one sharing none of its vocabulary makes them hold two and map between them | [Drive roles reference](https://developers.google.com/workspace/drive/api/guides/ref-roles); the UI labels Viewer / Commenter / Editor / Content manager / Manager | our own four-rung ladder (`reader`/`commenter`/`editor`/`full`), kept as aliases |
+| 2026-08-28 | **`file.share` stays on the ladder, at the top.** Drive's `writer` explicitly cannot share; sharing is reserved to Manager and Owner — so disclosure *is* a ladder property | Google's own role definitions | audit `2026-08-27-01` §5.3, which placed it orthogonal |
+| 2026-08-28 | **Viewing and downloading are not meaningfully different**, so the local-filesystem write gets no capability. A view-only document is defeated by screenshot + OCR; and for an injected agent it is not even effortful, because `read_file_content` already returned the text into its context. **Confidentiality is lost at read, not at write** | measured: all four profiles write a `.csv` to disk today, and the capability would gate the second copy after the first is already in the model's context | audit §5.2's `export.file` capability |
+| 2026-08-28 | **Bulk is not a capability.** `export_comments` and `apply_comment_actions` have no web-UI equivalent, but each can be emulated one call at a time with the same capabilities, so bulk confers no authority. Leverage is operational, not authorization | the tools' own capability requirements | treating "no UI equivalent" as evidence of privilege |
+| 2026-08-28 | **`content.active` is not a capability; the parameter is removed instead.** Any human Editor may type a formula in the browser and Google calls that `writer`, so the distinction is not Drive's — but `valueInputOption` comes off the MCP surface entirely, the way raw `batch_update` already is. Deleting an attack surface beats gating it | T15's residual: after 0.30.1 the only thing between an injected agent and formula evaluation was a docstring | audit §5.2's `content.active` capability |
+| 2026-08-28 | **`local.read` / `local.write` are data-handling switches, not capabilities.** They cannot contain confidential data, so filing them beside `file.share` would invite an operator to trust them for something they never did. What they are for is keeping review material inside the MCP client rather than on disk | the read-not-write argument above | classing every on/off control as a capability |
+| 2026-08-28 | **A code audit under-weights what a human will understand and adopt.** Audit §5 was sound at every step and its conclusion still did not hold, because it optimised for what an attacker can do rather than what an operator will configure correctly. Interface, vocabulary and defaults are security properties | three proposed capabilities dropped, and a fourth thing tightened that the audit had not proposed | reading an audit's recommendations as findings |
+
 ## 2026-08-25 — the MCP server's shape and its limits
 
 | Settled | Decision | Evidence | Superseded |

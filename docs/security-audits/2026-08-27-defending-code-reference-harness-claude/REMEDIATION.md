@@ -786,3 +786,118 @@ dropped or invented during adoption.
 cannot read as stronger than `partially_mitigated` while meaning less than `mitigated`), the §0
 accounting in both directions, the banner removed, provenance stated, and every relative link
 resolving from the repository root.
+
+---
+
+## #195 — the three-axis capability model, reworked (spec, 2026-08-28)
+
+The audit's §5 proposed three orthogonal axes — `content.active`, `export.file`, and taking
+`file.share` off the ladder — plus a `curator` rung. A design session with the CINO worked each
+one through and **none of them survived**, which is a better outcome than adopting them would
+have been. The replacement is in
+[`docs/superpowers/specs/2026-08-28-capability-model-mirrors-drive.md`](../../superpowers/specs/2026-08-28-capability-model-mirrors-drive.md).
+
+This section records *why*, because the audit's reasoning was sound at every step and its
+conclusion still did not hold. That gap is the useful part.
+
+### The audit optimised for the wrong thing, and it was not a security mistake
+
+§5 is a good piece of security analysis. It derives recoverability tiers, notices correctly that
+R0 — the tier with no recovery at all — is the tier the capability model barely covers, and
+proposes a structure that fixes it. Every step is defensible.
+
+What it did not do is ask **what an operator already believes about permissions on a Google
+file.** They believe Viewer, Commenter, Editor, Content manager, Manager — because Google taught
+them, and they use it daily. A model that is more precise than Drive's but shares none of its
+vocabulary makes every operator hold two models and map between them, and the mapping is where
+mistakes live. The most secure configuration nobody configures correctly is not secure.
+
+That is the general lesson, and it is worth stating plainly because this repository's history is
+mostly the opposite kind of finding: **a code audit optimises for what an attacker can do, and
+will reliably under-weight what a human will understand, adopt, and keep working.** Interface,
+vocabulary and defaults are security properties, not decoration around them. A control that is
+correct and unused loses to a coarser one that is understood — and this project already had the
+evidence in front of it, since its own README tells operators to set `CSA_GW_ALLOWLIST_READ="*"`
+because the fine-grained alternative is not what anyone wants.
+
+Taking that view is not a softening of the audit. It killed three proposed capabilities and
+tightened a fourth thing the audit had not proposed at all (removing `valueInputOption` from the
+MCP surface outright, rather than gating it).
+
+### Drive settles the `file.share` question against the audit
+
+§5.3 placed `file.share` off the ladder: *"'more privileged' does not imply 'may disclose'."*
+Reasonable — and **Google disagrees, in the most-used implementation of exactly this problem.**
+Drive's `writer` (Editor / Contributor) explicitly **cannot share**; sharing is reserved to
+`organizer` (Manager) and `owner`. So in Drive's model, disclosure *is* a ladder property, and it
+sits at the top.
+
+The audit's actual complaint — that `full` bundled R1 destruction with R0 disclosure, making
+*"may destroy comment history, may never share"* inexpressible — is real and is fixed, by adding
+Drive's own missing rung (`fileOrganizer` / Content manager) rather than by leaving the ladder.
+
+### `content.active` fails the mirroring test, and the better fix is deletion
+
+Any human with Editor can type `=IMPORTXML(...)` into Sheets in the browser. Google calls that
+`writer`. A capability distinguishing inert from evaluated content would be a distinction Drive
+does not have, invented by us.
+
+But T15's residual is real: after 0.30.1 the default is `RAW`, and `valueInputOption` remains a
+tool parameter, so the only thing between an injected agent and server-side formula evaluation is
+a docstring saying *do not pass `USER_ENTERED`* — an instruction to the model, on a surface whose
+whole premise is that content can instruct the model.
+
+**Resolution: remove the parameter from the MCP tool surface entirely.** The tools always send
+`RAW`; the library keeps it for an embedder who has decided. Not a new axis — the pattern already
+in use, since raw `batch_update` is withheld from MCP while the library exposes it. *Deleting an
+attack surface beats gating it*, and this is stricter than what §5 proposed.
+
+### `export.file` fails because viewing and downloading are not meaningfully different
+
+§5 wanted a capability for the local-filesystem write, on the measured fact that `PROFILE=reader`
+writes a `.csv` to disk. The measurement is correct — verified during this session, all four
+profiles write to disk, because the local-write path is not in the capability model at all.
+
+Under Drive's model that is **not a defect**: a Viewer may obtain a copy, and browser download is
+a Viewer action. The remaining objection was observability — a browser download raises a Drive
+download event that is audit-loggable and DLP-interceptable, while an API read plus a local write
+raises no Drive-side event (this is T7).
+
+The CINO's argument, and it is correct: **the view/download boundary has been fiction for years.**
+A view-only document is defeated by screenshotting and running OCR, reconstructing the text and
+formatting without ever raising a download event. The event records a ritual, not a boundary — a
+design distinction that made sense when reconstructing a document from pixels was expensive.
+
+For this threat model it is stronger still. The adversary here is an **injected agent**, and it
+needs no screenshots: `read_file_content` already returned the full text into its context.
+Writing that text to disk gives it nothing it does not already hold.
+
+**Confidentiality is lost at read, not at write.** A capability on the write would gate the second
+copy after containment is already spent — a guard placed where it cannot act, which is the exact
+shape this repository keeps recording as a failure (`_norm` discarding a value before
+`decision()` saw it, #161; a docstring inviting the input a type rejected, #162).
+
+T7 therefore stays `partially_mitigated`, and the audit-trail gap stays real and unfixed. It is an
+R0 property — *nothing to recover, it was seen* — and R0 is not something a capability recovers.
+Naming that honestly is worth more than a control that implies otherwise.
+
+### What replaced them
+
+Two switches that are explicitly **not** capabilities: `local.read` and `local.write`, default on,
+never in `ALL_CAPABILITIES` and never granted or withheld by a profile. They cannot contain
+confidential data, for the reason above; presenting them beside `file.share` would invite an
+operator to believe switching them off prevents disclosure.
+
+They are **data-handling** controls — keep review material inside the MCP client rather than
+landing it on disk, where it persists outside the client's retention policy and can be re-read by
+anything with filesystem access. A real concern, and a different one from authorization. The
+distinction is in the spec in those words, because a control filed under the wrong heading is how
+an operator ends up trusting it for something it never did.
+
+### And bulk is not an axis either
+
+`export_comments` and `apply_comment_actions` have no web-UI equivalent — Drive has no bulk
+comment operation anywhere. That makes them convenient, not privileged: each can be emulated one
+call at a time with the same capabilities, so bulk confers **no authority a caller lacks**.
+Leverage is an operational property, not an authorization one. They map as reading comments and
+writing comments.
