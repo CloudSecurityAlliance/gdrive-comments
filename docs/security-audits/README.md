@@ -48,19 +48,19 @@ the read-to-act path was written afterwards. That gap was invisible until it was
 looked for, which is the reason this table exists.
 
 <!-- BEGIN GENERATED COVERAGE -->
-| group | files | first covered by |
-|---|---|---|
-| `src/csa_google_workspace/` — top level | 20 | 2026-08-27 · claude-code |
-| `documents/` — per-type content | 4 | 2026-07-22 · claude-code |
-| `mcp/` — server, auth flow, config, resources | 13 | 2026-08-27 · claude-code |
-| `mcp/_tools/` — the tool registrations | 11 | 2026-08-27 · claude-code |
-| `demo/` | 5 | 2026-08-27 · claude-code |
-| `tests/` as code | 98 | **not yet audited** |
-| `.github/workflows/` | 4 | **partial** — 3/4 at 2026-08-27 |
-| packaging and secret-scanning config | 3 | 2026-08-27 · claude-code |
-| `scripts/` | 4 | **not yet audited** |
-| `experiments/` | 12 | **not yet audited** |
-| `research/` | 6 | **not yet audited** |
+| group | first covered by |
+|---|---|
+| `src/csa_google_workspace/` — top level | 2026-08-27 · claude-code |
+| `documents/` — per-type content | 2026-07-22 · claude-code |
+| `mcp/` — server, auth flow, config, resources | 2026-08-27 · claude-code |
+| `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
+| `demo/` | 2026-08-27 · claude-code |
+| `tests/` as code | **not yet audited** |
+| `.github/workflows/` | **partial** — 3/4 at 2026-08-27 |
+| packaging and secret-scanning config | 2026-08-27 · claude-code |
+| `scripts/` | **not yet audited** |
+| `experiments/` | **not yet audited** |
+| `research/` | **not yet audited** |
 <!-- END GENERATED COVERAGE -->
 
 **Both tables above are generated** by `scripts/gen_audit_index.py` from each audit's

@@ -58,6 +58,17 @@ with the code. `SECURITY.md` says so, including that its old self-description wa
 was no other document and is the wrong claim now. It also stops implying the two 2026-07-22 audits
 are the whole record, and points at the generated index.
 
+### Also: the coverage table stopped churning on every PR
+
+Shipped in 0.30.10 with a standalone file-count column, which meant `--check` failed on any PR
+that added a test — the count moved, the verdict did not. A check that fails for uninteresting
+reasons gets regenerated reflexively instead of read, which is how a guard becomes a formality.
+This PR tripped it twice before the cause was worth fixing rather than working around.
+
+The count now appears only inside a `partial — n/m` verdict, which by definition means there *is*
+a gap. Verified both ways: adding a test file leaves the table untouched; adding a module to
+`src/` correctly flips its group to `partial` and fails `--check`.
+
 ### The guard
 
 `tests/test_threat_model.py` (15 tests) asserts **§0 accounts for every status differing from the
