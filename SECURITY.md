@@ -187,6 +187,24 @@ are not a boundary against anybody who holds the token.
 Both halves are true at once. For the **principal**, we add convenience and no risk. For the
 **deputy**, we add a decision path — and that is ours to own.
 
+### In one line
+
+**It is a simulator, a convenience, and a step in the right direction until there is better
+backend security.**
+
+Each clause is doing work, and the last one is a commitment rather than a hedge:
+
+- **A simulator** — it lets an agent act as a *less-privileged user than you are*.
+- **A convenience** — it makes "do less than I can" easy to ask for, which was previously not
+  askable at all.
+- **A step in the right direction** — partial, and honest about being partial.
+- **Until there is better backend security** — this layer exists because the durable one cannot
+  yet see what it needs to see. When it can, **this layer should shrink, not defend its
+  territory.** Projects rarely say that out loud and then rarely do it, so it is written here: if
+  Drive (or anything else) ships access decisions that factor in tool provenance and request
+  intention, the right response is to hand work over to it and delete code, not to keep a
+  parallel model alive for its own sake.
+
 ### The controls are a privilege simulator, not a fence
 
 The most useful way to read the profiles and allowlists: they let an agent **act as a
