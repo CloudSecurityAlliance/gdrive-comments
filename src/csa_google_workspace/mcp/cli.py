@@ -12,6 +12,7 @@ import os
 import sys
 from collections.abc import Mapping, Sequence
 
+from . import _logging
 from ._config import WorkspaceProvider, settings_from_env, startup_warnings
 from .server import create_server
 
@@ -73,6 +74,10 @@ environment:
 def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     env = os.environ if env is None else env
+    # Before anything else that might log, and here rather than in the library: only an
+    # application configures logging. See _logging for why this is twenty lines and not a
+    # subsystem - the client already persists our stderr.
+    _logging.configure(env)
     settings = settings_from_env(env)
 
     if argv and argv[0] in ("-h", "--help", "help"):

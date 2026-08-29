@@ -232,6 +232,22 @@ data, because by the time either runs the content is already in the model's cont
 | `CSA_GW_LOCAL_READ` | `apply_comment_actions` reading a register from this machine | on |
 | `CSA_GW_LOCAL_WRITE` | `export_comments` writing a `.csv`/`.xlsx`, and write-back of markers | on |
 
+### Diagnostics
+
+`CSA_GW_LOG_LEVEL` — `DEBUG` · `INFO` · `WARNING` (default) · `ERROR` · `CRITICAL`. Turn it up
+while reproducing a problem.
+
+**There is no log-file setting, deliberately.** Diagnostics go to stderr, and the MCP client
+already persists that — Claude Code keeps per-connection JSONL with a session id under
+`~/Library/Caches/claude-cli-nodejs/`, Claude Desktop keeps `~/Library/Logs/Claude/
+mcp-server-<name>.log`. Their copy survives this process crashing, which one written here would
+not, so writing our own would be the worse version of something you already have.
+
+**Raising the level raises detail about the _operation_, never the _content_.** More about which
+tool, which file id, what was refused and how long it took — never document or comment text. That
+matters because the client's capture lands in a cache directory nobody is watching, under its
+retention rather than yours.
+
 Turn them off to keep review material inside the MCP client rather than on disk, where it
 persists outside the client's retention policy. Not a disclosure control — see above.
 

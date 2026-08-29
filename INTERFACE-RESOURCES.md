@@ -80,7 +80,7 @@ it means installing it and importing it.
   `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a cached token carries its
   own client id and secret).
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.31.0.
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.31.1.
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a

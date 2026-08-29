@@ -162,10 +162,22 @@ means *subtract nothing; let Drive decide*.
 | `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile | a profile is nearly right and you need one capability off |
 | `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | writes are **on** | you want the narrowest possible posture in one variable |
 | `CSA_GW_LOCAL_READ` / `CSA_GW_LOCAL_WRITE` | whether registers may be read from and written to **this machine** | on | your data-handling policy says review material stays inside the client. **Not a disclosure control** — the content is in the model's context either way |
+| `CSA_GW_LOG_LEVEL` | how much goes to stderr — `DEBUG`…`CRITICAL` | `WARNING` | you are reproducing a problem. **There is no log-file setting**: your MCP client already persists our stderr — see below |
 
 A **malformed** list is refused loudly and the server will not start. Unset is an operator who
 has not narrowed anything; malformed is one who tried and failed, and widening that to every
 file would hand them the opposite of what they wrote.
+
+**On logs.** Turn `CSA_GW_LOG_LEVEL` up and the output goes to stderr, which your MCP client
+already captures and files — Claude Code keeps per-connection JSONL with a session id under
+`~/Library/Caches/claude-cli-nodejs/`, Claude Desktop keeps
+`~/Library/Logs/Claude/mcp-server-csa-google-workspace.log`. That copy survives this process
+crashing, which one written here would not, so there is deliberately no log-file setting.
+
+Raising the level raises detail about the **operation** — which tool, which file id, what was
+refused, how long it took — and never about **content**. No document or comment text is logged at
+any level, which matters precisely because that capture lands somewhere outside your retention
+policy and nobody is watching it.
 
 **The two allowlists are not symmetrical, and should not be set symmetrically.** Widening the
 read list exposes *content to a model*; widening the modify list exposes *your documents to
