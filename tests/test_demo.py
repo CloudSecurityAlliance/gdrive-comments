@@ -22,7 +22,6 @@ from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.demo import NOT_EXERCISED, Runner, build, coverage, render
 from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
-from csa_google_workspace.policy import Policy
 
 # A real, writable export directory for the whole module. The plan writes a register to disk,
 # and the default destination is `~/Downloads` - which exists on the machines the demonstration
@@ -143,17 +142,22 @@ def test_a_disabled_capability_is_skipped_not_failed():
     """The demonstration has to be runnable on a default install. Refusing to start would make
     the safest configuration the one that cannot be shown.
 
-    Since v0.21.0 the default is drawn on recoverability, so WHAT a default run skips changed:
-    it can now create files and trash them (both reversible) and cannot edit or delete a
-    comment or share a file (none of those can be undone). Asserted against the policy rather
-    than a hard-coded list, so it keeps testing the property if the grouping moves again."""
+    **The default no longer refuses anything (v0.31.0)**, so this runs against `commenter` — a
+    narrowed profile an operator might actually choose. The property under test never was "the
+    default refuses things"; it is that a *refused* capability produces a SKIP rather than a
+    failed run, and that needs some profile that refuses something.
+
+    Asserted against the profile's own capability set rather than a hard-coded list, so it keeps
+    testing the property if the grouping moves again."""
     backend = FakeBackend({})
     server = create_server(lambda: Workspace(backend), settings=settings_from_env(
         {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",
-         "CSA_GW_EXPORT_DIR": _EXPORT_DIR}))   # default profile
+         "CSA_GW_PROFILE": "commenter",
+         "CSA_GW_EXPORT_DIR": _EXPORT_DIR}))
     report = Runner(server).run(prefix="demo-test", folder_name="Demo",
                                 share_with="someone@example.com")
-    enabled = set(Policy.default().enabled)
+    from csa_google_workspace.policy import PROFILES
+    enabled = set(PROFILES["commenter"])
     gated = [o for o in report.outcomes if o.step.requires]
     assert gated, "the plan no longer exercises any gated tool"
 

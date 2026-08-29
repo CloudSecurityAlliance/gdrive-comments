@@ -10,6 +10,104 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.31.0 (the capability model is Google Drive's, and the defaults are open) — not released yet
+
+Closes **#195**, and with it the last issue from audit `2026-08-27-01`.
+[Spec](docs/superpowers/specs/2026-08-28-capability-model-mirrors-drive.md).
+
+**A minor rather than a patch**, because the defaults reverse. An install that today refuses
+everything because neither allowlist is set will, after upgrading, permit everything. Read the
+next section before upgrading an unconfigured deployment.
+
+### The profiles are Drive's roles
+
+| profile | Google's interface calls it | adds |
+|---|---|---|
+| `reader` | Viewer | — |
+| `commenter` | Commenter | comment · reply · resolve |
+| `writer` | Editor · Contributor | + content edits · create · rename/move · trash |
+| `fileOrganizer` | **Content manager** | + edit and delete comments |
+| `organizer` | Manager | + share |
+
+Named as the **Drive API** names them, because that is the string `get_file_permissions` returns —
+so the word in your configuration and the word in a tool result are the same word. An operator
+already holds Google's model of who may do what to a file; a more precise model sharing none of
+its vocabulary makes them hold two, and the mapping between them is where mistakes live.
+
+`editor` and `full` keep working as aliases of `writer` and `organizer`, with **identical**
+capability sets. Google's *interface* labels are refused rather than accepted, by naming the right
+word: `CSA_GW_PROFILE=manager` fails with *"`manager` is Google's interface label for the
+`organizer` role. Use `organizer`."* One accepted spelling is worth more than two.
+
+**`fileOrganizer` is new**, and it fixes the audit's actual complaint: `full` bundled comment
+destruction with disclosure, so *"may destroy comment history, may never share"* had no name.
+
+**Drive settled a question our own reasoning got wrong.** The audit proposed taking `file.share`
+*off* the ladder, since "more privileged" does not imply "may disclose". Google disagrees in the
+most-used implementation of this problem — its Writer explicitly **cannot share**, and sharing is
+reserved to Manager and Owner. Disclosure *is* a ladder property, at the top.
+
+### The defaults are open
+
+All ten capabilities on, both allowlists `*`. **Narrowing is what you configure.**
+
+The case is mostly already in this repository: the README told operators to set `READ="*"` and
+explained why, so the fail-closed default was contradicted by our own happy path; `THREAT_MODEL.md`
+§1 calls this layer *"deliberately narrow … not the primary layer and not intended to be"*, and a
+narrow secondary layer that bricks the tool on install is inconsistent with its own stated role.
+
+And the argument that makes it coherent rather than a retreat: **a capability enabled here is not
+a permission granted.** Every call runs as the authorizing user against Google's ACLs —
+`organizer` on a file where that user is only a Commenter still cannot edit it. This model is a
+ceiling **below** Drive's, never an expansion, so "everything on" means *subtract nothing; let
+Drive decide*.
+
+`file.share` is included. It was argued for exclusion — not on the get-work-done path, so enabling
+it removes no real friction, while being the only capability whose effect leaves the organisation.
+Overruled deliberately, and the counter-argument is recorded in the spec rather than dropped.
+
+**A malformed list is still refused, loudly, and the server will not start.** Unset is an operator
+who has not narrowed anything; malformed is one who tried and failed, and widening that to every
+file would hand them the opposite of what they wrote. That distinction carries the whole reversal.
+
+**`PolicyBackend` still fails closed on an unlisted `Backend` method.** A code-safety invariant,
+not a posture, and asserted separately so it cannot be simplified away alongside the default.
+
+### Two switches that are not capabilities
+
+`CSA_GW_LOCAL_READ` and `CSA_GW_LOCAL_WRITE`, default on, absent from `ALL_CAPABILITIES` and
+granted by no profile. They **cannot** contain confidential data — by the time either runs the
+content is already in the model's context, because `read_file_content` put it there.
+Confidentiality is lost at *read*, not at write. Filing them beside `file.share` would invite an
+operator to believe switching them off prevents disclosure.
+
+What they are for: keeping review material inside the MCP client rather than on disk, where it
+persists outside the client's retention policy. A data-governance concern, and a real one — just
+not the same concern as authorization. An unrecognised value is an error rather than a guess,
+because the failure mode of guessing is somebody believing they switched something off.
+
+### Consequences carried out
+
+**T1 rescored** in `THREAT_MODEL.md` §0, as #197 required if the interim posture stopped being
+interim. The rating stays `risk_accepted`; the *basis* changed from "temporary, with a documented
+1.0.0 path" to "permanent by design". Its consequence is undiminished and says so.
+
+**The v0.30.7 reversibility invariant is restated, not deleted.** It tied "described as
+irreversible" to `DEFAULT_DISABLED`; with nothing off by default that would compare against an
+empty set and pass vacuously, which is worse than failing. Recoverability no longer decides what
+is ON — it still orders the ladder, and the assertion now says so.
+
+### Fixed while building it
+
+`resolve_profile` lowercased its input and compared against the raw keys, so `fileOrganizer` —
+Drive's camelCase spelling, and the documented name — was rejected as unknown. Caught by
+parametrizing the test over every profile name.
+
+Twenty tests encoded the old posture and were rewritten in place with the reversal explained,
+rather than deleted. Several moved to the path that still reaches the behaviour: `Scope.nothing()`
+is now unreachable from the environment, so the tests that cover its messaging construct it through
+the DI seam — deleting them would drop the message from coverage rather than retire it.
+
 ## 2026-08-28 — v0.30.14 (a share can be taken back)
 
 Closes **#235**. The unusual case of a **mutating capability that makes the surface safer**.

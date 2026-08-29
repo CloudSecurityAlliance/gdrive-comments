@@ -210,11 +210,19 @@ class TestANarrowAllowlist:
         guarded = self.all_capabilities_one_file()
         assert guarded.get_file_metadata(OUT)["id"] == OUT
 
-    def test_an_empty_modify_list_refuses_everything_file_scoped(self):
-        """Unset means nothing, not everything - the fail-closed property."""
-        files = {IN: {"id": IN, "name": "in", "mimeType": DOC_MIME}}
+    def test_a_narrowed_modify_list_refuses_a_file_outside_it(self):
+        """**Rewritten for the v0.31.0 defaults.** This asserted that an *unset* modify list
+        refuses everything; unset now means every file.
+
+        The property worth holding is the one the allowlist exists for, and it is unchanged: a
+        file the operator did NOT list cannot be changed, whatever the capabilities say. Tested
+        with an explicit narrow list, which is what an operator who wants this now writes."""
+        files = {IN: {"id": IN, "name": "in", "mimeType": DOC_MIME},
+                 OUT: {"id": OUT, "name": "out", "mimeType": DOC_MIME}}
         policy = policy_from_env({"CSA_GW_CAPABILITIES": "all",
-                                  "CSA_GW_ALLOWLIST_READ": "*"})
+                                  "CSA_GW_ALLOWLIST_READ": "*",
+                                  "CSA_GW_ALLOWLIST_MODIFY": f"https://docs.google.com/document/d/{IN}/edit"})
         guarded = PolicyBackend(FakeBackend(files), policy)
+        guarded.trash_file(IN)                      # listed
         with pytest.raises(exc.ReadOnlyError):
-            guarded.trash_file(IN)
+            guarded.trash_file(OUT)                 # not listed

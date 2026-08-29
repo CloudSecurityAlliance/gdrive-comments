@@ -12,12 +12,12 @@
 >
 > **Threat text is as the audit wrote it. The `status` column is current** — see §0.
 
-## 0. Status since the audit (v0.28.0 → v0.30.10)
+## 0. Status since the audit (v0.28.0 → v0.31.0)
 
-**Thirteen rows have moved status.** Two more — T13 and T19 — had real work done that did *not*
-move their status, and are listed anyway so the work is visible and the remaining gap is stated;
-partial-to-partial is a legitimate outcome and hiding it would make the table look like a
-scoreboard.
+**Thirteen rows have moved status.** Three more — T1, T13 and T19 — had real work done or a
+changed basis that did *not* move their status, and are listed anyway so the work is visible and
+the remaining gap is stated; partial-to-partial is a legitimate outcome and hiding it would make
+the table look like a scoreboard.
 
 The threat descriptions, ratings, actors and evidence are **unchanged** from the audit: what a
 threat *is* did not change because it was fixed, and rewriting the description would destroy the
@@ -28,6 +28,7 @@ rather than here, so the flaw trail and the fix trail stay independently reviewa
 
 | id | was | now | what changed | release |
 |---|---|---|---|---|
+| T1 | risk_accepted | risk_accepted | **Its basis changed and the rating did not.** `CSA_GW_ALLOWLIST_READ="*"` was accepted as *"a deliberate interim posture with a documented 1.0.0 path"*. v0.31.0 made it the **permanent default** — it is no longer interim, and there is no 1.0.0 path to a narrower default because narrowing is now what an operator configures. See the note below | 0.31.0 |
 | T3 | unmitigated | **mitigated** | `release.yml` split in two: the job holding `id-token: write` runs one action against downloaded artifacts, checks out nothing, and executes no project or dependency code | 0.30.4 |
 | T9 | unmitigated | **mitigated** | `read_only=True` now refuses a cached write-scoped token and derives its own `token.readonly.json` | 0.30.3 |
 | T13 | partially_mitigated | partially_mitigated | Suffix enforced on write-back. The rest of the export path's inertness was **deliberately not** copied — `never-overwrite` cannot apply when overwriting the register is the job, `export_dir` confinement would break the documented reviewer flow, and the temp file must share the target's filesystem for an atomic rename | 0.30.6 |
@@ -61,11 +62,31 @@ Refusing `USER_ENTERED` unless an operator names a capability would make it one.
 capability-model change and belongs with **#195**, not smuggled into an adoption commit. Recorded
 here so the gap is visible rather than implied by a status of `mitigated` it has not earned.
 
+### T1: the same rating, a different reason
+
+#197 required that if the interim posture stopped being interim, T1 be **rescored rather than
+carried forward unchanged**. It has, and this is that.
+
+The rating stays `risk_accepted`, because the acceptance is still deliberate and still bounded by
+the same four controls. What changed is the *basis*. It was accepted as a temporary state with a
+route out of it; it is now the permanent default, and the route out was not taken — it was
+rejected, for reasons recorded in `policy.DEFAULT_ENABLED` and in `SECURITY.md`.
+
+The argument that makes that defensible, and the one a later reader should weigh: **a capability
+enabled here is not a permission granted.** Every call runs as the authorizing user against
+Drive's ACLs, so this model is a ceiling *below* Drive's and never an expansion of it. A wide read
+allowlist does not widen what the identity can reach; it declines to narrow it. The blast radius
+T1 describes is set by the Google account, and always was.
+
+What this does **not** do is reduce T1's consequence. With reads unrestricted by default, an
+injection landing anywhere still reaches every file the identity can see — that is exactly what
+the row says, and it remains true and unmitigated by anything in this repository. The honest
+change is that we have stopped describing the fix as pending.
+
 ### What has *not* changed
 
-**T1 is carried forward unchanged**, as #197 required: `CSA_GW_ALLOWLIST_READ="*"` remains a
-deliberate interim posture with a documented 1.0.0 path, not a defect, and it is scored
-`risk_accepted` on that basis. **T2 is unchanged** and remains the highest row — it is the
+**T1 keeps its rating and loses its "interim" framing** — see above. It is scored
+`risk_accepted` because the acceptance is deliberate and bounded, not because a fix is pending. **T2 is unchanged** and remains the highest row — it is the
 project's named primary risk, and none of the work above narrows who decides.
 
 The nineteen rows not listed in §0 keep the audit's status. Absence from that table means *not

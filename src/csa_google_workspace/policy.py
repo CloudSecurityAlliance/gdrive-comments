@@ -56,35 +56,53 @@ ALL_CAPABILITIES = (COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COMMENT_EDIT
                     COMMENT_DELETE, CONTENT_WRITE, FILE_CREATE, FILE_UPDATE, FILE_TRASH,
                     FILE_SHARE)
 
-# --- the line the defaults are drawn on: CAN THIS BE UNDONE? -----------------------------
+# --- the default: EVERYTHING ON, and the documentation's job is how to narrow it ----------
 #
-# Until v0.21.0 the default set was "whatever this library already did", which put the two
-# IRREVERSIBLE operations inside the default profile and left a REVERSIBLE one outside it.
-# Stated as a table, the inversion is obvious:
+# Reversed 2026-08-28 (v0.31.0). Until then the default was "everything reversible" and both
+# allowlists failed closed, so an unconfigured install refused every operation. The reasons for
+# reversing it are mostly already written in this repository:
 #
-#   operation        recoverable?  how
-#   content.write    yes           Drive revision history; restorable in the UI
-#   comment.resolve  yes           reopen, and it leaves a visible reply either way
-#   file.create      n/a           nothing existing to damage
-#   file.update      yes           rename/move back by hand
-#   file.trash       yes, 30 days  Drive trash; the USER can restore it themselves
-#   comment.edit     NO            Google keeps no visible edit history. Previous text gone.
-#   comment.delete   NO            the soft delete strips content AND author. Gone.
-#   file.share       NO, in effect the grant is revocable; a copy the recipient took is not
+#   * The README already told operators to set `CSA_GW_ALLOWLIST_READ="*"`, and explained why
+#     the fine-grained alternative is not what anyone wants. The fail-closed default was
+#     contradicted by our own documented happy path; what it reliably produced was a setup step.
+#   * `THREAT_MODEL.md` §1 names Drive as the PRIMARY control layer and this one as "defense in
+#     depth, deliberately narrow ... not the primary layer and not intended to be". A
+#     deliberately-narrow secondary layer that bricks the tool on install is inconsistent with
+#     its own stated role.
+#   * Somebody installing a Google Workspace MCP server intends to do Google Workspace things.
+#     A control every operator disables during setup is not a control; it is a support burden
+#     that additionally teaches people to paste `*` without reading.
 #
-# "Content edits are versioned, so editing is safe" is true of DOCUMENT CONTENT and false of
-# COMMENTS - which is exactly the assumption the old grouping encoded. So the default now
-# means *everything that can be undone*, and the irreversible three sit together in `full`.
+# AND THE ARGUMENT THAT MAKES IT COHERENT RATHER THAN A RETREAT: a capability we enable is not a
+# permission we grant. Every call still executes as the authorizing user against Google's ACLs -
+# `organizer` on a file where that user is merely a Commenter still cannot edit it, because the
+# API returns 403 and nothing here changes that. This model is a CEILING BELOW DRIVE'S, never an
+# expansion of it, so "everything on" means *subtract nothing; let Drive decide*.
 #
-# There is no permanent delete anywhere in this library, deliberately, and no capability that
-# empties the trash. The worst a `full` install can do to a file is put it in the trash, where
-# its owner can see it and restore it.
-DEFAULT_ENABLED = frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
-                             FILE_CREATE, FILE_UPDATE, FILE_TRASH})
+# `file.share` is included. It was argued for exclusion - not on the get-work-done path, so
+# enabling it removes no real friction, while being the only capability whose effect leaves the
+# organisation and cannot be recalled. Overruled deliberately by the CINO: Drive owns sharing
+# policy, and an organisation that cares has sharing restrictions, target audiences and DLP
+# available there. Recorded because a default that was argued about is worth being able to find.
+#
+# WHAT DID NOT CHANGE: `PolicyBackend` still fails closed on an unlisted `Backend` method. That
+# is a code-safety invariant, not a posture, and must not be simplified away alongside this.
+#
+# The recoverability ordering that used to draw this line still exists and still matters - it is
+# what `CAPABILITY_NOTES` records and what orders the profiles above. It no longer decides what
+# is ON, only what an operator is told when choosing what to switch OFF.
+DEFAULT_ENABLED = frozenset(ALL_CAPABILITIES)
 
-# Off by default: the two Google gives you no way to undo, and the one that sends data out of
-# the organisation.
-DEFAULT_DISABLED = frozenset({COMMENT_EDIT, COMMENT_DELETE, FILE_SHARE})
+# Kept as a name because the docs, the config resource and the profile ladder all refer to "the
+# three you cannot take back". They are no longer off by default; they are the three an operator
+# most often wants to remove, and `organizer` is the only profile that includes them.
+IRREVERSIBLE = frozenset({COMMENT_EDIT, COMMENT_DELETE, FILE_SHARE})
+
+# Nothing is off by default any more (see above). Kept as an empty set rather than deleted,
+# because it is part of the public surface and something may still ask "what is disabled?" - the
+# honest answer is now "nothing, unless you said so". `IRREVERSIBLE` carries what this used to
+# mean: the three an operator most often wants to remove.
+DEFAULT_DISABLED: frozenset[str] = frozenset()
 
 # What each capability lets an install do, and whether Google gives you a way to undo it.
 #
@@ -111,34 +129,112 @@ CAPABILITY_NOTES: dict[str, tuple[str, str]] = {
     FILE_SHARE:      ("share a file with someone else", "NO, in effect - a copy taken is not revocable"),
 }
 
-# Named capability sets, so "what may this install do?" has an answer shorter than a list.
+# Named capability sets, mirroring GOOGLE DRIVE'S OWN ROLES.
+#
+# Named as the Drive API names them - `reader`, `commenter`, `writer`, `fileOrganizer`,
+# `organizer` - rather than with a vocabulary of our own. An operator already holds Google's
+# model of who may do what to a file, because Google taught them and they use it daily. A more
+# precise model sharing none of its words makes them hold two and map between them, and the
+# mapping is where mistakes live.
+#
+# It is also externally validated in a way our own reasoning was not. The v0.21.0 rework drew
+# the line on "can this be undone?" and got a better answer than the verb-alarm ordering it
+# replaced - but that was one project's reasoning. Drive's roles are the same problem solved at
+# enormous scale, and they agree on the point that matters: WRITER CANNOT SHARE. Google
+# withholds sharing from Editor and reserves it for Manager and Owner.
+#
+# The API string is what the config accepts, because it is what `get_file_permissions` returns -
+# so the word in the configuration and the word in a tool result are the same word. UI labels
+# are documented and REDIRECTED (see `mcp/_config.py`), never silently accepted.
 #
 # Profiles cover *capabilities only*. The file allowlists are not profiled and never will be:
 # which documents a deployment may touch is inherently specific to that deployment, and a
 # named default for it would be a named default for "which of your files an agent may change".
 # That is the one thing nobody else gets to decide.
+#
+# Spec: docs/superpowers/specs/2026-08-28-capability-model-mirrors-drive.md
 PROFILES: dict[str, frozenset[str]] = {
-    # Read and report. Cannot change anything, whatever the allowlists say.
+    # Viewer. Read and report; may also obtain copies, exactly as Drive's Viewer may download.
     "reader": frozenset(),
-    # Join the conversation: comment, reply, resolve. Every one of those is additive, and
-    # resolve leaves a visible reply rather than a silent flag. Cannot alter document content
-    # and cannot touch the file itself.
+    # Commenter. Additive only, and `resolve` leaves a visible reply rather than a silent flag.
     "commenter": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE}),
-    # EVERYTHING REVERSIBLE. Content edits (revision history), new files, rename/move, and
-    # trash - which is 30 days in a bin the file's owner can see and empty themselves.
+    # Writer - Drive's "Editor" in My Drive, "Contributor" in a shared drive. Everything
+    # reversible: content edits (revision history), new files, rename/move, and trash.
     #
-    # `file.trash` being here is what lets a deployment CLEAN UP AFTER ITSELF. Without it an
-    # agent that creates a working file has no way to remove it, so the litter accumulates in
-    # somebody's Drive and the only tool that could tidy it is off. That was the state until
-    # v0.21.0 and it was a worse outcome than the one the restriction was protecting against.
-    "editor": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
+    # DELIBERATELY WIDER THAN DRIVE'S WRITER. Drive's Writer cannot reorganize a shared drive or
+    # delete from it; that constraint exists because Drive folders have owners and hierarchy,
+    # while our "move" is a rename and our "trash" is the user's own bin. Narrowing to match
+    # would undo a v0.21.0 decision made on evidence: without `file.trash` an agent that creates
+    # a working file cannot clean up after itself, so litter accumulates in somebody's Drive
+    # with the only tool that could tidy it switched off. Mirror the shape and the names; do not
+    # import a constraint whose premise we do not share.
+    "writer": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
                          FILE_CREATE, FILE_UPDATE, FILE_TRASH}),
-    # EVERYTHING YOU CANNOT TAKE BACK. Editing a comment (no edit history), deleting one
-    # (content and author stripped), and sharing (the grant is revocable, a copy is not).
-    "full": frozenset(ALL_CAPABILITIES),
+    # fileOrganizer - Drive's "Content manager": contribute AND MANAGE content.
+    #
+    # This rung is what makes "may destroy comment history, may never share" expressible. Before
+    # it, `full` bundled R1 destruction with R0 disclosure and that posture had no name.
+    # `comment.edit` and `comment.delete` sit here on recoverability: Drive has NO comment-level
+    # restore (verified), and the soft delete strips content AND author.
+    "fileOrganizer": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
+                                FILE_CREATE, FILE_UPDATE, FILE_TRASH,
+                                COMMENT_EDIT, COMMENT_DELETE}),
+    # organizer - Drive's "Manager": files, folders, PEOPLE and settings. Adds the one action
+    # whose effect leaves the organisation and cannot be recalled once a copy is taken.
+    "organizer": frozenset(ALL_CAPABILITIES),
 }
-# `editor` is exactly `DEFAULT_ENABLED`. `tests/test_policy.py` holds them together — not an
-# `assert` here, which bandit rightly flags and `python -O` strips.
+
+# Our earlier vocabulary, kept working. Identical sets, not approximations - `test_policy.py`
+# asserts the frozensets are the same object-equal value, so an alias cannot drift into meaning
+# something slightly different from what it aliases.
+PROFILE_ALIASES: dict[str, str] = {
+    "editor": "writer",     # what `writer` was called here before v0.31.0
+    "full": "organizer",    # ditto, and `organizer` is still every capability
+}
+
+# Google's UI labels. NOT accepted as configuration values - a config with two spellings for
+# every value is a config whose meaning depends on which vocabulary the author happened to know.
+# They are recognised only so a refusal can name the right value instead of listing all five.
+UI_LABELS: dict[str, str] = {
+    "viewer": "reader",
+    "contributor": "writer",
+    "content manager": "fileOrganizer",
+    "contentmanager": "fileOrganizer",
+    "manager": "organizer",
+    "owner": "organizer",   # the ceiling here; this library has no permanent delete
+}
+
+
+def resolve_profile(name: str) -> str:
+    """Config spelling -> profile key, or `ValueError` naming the right word.
+
+    Three outcomes, and the third is why this is a function rather than a dict lookup: an
+    operator who writes `manager` has not made a typo, they have used Google's own UI label. A
+    bare "unknown profile" would send them to the documentation to discover that the thing they
+    already know is called something else here.
+    """
+    key = name.strip().lower()
+    # Case-insensitively against the real keys, because one of them is camelCase.
+    # `fileOrganizer` is Drive's own spelling and `key` is lowercased, so a plain `in PROFILES`
+    # never matched it — an operator typing the documented name got "not a known profile".
+    for canonical in PROFILES:
+        if canonical.lower() == key:
+            return canonical
+    if key in PROFILE_ALIASES:
+        return PROFILE_ALIASES[key]
+    if key in UI_LABELS:
+        target = UI_LABELS[key]
+        extra = ("" if key != "owner" else
+                 " (this library has no permanent delete, so `organizer` is the ceiling)")
+        raise ValueError(
+            f"{name!r} is Google's interface label for the {target!r} role. "
+            f"Use {target!r}{extra}.")
+    raise ValueError(
+        f"{name!r} is not a known profile. Choose one of: "
+        f"{', '.join(PROFILES)}. These are Google Drive's own role names — "
+        f"Viewer, Commenter, Editor/Contributor, Content manager, Manager. "
+        f"Or set CSA_GW_CAPABILITIES to an explicit list instead.")
+
 
 READ = "read"
 MODIFY = "modify"

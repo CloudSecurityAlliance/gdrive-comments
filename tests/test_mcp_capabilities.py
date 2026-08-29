@@ -52,7 +52,7 @@ def test_the_reachable_set_never_exceeds_what_exists():
     capability, or for one the profile does not grant."""
     from csa_google_workspace.policy import PROFILES
     assert reachable_capabilities() <= set(ALL_CAPABILITIES)
-    assert reachable_capabilities() <= PROFILES["full"]
+    assert reachable_capabilities() <= PROFILES["organizer"]
 
 
 def test_describe_configuration_separates_enabled_from_reachable():
@@ -86,7 +86,7 @@ def test_unrestricted_is_distinguishable_from_empty():
     assert out2["modify_unrestricted"] is False and len(out2["modifiable_file_ids"]) == 1
 
 
-def test_the_editor_profile_is_now_fully_reachable():
+def test_the_writer_profile_is_fully_reachable():
     """The gap is closed: every capability the default profile enables has a tool behind it.
 
     This started as a test that the *gap was reported*, which is why the reporting exists. It
@@ -94,7 +94,7 @@ def test_the_editor_profile_is_now_fully_reachable():
     actually worth holding — and the reporting machinery still earns its keep for `full`, whose
     file.update/trash/share have no tools and are not planned to."""
     from csa_google_workspace.policy import PROFILES
-    assert PROFILES["editor"] <= reachable_capabilities()
+    assert PROFILES["writer"] <= reachable_capabilities()
 
     app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(ENV))
     out = asyncio.run(app.call_tool("describe_configuration", {})).structured_content

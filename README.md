@@ -147,13 +147,25 @@ This library needs full `drive` scope by design — it opens arbitrary files the
 `drive.file` cannot reach (`SECURITY.md`, *Scope breadth*). Having given up Google's upstream
 enforcement, it owes you an equivalent, and these are it.
 
-| Variable | Bounds | Unset | Widened all the way, that exposes |
+**Everything is on out of the box; narrowing is what you configure.** That is deliberate, and
+the reason it is coherent rather than a shrug: **a capability enabled here is not a permission
+granted.** Every call still runs as you, against Google's own ACLs — `organizer` on a file where
+you are merely a Commenter still cannot edit it, because the API returns 403 and nothing here
+changes that. This is a ceiling *below* Drive's, never an expansion of it, so "everything on"
+means *subtract nothing; let Drive decide*.
+
+| Variable | Bounds | Unset | Narrow it when |
 |---|---|---|---|
-| `CSA_GW_ALLOWLIST_READ` | which files may be **read** | **nothing** — fail closed | `*`: every file the authorized account can open — including ones merely *shared with* it, and shared drives it is a member of. Not just what you had in mind when you installed this |
-| `CSA_GW_ALLOWLIST_MODIFY` | which files may be **changed, added to or deleted** | **nothing** — fail closed | `*`: every file that account can edit. This is the one to leave narrow — see below |
-| `CSA_GW_PROFILE` | **what kind** of mutation, by name — `reader`, `commenter`, `editor`, `full` | `editor` | `full`: the three operations nothing undoes — edit a comment, delete a comment, share a file |
-| `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile | whatever you name, *ignoring the profile*. Naming one capability to unblock one task is how an install ends up more permissive than the profile it appears to be running |
-| `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | writes are **on** | — (this only ever narrows) |
+| `CSA_GW_ALLOWLIST_READ` | which files may be **read** | **every file** | you want the agent seeing less than you can — a project, a working set |
+| `CSA_GW_ALLOWLIST_MODIFY` | which files may be **changed, added to or deleted** | **every file** | almost always. This is the one worth a short explicit list — see below |
+| `CSA_GW_PROFILE` | **what kind** of mutation, by name — see the table below | everything on | you want an unattended run acting as a commenter rather than as yourself |
+| `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile | a profile is nearly right and you need one capability off |
+| `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | writes are **on** | you want the narrowest possible posture in one variable |
+| `CSA_GW_LOCAL_READ` / `CSA_GW_LOCAL_WRITE` | whether registers may be read from and written to **this machine** | on | your data-handling policy says review material stays inside the client. **Not a disclosure control** — the content is in the model's context either way |
+
+A **malformed** list is refused loudly and the server will not start. Unset is an operator who
+has not narrowed anything; malformed is one who tried and failed, and widening that to every
+file would hand them the opposite of what they wrote.
 
 **The two allowlists are not symmetrical, and should not be set symmetrically.** Widening the
 read list exposes *content to a model*; widening the modify list exposes *your documents to
@@ -165,15 +177,24 @@ is not, and `*` on both is the configuration this section exists to talk you out
 
 **Profiles**, so "what may this install do?" has a short answer:
 
-| Profile | May |
-|---|---|
-| `reader` | nothing — read and report only, whatever the allowlists say |
-| `commenter` | comment, reply, resolve. All additive, and resolve leaves a visible reply |
-| `editor` | **everything reversible** — the above, plus edit content, create files, rename/move, and trash |
-| `full` | **everything you cannot take back** — the above, plus edit a comment, delete a comment, and share |
+**These are Google Drive's own roles, named as the Drive API names them** — so the word in your
+configuration is the word `get_file_permissions` returns, and you are not holding two models.
 
-**The line is drawn on one question: can this be undone?** Not on how alarming the verb
-sounds, which is where it used to be drawn and which had it backwards.
+| Profile | Google's interface calls it | May |
+|---|---|---|
+| `reader` | Viewer | nothing — read and report only. May still obtain copies, exactly as Drive's Viewer may download |
+| `commenter` | Commenter | comment, reply, resolve. All additive, and resolve leaves a visible reply |
+| `writer` | Editor · Contributor | the above, plus edit content, create files, rename/move, and trash |
+| `fileOrganizer` | Content manager | the above, plus edit and delete comments — **"may destroy comment history, may never share"** |
+| `organizer` | Manager | everything, including share |
+
+`editor` and `full` still work, as aliases of `writer` and `organizer` with identical capability
+sets. Google's *interface* labels are **not** accepted — `CSA_GW_PROFILE=manager` fails and tells
+you to use `organizer`, because one accepted spelling is worth more than two.
+
+**Within the ladder, the order is drawn on one question: can this be undone?** Not on how
+alarming the verb sounds, which is where it used to be drawn and which had it backwards. Drive
+agrees on the part that matters: its Writer cannot share either.
 
 | Operation | Recoverable? | How |
 |---|---|---|
@@ -202,22 +223,30 @@ would be a named default for *"which of your files an agent may change"*.
 Each is a ceiling and none can widen another: a capability that is off cannot be reached by
 listing a file, and a file outside `MODIFY` cannot be reached by enabling a capability.
 
-**The usual posture** — reads as broad as the other two servers, writes narrow:
+**Nothing is required.** Install it and it works, with the same reach you have. If that is what
+you want, there is no configuration section for you.
+
+**A worked example of narrowing**, for an unattended job that should comment on two documents
+and change nothing else:
 
 ```jsonc
 { "mcpServers": { "csa-google-workspace": {
   "command": "csa-google-workspace-mcp",
   "env": {
-    "CSA_GW_ALLOWLIST_READ": "*",
     "CSA_GW_ALLOWLIST_MODIFY": "https://docs.google.com/document/d/AAA…/edit  # CCM mapping\nhttps://docs.google.com/spreadsheets/d/BBB…/edit  # AICM tracker",
     "CSA_GW_PROFILE": "commenter"
   }
 } } }
 ```
 
-`READ=*` is deliberate rather than lazy: the agent already sees whatever your credentials see,
-so the thing worth bounding is what it can **break**. That is also what Google's and Anthropic's
-servers do — they simply have no way to narrow it.
+Reads are left wide here on purpose: the agent already sees whatever your credentials see, so the
+thing worth bounding is what it can **break**. That is also what Google's and Anthropic's servers
+do — they simply have no way to narrow it.
+
+The right reason to write any of this is *"I want this agent doing less than I can"* — scoping a
+project, bounding an unattended run, keeping an experiment away from production documents. It is
+**not** *"this is how my data is secured"*: anyone who can edit this configuration can also call
+the Drive API directly. See [`SECURITY.md`](./SECURITY.md).
 
 **The list lives in the configuration — there is no allowlist file.** That is a deliberate
 restriction, not a missing feature: the client config is the artifact you control and can *see*,

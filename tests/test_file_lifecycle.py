@@ -90,15 +90,25 @@ class TestTheLibrary:
 class TestTheBounds:
     """Two independent gates, and neither can be widened from inside."""
 
-    def test_share_is_off_under_the_default_policy(self):
-        """Of the three, `share` is the one the default refuses - and since v0.21.0 the reason
-        is stated as recoverability rather than as "these three are dangerous". A permission
-        grant is revocable; a copy the recipient already took is not, so sharing cannot be
-        undone in the sense that matters. Rename and trash both can, which is why they moved
-        into the default; see tests/test_policy.py."""
-        document = Workspace(PolicyBackend(FakeBackend(files()), Policy.default())).open(DOC)
-        with pytest.raises(exc.ReadOnlyError):
-            document.share("someone@example.com")
+    def test_share_is_on_by_default_and_off_below_organizer(self):
+        """**REVERSED in v0.31.0.** The default used to refuse `share`; it now permits
+        everything, and `file.share` was included deliberately after being argued about.
+
+        The recoverability reasoning did not change and is not gone: a grant is revocable, a
+        copy the recipient already took is not, so sharing cannot be undone in the sense that
+        matters. That is why it sits on the **top rung** and why it is the first thing an
+        operator narrowing this configuration removes — `writer` and `fileOrganizer` both
+        refuse it, and this asserts both halves so the reversal cannot be read as the ladder
+        collapsing too."""
+        from csa_google_workspace.policy import PROFILES
+        default = Workspace(PolicyBackend(FakeBackend(files()), Policy.default())).open(DOC)
+        default.share("someone@example.com")     # permitted: nothing is off by default
+
+        for profile in ("writer", "fileOrganizer"):
+            narrowed = Workspace(PolicyBackend(
+                FakeBackend(files()), Policy(enabled=PROFILES[profile]))).open(DOC)
+            with pytest.raises(exc.ReadOnlyError):
+                narrowed.share("someone@example.com")
 
     @pytest.mark.parametrize("action", ["rename", "trash"])
     def test_rename_and_trash_are_permitted_by_the_default_policy(self, action):

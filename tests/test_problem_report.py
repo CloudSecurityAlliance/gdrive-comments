@@ -63,11 +63,16 @@ def test_scopes_are_described_by_shape_not_content():
     assert out["modify_scope"] == "1 file"
 
 
-def test_a_closed_scope_says_so_rather_than_looking_empty():
-    """"nothing" and "unset" are the same shape and very different problems; the report has to
-    make the fail-closed case legible, because that is what most refusals actually are."""
-    out = call({"CSA_GW_ALLOWLIST_READ": "*"})       # modify unset -> closed
-    assert "nothing" in out["modify_scope"]
+def test_an_unrestricted_scope_says_so_rather_than_looking_configured():
+    """**Inverted by the v0.31.0 defaults.** This asserted an unset modify list reported
+    "nothing"; unset now means every file.
+
+    The property is the same one from the other side: a problem report has to make the scope
+    legible, because a reader diagnosing a refusal needs to know whether the allowlist was
+    involved. "Everything" is the answer that must not be silently implied by an empty-looking
+    field — somebody reading this report is deciding where to look next."""
+    out = call({})                                   # nothing set -> unrestricted
+    assert "every" in out["modify_scope"].lower() or "all" in out["modify_scope"].lower()
 
 
 def test_the_issue_url_is_prefilled_with_the_report():

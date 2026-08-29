@@ -23,9 +23,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .. import auth
-from ..allowlist import ALL_SYNONYMS, AllowlistError, Listing, diagnose_setting, parse_setting
+from ..allowlist import ALL_SYNONYMS, AllowlistError, Listing, parse_setting
 from ..exceptions import AuthError
-from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, PROFILES, Policy, Scope
+from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, PROFILES, Policy, Scope, resolve_profile
 from ..workspace import Workspace
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
@@ -107,6 +107,24 @@ class Settings:
     # validating the path but making the failures inert - see `_export.resolve_export_path`.
     export_dir: str = DEFAULT_EXPORT_DIR
 
+    # --- data handling, NOT capabilities -------------------------------------------------
+    #
+    # `local.read` / `local.write` are deliberately absent from `ALL_CAPABILITIES`, and no
+    # profile grants or withholds them. They CANNOT contain confidential data: by the time
+    # either runs, the content is already in the model's context - `read_file_content` put it
+    # there. Confidentiality is lost at READ, not at write, so a switch on the write would gate
+    # the second copy after containment is spent. Filing them beside `file.share` would invite
+    # an operator to believe switching them off prevents disclosure. It does not.
+    #
+    # What they ARE for: keeping review material inside the MCP client rather than landing it on
+    # disk, where it persists outside the client's retention policy and can be re-read by
+    # anything with filesystem access. A data-governance concern, and a real one - just not the
+    # same concern as authorization.
+    #
+    # Default ON, because they are not a boundary and off would break every existing export.
+    local_read: bool = True      # apply_comment_actions reading a filled-in register
+    local_write: bool = True     # export_comments -> .csv/.xlsx, and write-back of markers
+
 
 def policy_from_env(env: Mapping[str, str]) -> Policy:
     """Build the server's policy from the environment. Three independent bounds:
@@ -145,28 +163,34 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
 
 
 def _scope_from_env(env: Mapping[str, str], variable: str) -> Scope:
-    """One allowlist scope, from its environment variable. **Fail closed.**
+    """One allowlist scope, from its environment variable. **Unset means every file.**
 
     The variable holds the list itself; **there is no file to read**. The client configuration
     is the artifact an operator controls and can see, so the policy lives there rather than
     behind a path whose target can change without the config changing.
 
-    Unset — or set to anything unusable — means `Scope.nothing()`: every operation of that
-    kind is refused, with a message saying which variable and why. That is the opposite of the
-    library's default, deliberately: `Workspace.from_credentials` is called by a developer who
-    has made a decision, while this is configuration handed to a model.
+    **Unset now means unrestricted, reversing the v0.8 posture** (2026-08-28, v0.31.0). Until
+    then an unconfigured install refused everything, which is the state nobody actually ran: the
+    README itself told operators to set `*`, so the default produced a setup step rather than a
+    control. Somebody installing a Google Workspace server intends to do Google Workspace
+    things, and a bound every operator removes during setup teaches people to paste `*` without
+    reading — worse than defaulting to it honestly. See `policy.DEFAULT_ENABLED` for the whole
+    argument, including the part that makes it coherent: a capability enabled here is not a
+    permission granted, because Drive's ACLs still decide.
 
-    Unrestricted access is available and must be *typed* as `*`. It logs a warning every time
-    it is parsed, because the point of writing the policy down is that it can be reviewed.
+    **Malformed is still refused**, and that distinction is the point. An unset variable is an
+    operator who has not narrowed anything; a *malformed* one is an operator who tried and
+    failed, and silently widening that to `*` would hand them the opposite of what they wrote.
 
-      <VAR>=*                          every file, deliberately
+      <VAR>=*                          every file, said out loud
       <VAR>=https://…                  the documents, newline- or comma-separated
-      (unset, blank, malformed)        nothing
+      (unset or blank)                 every file — the default
+      (malformed)                      nothing, with a message saying what could not be parsed
     """
     raw = env.get(variable)
     value = (raw or "").strip()
     if not value:
-        return Scope.nothing(reason=diagnose_setting(variable, raw))
+        return Scope.from_listing(Listing(all_files=True))
     if value.lower() in ALL_SYNONYMS:
         log.warning("%s=%s grants access to EVERY file the credentials can reach",
                     variable, value)
@@ -196,15 +220,16 @@ def _profile_from_env(env: Mapping[str, str]) -> str | None:
     which documents a deployment may touch is specific to that deployment, and a named default
     for it would be a named default for "which of your files an agent may change".
     """
-    name = (env.get(PROFILE_VAR) or "").strip().lower()
-    if not name:
+    raw = (env.get(PROFILE_VAR) or "").strip()
+    if not raw:
         return None
-    if name not in PROFILES:
-        raise ValueError(
-            f"{PROFILE_VAR}={name!r} is not a known profile. Choose one of: "
-            f"{', '.join(f'{p} ({len(c)} capabilities)' for p, c in PROFILES.items())}. "
-            f"Or set CSA_GW_CAPABILITIES to an explicit list instead.")
-    return name
+    try:
+        return resolve_profile(raw)
+    except ValueError as e:
+        # Re-raised with the variable name attached. `resolve_profile` does not know it is
+        # being called from an environment variable, and "manager is Google's interface label"
+        # is unhelpful without "...and you set it in CSA_GW_PROFILE".
+        raise ValueError(f"{PROFILE_VAR}: {e}") from None
 
 
 def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:
@@ -260,7 +285,36 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         policy=policy_from_env(env),
         profile=_profile_from_env(env),
         export_dir=(env.get("CSA_GW_EXPORT_DIR") or "").strip() or DEFAULT_EXPORT_DIR,
+        local_read=_switch(env, "CSA_GW_LOCAL_READ"),
+        local_write=_switch(env, "CSA_GW_LOCAL_WRITE"),
     )
+
+
+# Values that mean "off". Deliberately a small closed set rather than "anything but 1": an
+# operator who writes `CSA_GW_LOCAL_WRITE=disabled` meant to switch it off, and silently
+# treating an unrecognised value as ON gives them the opposite of what they wrote.
+_OFF = {"0", "false", "no", "off", "disabled"}
+_ON = {"1", "true", "yes", "on", "enabled"}
+
+
+def _switch(env: Mapping[str, str], variable: str) -> bool:
+    """A boolean switch that defaults ON and refuses to guess.
+
+    Unset means on. A recognised off-value means off. Anything else is an error rather than a
+    silent default, because the failure mode of guessing is that somebody who tried to turn a
+    thing off believes they did.
+    """
+    raw = (env.get(variable) or "").strip().lower()
+    if not raw:
+        return True
+    if raw in _OFF:
+        return False
+    if raw in _ON:
+        return True
+    raise ValueError(
+        f"{variable}={raw!r} is not a yes/no value. Use one of {', '.join(sorted(_ON))} "
+        f"to enable, or {', '.join(sorted(_OFF))} to disable. Refusing to guess, because "
+        f"guessing wrong here means believing you switched something off when you did not.")
 
 
 def startup_warnings(settings: Settings) -> list[str]:

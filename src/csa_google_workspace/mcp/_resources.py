@@ -45,6 +45,19 @@ CEILING_URI = "csa-gw://help/capabilities"
 
 
 
+# Google's own interface labels, for the generated table only. NOT accepted as configuration
+# values - `policy.UI_LABELS` exists to REFUSE them with the right word, since a config with two
+# spellings for every value is a config whose meaning depends on which vocabulary its author
+# happened to know. Shown here so an operator who knows "Content manager" can find the row.
+DRIVE_UI_LABEL = {
+    "reader": "Viewer",
+    "commenter": "Commenter",
+    "writer": "Editor · Contributor",
+    "fileOrganizer": "Content manager",
+    "organizer": "Manager",
+}
+
+
 def _profile_rows() -> list[str]:
     """The profile table, rendered from `PROFILES` rather than restated.
 
@@ -57,14 +70,15 @@ def _profile_rows() -> list[str]:
     previous: frozenset[str] = frozenset()
     previous_name = ""
     for name, caps in PROFILES.items():
+        label = DRIVE_UI_LABEL.get(name, "")
         if not caps:
-            rows.append(f"| `{name}` | **nothing** - read and report only, whatever the "
-                        f"allowlists say |")
+            rows.append(f"| `{name}` | {label} | **nothing** - read and report only, whatever "
+                        f"the allowlists say |")
         else:
             builds_on = bool(previous) and previous <= caps
             shown = sorted(caps - previous) if builds_on else sorted(caps)
             labels = " · ".join(CAPABILITY_NOTES[c][0] for c in shown)
-            rows.append(f"| `{name}` | "
+            rows.append(f"| `{name}` | {label} | "
                         + (f"everything `{previous_name}` may, plus {labels} |"
                            if builds_on else f"{labels} |"))
         previous, previous_name = caps, name
@@ -194,11 +208,32 @@ a shell, `.mcp.json`, or Claude Desktop's config. Each is a ceiling: none can wi
 
 | Variable | Bounds | Unset |
 |---|---|---|
-| `{READ_ALLOWLIST_VAR}` | which files may be **read** | nothing — fail closed |
-| `{MODIFY_ALLOWLIST_VAR}` | which files may be **changed, added to or deleted** | nothing — fail closed |
-| `CSA_GW_PROFILE` | a **named** capability set: `reader`, `commenter`, `editor`, `full` | `editor` |
+| `{READ_ALLOWLIST_VAR}` | which files may be **read** | **every file** |
+| `{MODIFY_ALLOWLIST_VAR}` | which files may be **changed, added to or deleted** | **every file** |
+| `CSA_GW_PROFILE` | a **named** capability set — see Profiles below | everything on |
 | `CSA_GW_CAPABILITIES` | an explicit capability list — overrides the profile | see profile |
 | `CSA_GW_READ_ONLY=1` | everything — no writes, narrower OAuth scopes | off |
+
+**Everything is on out of the box, and narrowing is the thing you configure.** That is the
+opposite of the pre-v0.31.0 posture, and the reason is that a capability enabled here is **not a
+permission granted**: every call still runs as you, against Google's own ACLs. `organizer` on a
+file where you are merely a Commenter still cannot edit it. This model is a ceiling *below*
+Drive's, never an expansion, so "everything on" means *subtract nothing; let Drive decide*.
+
+A **malformed** list is still refused, loudly, and the server will not start. Unset is an
+operator who has not narrowed anything; malformed is one who tried and failed, and widening that
+to every file would hand them the opposite of what they wrote.
+
+Two further switches are **data handling, not permissions** — they cannot contain confidential
+data, because by the time either runs the content is already in the model's context:
+
+| Variable | Governs | Unset |
+|---|---|---|
+| `CSA_GW_LOCAL_READ` | `apply_comment_actions` reading a register from this machine | on |
+| `CSA_GW_LOCAL_WRITE` | `export_comments` writing a `.csv`/`.xlsx`, and write-back of markers | on |
+
+Turn them off to keep review material inside the MCP client rather than on disk, where it
+persists outside the client's retention policy. Not a disclosure control — see above.
 
 Four further variables are **settings, not ceilings** — none of them widens what the three
 bounds above allow, which is why they are listed separately rather than mixed in:
@@ -225,8 +260,8 @@ path is validated.
 
 `CSA_GW_PROFILE` names a capability set, so "what may this install do?" has a short answer:
 
-| Profile | May |
-|---|---|
+| Profile | Google's interface calls it | May |
+|---|---|---|
 {profile_rows}
 
 Profiles cover **capabilities only**. The file allowlists are deliberately not profiled: which
