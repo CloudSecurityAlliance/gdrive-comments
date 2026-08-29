@@ -372,9 +372,6 @@ access to…"*. These decide who may *set* policy rather than use the file, and 
 silently **removes** access from people who are not present; Google's own dialog warns *"Some
 people may lose access."* Governance decisions belong in Drive's interface with a human.
 
-**Revoke or downgrade a permission.** Not deliberate — a gap, and tracked. Sharing can be
-granted here and taken back only in Drive.
-
 **Write a live formula into a spreadsheet.** `update_cells` and `append_rows` store values
 verbatim. Formula-writing exists in the library for a developer who has decided; it is not
 offered here, because content passing through this server is frequently derived from untrusted

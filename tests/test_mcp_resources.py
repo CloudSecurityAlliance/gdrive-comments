@@ -237,11 +237,19 @@ class TestTheCeilingResource:
         "anchored to a specific cell",            # opaque workbook-range id
         "Permanently delete",                     # deliberate, and a security property
         "access settings",                        # meta-permissions, out by choice
-        "Revoke or downgrade",                    # the one gap that is not deliberate
         "live formula",                           # removed from this layer in v0.30.13
     ])
     def test_every_known_limit_is_named(self, subject):
         assert subject in self.text(), f"the ceiling does not mention {subject!r}"
+
+    def test_a_limit_that_stops_being_one_is_removed(self):
+        """"Revoke or downgrade a permission" was listed as the one gap that was not
+        deliberate. #235 closed it in v0.30.14, so it must not still be advertised as
+        impossible — a ceiling that names things the server *can* do is worse than one that
+        omits things it cannot, because a model believes it and stops."""
+        body = self.text()
+        assert "Revoke or downgrade" not in body
+        assert "taken back only in Drive" not in body
 
     def test_it_tells_the_agent_not_to_route_around_a_refusal(self):
         """The whole point. Knowing the limit and satisfying the request another way — editing

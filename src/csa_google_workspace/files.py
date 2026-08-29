@@ -260,6 +260,24 @@ class FileCollection:
         return Permission.from_api(self._backend.create_permission(
             parse_file_id(file_id_or_url), email=email, role=role, notify=notify))
 
+    def set_role(self, file_id_or_url: str, permission_id: str, role: str) -> Permission:
+        """Change an existing grant's role on any file. See `PermissionsMixin.set_role`."""
+        from .permissions import ROLES, Permission
+        from .workspace import parse_file_id
+        if role == "owner":
+            raise ValueError(
+                "set_role() will not transfer ownership; use the Drive UI deliberately.")
+        if role not in ROLES:
+            raise ValueError(f"unknown role {role!r}; expected one of {', '.join(ROLES)}")
+        return Permission.from_api(self._backend.update_permission(
+            parse_file_id(file_id_or_url), permission_id, role=role))
+
+    def unshare(self, file_id_or_url: str, permission_id: str) -> None:
+        """Revoke a grant on any file. See `PermissionsMixin.unshare` for what it does and does
+        not undo."""
+        from .workspace import parse_file_id
+        self._backend.delete_permission(parse_file_id(file_id_or_url), permission_id)
+
     # -- internals ----------------------------------------------------------
 
     @staticmethod

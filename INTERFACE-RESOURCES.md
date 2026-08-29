@@ -52,7 +52,7 @@ it means installing it and importing it.
   csa-google-workspace-mcp login          # once, interactive: browser consent
   claude mcp add csa-google-workspace -- csa-google-workspace-mcp
   ```
-- **Surface:** 34 tools, each with structured output (`outputSchema`) and
+- **Surface:** 36 tools, each with structured output (`outputSchema`) and
   read-only/destructive annotations, across five groups — discovery and file
   lifecycle (`search_files`, `list_recent_files`, `get_file_metadata`,
   `get_file_permissions`, `create_file`, `copy_file`, `update_file`,
@@ -80,7 +80,7 @@ it means installing it and importing it.
   `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a cached token carries its
   own client id and secret).
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.30.13.
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.30.14.
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a
@@ -88,7 +88,7 @@ it means installing it and importing it.
   ```bash
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"healthcheck","version":"0"}}}}' | csa-google-workspace-mcp
   ```
-  Expect a JSON-RPC result listing 34 tools.
+  Expect a JSON-RPC result listing 36 tools.
 - **Owner:** Kurt Seifried
 - **Notes:** A missing or expired token does **not** stop the server starting —
   it starts and reports the remedy through a tool error. So "the process is

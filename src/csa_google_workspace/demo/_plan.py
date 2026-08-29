@@ -309,9 +309,33 @@ def per_type(kind: str) -> list[Step]:
              "The only step here that can move data OUT of the organisation, which is why it "
              "is off unless somebody enabled it. Notification is suppressed for the demo; in "
              "real use, telling the recipient is the point.",
+             captures=lambda s, out, k=kind: s.update({f"perm_{k}": out.get("id")}),
+             requires="file.share", optional=True, group=kind),
+        # Paired with the share above, deliberately: a demonstration that grants access and
+        # cannot take it back leaves the reviewer's Drive changed. These put it back.
+        #
+        # The permission id comes from `share_file`'s own result via `captures`, not from a
+        # guess - it is Google's to choose, and against real Drive a hard-coded one would be
+        # wrong on every run.
+        Step("update_file_permission",
+             lambda s, key=key, k=kind: {"fileId": s[key],
+                                         "permissionId": s.get(f"perm_{k}", ""),
+                                         "role": "commenter"},
+             "Downgrade that share",
+             "Often what is actually wanted: the person keeps seeing the document and stops "
+             "being able to change it, rather than losing access mid-task.",
+             requires="file.share", optional=True, group=kind),
+        Step("unshare_file",
+             lambda s, key=key, k=kind: {"fileId": s[key],
+                                         "permissionId": s.get(f"perm_{k}", "")},
+             "Revoke it again",
+             "The grant is gone, so the demo leaves nothing behind. Worth noticing what it "
+             "does NOT do: a copy the recipient already took is not recalled, and Drive sends "
+             "no notification - 'revoked' means less than it sounds.",
              requires="file.share", optional=True, group=kind),
     ]
     return steps
+
 
 
 def account_closing() -> list[Step]:

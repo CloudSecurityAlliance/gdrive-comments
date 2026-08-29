@@ -80,6 +80,10 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "update_file": FILE_UPDATE,
     "trash_file": FILE_TRASH,
     "share_file": FILE_SHARE,
+    # Ungranting is the same authority as granting - an operator who may hand out
+    # access may take it back. See policy._GATES.
+    "update_file_permission": FILE_SHARE,
+    "unshare_file": FILE_SHARE,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.

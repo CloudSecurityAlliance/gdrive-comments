@@ -70,6 +70,11 @@ ARGS: dict[str, dict] = {
     "copy_file":             {"fileId": DOC, "name": "Copy"},
     "update_file":           {"fileId": DOC, "name": "Renamed"},
     "share_file":            {"fileId": DOC, "emailAddress": "someone@example.com"},
+    # `p1` is the permission seeded on DOC in the fixture below. Ordering is load-bearing:
+    # update runs first and unshare removes it, so a later reorder that swaps them fails here
+    # rather than silently exercising one tool against a missing permission.
+    "update_file_permission": {"fileId": DOC, "permissionId": "p1", "role": "reader"},
+    "unshare_file":          {"fileId": DOC, "permissionId": "p1"},
     # last, and deliberately: it trashes the document every earlier tool needs.
     "trash_file":            {"fileId": DOC},
     "describe_configuration": {},

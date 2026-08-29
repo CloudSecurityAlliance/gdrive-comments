@@ -252,6 +252,12 @@ _GATES: dict[str, Gate] = {
     "update_file_metadata": Gate(FILE_UPDATE, MODIFY),
     "trash_file": Gate(FILE_TRASH, MODIFY),
     "create_permission": Gate(FILE_SHARE, MODIFY),
+    # Ungranting is the same authority as granting, so it shares the capability rather than
+    # earning one: an operator who may hand out access may take it back. Splitting them would
+    # create a configuration that can share and cannot un-share, which is strictly worse than
+    # either extreme and is the state this library was in until #235.
+    "update_permission": Gate(FILE_SHARE, MODIFY),
+    "delete_permission": Gate(FILE_SHARE, MODIFY),
     # comment writes
     "create_comment": Gate(COMMENT_CREATE, MODIFY),
     "create_reply": Gate(_reply_gate, MODIFY),   # reply vs resolve/reopen — see above

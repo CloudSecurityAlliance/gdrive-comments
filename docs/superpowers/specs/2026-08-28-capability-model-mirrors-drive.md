@@ -334,7 +334,7 @@ posture. `organizer` is the top of our ladder and is still narrower than Drive's
 | resolve `Location.tab` for a multi-tab spreadsheet | Needs `workbook.xml` + rels parsing; tracked as a deferral. |
 | change a file's **access settings** — "Allow editors to change permissions and share" (`writersCanShare`) and "Limit access to…" (`inheritedPermissionsDisabled`) | **Deliberate, and this is the strongest deliberate omission in the list.** These are *meta-permissions*: policy about who may set policy, rather than use of the file. `writersCanShare` decides who else may grant access; `inheritedPermissionsDisabled` is the only action in this area that **removes** access, silently, from people who are not in the room — Google's own UI warns *"Some people may lose access."* An injected agent flipping it on a shared folder locks out a team with no notification. Governance decisions belong in Drive's UI with a human. |
 | disable download/print/copy for readers (`copyRequiresWriterPermission`, `DownloadRestriction`) | Same category. Also largely fiction as a control — see §2's view ≈ download argument, which applies to this Drive feature exactly as it applies to ours. |
-| **revoke or downgrade a permission** (`permissions.delete`, `permissions.update`) | **Not deliberate — a gap, and worth closing.** See below. |
+| ~~revoke or downgrade a permission~~ | **Closed in v0.30.14** (#235). `unshare_file` and `update_file_permission`, under the existing `file.share` capability. |
 
 This goes in three places, because three different readers need it and only one of them reads the
 README:
@@ -365,7 +365,7 @@ you may grant, you may ungrant, so both sit under `file.share`.
 It also improves the honesty of the reversibility table, which currently rates `file.share` as
 irreversible partly because of a limitation we chose rather than one Drive imposes.
 
-Tracked as **#235**; it is additive and does not depend on the model changing.
+**Done in v0.30.14** (#235), ahead of the model change since it depended on none of it.
 
 ## 7. Compatibility
 

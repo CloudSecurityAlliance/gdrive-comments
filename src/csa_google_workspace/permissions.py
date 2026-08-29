@@ -102,3 +102,38 @@ class PermissionsMixin:
         self._require_writable()
         return Permission.from_api(self._backend.create_permission(
             self.id, email=email, role=role, notify=notify))
+
+    def set_role(self, permission_id: str, role: str) -> Permission:
+        """Change an existing grant's role — a **downgrade** is the usual reason.
+
+        Often better than revoking outright: `writer` -> `reader` leaves somebody able to see
+        work they may be in the middle of, instead of cutting their access dead. Same
+        `file.share` capability, because changing a grant is the same authority as making one.
+
+        `owner` is refused for the same reason `share()` refuses it: ownership transfer is a
+        different act with a different API flag, and it is not reversible on every account type.
+        """
+        if role == "owner":
+            raise ValueError(
+                "set_role() will not transfer ownership; use the Drive UI deliberately.")
+        if role not in ROLES:
+            raise ValueError(f"unknown role {role!r}; expected one of {', '.join(ROLES)}")
+        self._require_writable()
+        return Permission.from_api(
+            self._backend.update_permission(self.id, permission_id, role=role))
+
+    def unshare(self, permission_id: str) -> None:
+        """Revoke a grant. Requires `file.share`, the same capability as making one.
+
+        **What this does and does not undo.** The grant is gone, so the person loses access from
+        now on. A copy they already took is not recalled, and Drive sends no notification that
+        access was removed — so somebody who had a document open simply finds it gone.
+
+        `PROVENANCE.md` rates sharing *irreversible in effect*, and that has two halves. Google's
+        half — the copy already taken — is unfixable. **Ours was that this library had no way to
+        take a grant back at all**, so an operator who found a wrong share had to leave the tool.
+        This closes that half; it does not close the other, and the difference matters when
+        explaining what a revocation achieved.
+        """
+        self._require_writable()
+        self._backend.delete_permission(self.id, permission_id)

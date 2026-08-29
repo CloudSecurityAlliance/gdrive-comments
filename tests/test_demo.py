@@ -353,7 +353,13 @@ class TestDiscoverableFromMcp:
         # plan that predicted NOTHING - and that is what it was doing: before v0.21.0 most
         # gated steps carried no `requires` at all, so they were reported "available" and the
         # walkthrough discovered the refusal by hitting it.
-        assert {s["tool"] for s in blocked} == {"edit_comment", "delete_comment", "share_file"}
+        assert {s["tool"] for s in blocked} == {
+            "edit_comment", "delete_comment",
+            # All three share-shaped tools, because ungranting is the same authority as
+            # granting: a profile that cannot share cannot un-share either. That is the right
+            # pairing - a configuration able to revoke but not grant would be odd, and one able
+            # to grant but not revoke is the state this library was in until #235.
+            "share_file", "update_file_permission", "unshare_file"}
 
     @pytest.mark.parametrize("profile,expected", [
         ("reader", {"comment.create", "comment.reply", "comment.resolve", "comment.edit",

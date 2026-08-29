@@ -43,6 +43,8 @@ class Backend(Protocol):
     def create_permission(self, file_id: str, *, email: str | None, role: str,
                           permission_type: str = "user",
                           notify: bool = True) -> JsonDict: ...
+    def update_permission(self, file_id: str, permission_id: str, *, role: str) -> JsonDict: ...
+    def delete_permission(self, file_id: str, permission_id: str) -> None: ...
     def copy_file(self, file_id: str, *, name: str | None = None,
                   parent_id: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
@@ -280,6 +282,23 @@ class FakeBackend:
             perm["emailAddress"] = email
         self._permissions.setdefault(file_id, []).append(perm)
         return copy.deepcopy(perm)
+
+    def _find_permission(self, file_id, permission_id):
+        self.get_file_metadata(file_id)                # raises NotFoundError
+        for perm in self._permissions.get(file_id, []):
+            if perm["id"] == permission_id:
+                return perm
+        raise exc.NotFoundError(
+            f"no permission {permission_id!r} on {file_id!r}")
+
+    def update_permission(self, file_id, permission_id, *, role):
+        perm = self._find_permission(file_id, permission_id)
+        perm["role"] = role
+        return copy.deepcopy(perm)
+
+    def delete_permission(self, file_id, permission_id):
+        perm = self._find_permission(file_id, permission_id)
+        self._permissions[file_id].remove(perm)
 
     def copy_file(self, file_id, *, name=None, parent_id=None):
         source = self.get_file_metadata(file_id)       # raises NotFoundError
@@ -597,6 +616,27 @@ class ApiBackend:
             self._services.drive.permissions().create(
                 fileId=file_id, body=body, sendNotificationEmail=notify,
                 fields="id, type, role, emailAddress, displayName",
+                supportsAllDrives=True).execute,
+            idempotent=False)
+
+    def update_permission(self, file_id, permission_id, *, role):
+        # Downgrading (writer -> reader) is often what is actually wanted, and it keeps the
+        # person's access to work they may be mid-way through rather than cutting it dead.
+        return _errors.call(
+            self._services.drive.permissions().update(
+                fileId=file_id, permissionId=permission_id, body={"role": role},
+                fields="id, type, role, emailAddress, displayName",
+                supportsAllDrives=True).execute,
+            idempotent=False)
+
+    def delete_permission(self, file_id, permission_id):
+        # Revocation. Note what it does and does not undo: the GRANT is gone, so the person
+        # loses access from now on - but a copy they already took is not recalled, and Drive
+        # sends no notification. `PROVENANCE.md` rates sharing irreversible *in effect* for
+        # exactly that reason, and this narrows the half that was ours rather than Google's.
+        _errors.call(
+            self._services.drive.permissions().delete(
+                fileId=file_id, permissionId=permission_id,
                 supportsAllDrives=True).execute,
             idempotent=False)
 
