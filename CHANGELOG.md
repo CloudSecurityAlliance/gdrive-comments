@@ -10,6 +10,67 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-28 — v0.30.14 (a share can be taken back)
+
+Closes **#235**. The unusual case of a **mutating capability that makes the surface safer**.
+
+### The gap
+
+`Backend` had `list_permissions` and `create_permission` and nothing else, so this library could
+**grant** a permission and could not take one back. An operator who found a wrong share had to
+leave the tool and go to the Drive UI.
+
+That mattered more once `file.share` landed in the default set: the one action whose effect leaves
+the organisation was the one with no undo *here*.
+
+### What is fixed, and what is not
+
+`PROVENANCE.md` rates sharing *irreversible in effect*, and that has two halves.
+
+* **Google's half** — a copy the recipient already took is not recalled, and Drive sends no
+  notification when access is removed, so somebody with the document open simply finds it gone.
+  Unfixable, and unchanged.
+* **Ours** — the grant itself is perfectly revocable in Drive and we had no method for it. That is
+  what closes here.
+
+The distinction is load-bearing when reporting a revocation, so `unshare_file`'s description
+carries both halves and a test keeps them there. *"Access has been revoked"* alone implies more
+than happened.
+
+### `update_file_permission` is usually the better tool
+
+Downgrading `writer` → `reader` leaves somebody able to see work they may be part-way through
+instead of cutting their access dead, so `unshare_file` points at it. Revoking is annotated
+**destructive**; downgrading is a plain write, so a client set to prompt on destructive actions
+stops on one and not the other.
+
+### Same capability as granting, deliberately
+
+Both sit under `file.share`. Splitting them would permit a configuration that can share and cannot
+un-share — strictly worse than either extreme, and precisely the state this library was in until
+now. A profile without `file.share` therefore refuses all three, which the demonstration plan's
+gating test now asserts by name.
+
+### Verification
+
+`tests/test_revoke_a_permission.py` (22 tests) plus three `ApiBackend` **stub-service** tests,
+because `FakeBackend` never sees a request and so cannot catch a wrong field name, a missing
+`supportsAllDrives`, or a body built in the wrong shape — the documented blind spot of the
+fake/real seam. `update_permission`'s body must carry the role **and nothing else**: sending
+`type` or `emailAddress` on an update is how a downgrade quietly becomes a different grant.
+
+Both new methods are added to the non-idempotent wiring test. `delete_permission` matters most
+there — it returns `None`, so a retried 5xx that had already landed would look like a clean second
+revocation rather than an error.
+
+**A first draft of the refusal tests concluded the capability gate was broken**, because
+`share_file` succeeded under `editor`. The gate was fine; the test handed `create_server` a bare
+`FakeBackend`, which enforces nothing — that is the DI seam working as designed, and production
+wraps it at `mcp/_config.py`. Noted in the test, because a refusal test that silently exercises an
+ungated backend passes for the wrong reason on the day the gate stops working.
+
+Tool count 34 → 36.
+
 ## 2026-08-28 — v0.30.13 (the T15 residual is deleted, and the server says what it cannot do)
 
 The first two pieces of the #195 spec, both independent of the capability model itself.

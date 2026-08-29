@@ -16,6 +16,7 @@ from mcp.server import MCPServer
 
 from ...files import KINDS
 from .._schemas import (
+    EditOut,
     FileRefOut,
     FilesOut,
     FileUpdateOut,
@@ -196,3 +197,42 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
         the file must be listed for modify."""
         return permission_out(get_workspace().files.share(
             fileId, emailAddress, role, notify=sendNotification))
+
+    @app.tool(annotations=WRITE)
+    @_errors
+    def update_file_permission(fileId: str, permissionId: str, role: str) -> PermissionOut:
+        """Change what an existing share allows — usually a DOWNGRADE, e.g. writer to reader.
+
+        Get `permissionId` from `get_file_permissions`; it is the `id` on each entry. Never
+        guess one.
+
+        Prefer this to `unshare_file` when somebody should keep seeing a document but stop
+        changing it: revoking outright cuts access to work they may be part-way through.
+
+        `role` is reader, commenter or writer. Ownership transfer is refused.
+
+        Requires the `file.share` capability and the file listed for modify — changing a grant
+        is the same authority as making one."""
+        return permission_out(get_workspace().files.set_role(fileId, permissionId, role))
+
+    @app.tool(annotations=DESTRUCTIVE)
+    @_errors
+    def unshare_file(fileId: str, permissionId: str) -> EditOut:
+        """Revoke somebody's access to a file.
+
+        Get `permissionId` from `get_file_permissions` — it is the `id` on each entry. Confirm
+        with the user WHO you are about to remove, by the name or address on that entry, before
+        calling. A permission id is not human-readable and picking the wrong one silently
+        removes the wrong person.
+
+        WHAT THIS DOES AND DOES NOT UNDO. The grant is gone, so they lose access from now on. A
+        copy they already took is NOT recalled, and Drive sends no notification - somebody with
+        the document open simply finds it gone. Say both parts when reporting it; "access has
+        been revoked" alone implies more than happened.
+
+        Consider `update_file_permission` instead if the person should keep read access.
+
+        Requires the `file.share` capability and the file listed for modify."""
+        get_workspace().files.unshare(fileId, permissionId)
+        return {"file_id": fileId, "type": "file", "occurrences_changed": 1,
+                "detail": f"revoked permission {permissionId}"}

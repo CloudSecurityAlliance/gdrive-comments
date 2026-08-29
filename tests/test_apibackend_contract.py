@@ -97,8 +97,13 @@ def test_all_writes_are_non_idempotent(monkeypatch):
     b.sheets_values_clear("f", "A1")
     b.sheets_batch_update("f", [])
     b.slides_batch_update("f", [])
+    # #235: both permission mutations. `delete_permission` is the one that matters most here -
+    # it returns None, so a retried 5xx that already landed would look like a clean second
+    # revocation rather than an error, and the caller would never learn the first one worked.
+    b.update_permission("f", "p1", role="reader")
+    b.delete_permission("f", "p1")
 
-    assert captured == [False] * 12    # a single True here is a silent double-apply risk
+    assert captured == [False] * 14    # a single True here is a silent double-apply risk
 
 
 class _FilesStub:
@@ -199,3 +204,66 @@ def test_list_permissions_follows_pagination_and_asks_for_the_pii_fields():
     assert perms.calls[0]["supportsAllDrives"] is True
     assert "pageToken" not in perms.calls[0]
     assert perms.calls[1]["pageToken"] == "n1"
+
+
+# --- #235: the permission mutations, against a stub Drive service -----------------
+#
+# `FakeBackend` cannot catch a wrong field name, a missing `supportsAllDrives`, or a body built
+# in the wrong shape - it never sees the request. That is the documented blind spot of the
+# fake/real seam, and it is exactly how `Workspace.open()` once leaked a raw `HttpError` past a
+# fully green suite.
+
+class _RecordingPerms:
+    def __init__(self):
+        self.calls = []
+
+    def update(self, **kw):
+        self.calls.append(("update", kw))
+        return _Chain()
+
+    def delete(self, **kw):
+        self.calls.append(("delete", kw))
+        return _Chain()
+
+
+class _DriveRecording:
+    def __init__(self, perms):
+        self._perms = perms
+
+    def permissions(self):
+        return self._perms
+
+
+class _ServicesRecording:
+    def __init__(self, perms):
+        self.drive = _DriveRecording(perms)
+
+
+def test_update_permission_sends_only_the_role_and_supports_shared_drives():
+    perms = _RecordingPerms()
+    ApiBackend(_ServicesRecording(perms)).update_permission("f1", "p9", role="reader")
+    (name, kw), = perms.calls
+    assert name == "update"
+    assert kw["fileId"] == "f1" and kw["permissionId"] == "p9"
+    assert kw["body"] == {"role": "reader"}, (
+        "the body must carry the role and nothing else - sending `type` or `emailAddress` on an "
+        "update is how a downgrade quietly becomes a different grant")
+    assert kw["supportsAllDrives"] is True, (
+        "without this the call fails on any shared drive, which is where shared documents live")
+
+
+def test_delete_permission_sends_no_body_and_supports_shared_drives():
+    perms = _RecordingPerms()
+    ApiBackend(_ServicesRecording(perms)).delete_permission("f1", "p9")
+    (name, kw), = perms.calls
+    assert name == "delete"
+    assert kw == {"fileId": "f1", "permissionId": "p9", "supportsAllDrives": True}
+
+
+def test_update_permission_asks_for_the_fields_the_model_needs_back():
+    """A downgrade that returns no role leaves the caller unable to confirm what it achieved."""
+    perms = _RecordingPerms()
+    ApiBackend(_ServicesRecording(perms)).update_permission("f1", "p9", role="commenter")
+    fields = perms.calls[0][1]["fields"]
+    for wanted in ("id", "role", "type"):
+        assert wanted in fields

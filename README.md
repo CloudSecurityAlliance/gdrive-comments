@@ -336,7 +336,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 34, each with structured output and read-only/destructive annotations
+**Tools** — 36, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
@@ -346,7 +346,7 @@ reviews the configuration and may name people or unannounced work.
 | **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` · `apply_comment_actions` |
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
-| **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` — each OFF unless an operator names its capability |
+| **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each OFF unless an operator names its capability |
 | **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
@@ -497,9 +497,9 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **34** |
+| MCP tools | 8 | 11 | **36** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **23** |
+| Tools they do not have | — | — | **25** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
 The twenty-three they do not have: **eleven** comment tools, five content-write tools,
@@ -584,6 +584,8 @@ accepting a share URL, which neither of theirs does.
 | `copy_file` | Duplicate a file | ✅ | ✅ | ✅ |
 | `update_file` | Rename and move. **Metadata only** | ✗ | ✅ | ✅ ⁷ |
 | `share_file` | Grant an address `reader`/`commenter`/`writer` | ✗ | ✅ | ✅ ⁷ |
+| `update_file_permission` | Change a grant's role — usually a **downgrade** | ✗ | ✗ | ✅ ⁷ |
+| `unshare_file` | Revoke a grant. Neither Google server can take a share back | ✗ | ✗ | ✅ ⁷ |
 | `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✅ ⁷ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
