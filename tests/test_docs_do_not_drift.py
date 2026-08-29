@@ -225,12 +225,27 @@ class TestTheProfileTableMatchesThePolicy:
             "CAPABILITY_NOTES and ALL_CAPABILITIES disagree; the reference renders from the "
             "first and the server enforces the second")
 
-    def test_the_irreversible_three_are_exactly_the_ones_off_by_default(self):
-        """Ties the prose ('the line is drawn on: can this be undone?') to the data."""
-        from csa_google_workspace.policy import CAPABILITY_NOTES, DEFAULT_DISABLED
+    def test_the_irreversible_three_are_named_and_sit_at_the_top_of_the_ladder(self):
+        """**RESTATED in v0.31.0**, and the restatement is deliberate rather than a test being
+        fixed to pass.
 
-        irreversible = {c for c, (_m, undo) in CAPABILITY_NOTES.items()
-                        if undo.startswith("NO")}
-        assert irreversible == set(DEFAULT_DISABLED), (
-            f"capabilities described as irreversible {sorted(irreversible)} are not the set "
-            f"disabled by default {sorted(DEFAULT_DISABLED)} - one of the two is lying")
+        This used to assert that the capabilities *described* as irreversible were exactly
+        `DEFAULT_DISABLED` — tying the prose "the line is drawn on: can this be undone?" to the
+        data. That assertion encoded the one-ladder model, where recoverability decided what was
+        ON. Nothing is off by default now, so the old form would compare against an empty set
+        and pass vacuously, which is worse than failing.
+
+        What still has to hold is the half that survived: recoverability no longer decides the
+        default, but it still orders the ladder, and the three that cannot be undone are still
+        the ones an operator is choosing when they pick the top rung.
+        """
+        from csa_google_workspace.policy import CAPABILITY_NOTES, IRREVERSIBLE, PROFILES
+
+        described = {c for c, (_m, undo) in CAPABILITY_NOTES.items() if undo.startswith("NO")}
+        assert described == set(IRREVERSIBLE), (
+            f"capabilities described as irreversible {sorted(described)} are not `IRREVERSIBLE` "
+            f"{sorted(IRREVERSIBLE)} - one of the two is lying")
+        assert set(IRREVERSIBLE) <= PROFILES["organizer"]
+        assert not set(IRREVERSIBLE) & PROFILES["writer"], (
+            "an irreversible capability reachable from `writer` would make the ladder's whole "
+            "ordering meaningless")

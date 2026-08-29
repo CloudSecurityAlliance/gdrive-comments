@@ -12,10 +12,12 @@ Two things are load-bearing here and neither is obvious:
    Workspace across threads, so each worker thread gets its own.
 """
 import threading
+from dataclasses import replace
 
 import pytest
 
 from csa_google_workspace import Workspace, exceptions
+from csa_google_workspace.allowlist import AllowlistError
 from csa_google_workspace.mcp import _config
 
 # NOTE: there is deliberately no fixture neutralising an ambient allowlist file here. There
@@ -238,13 +240,36 @@ _OTHER_ID = "2bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 _OTHER_URL = f"https://docs.google.com/document/d/{_OTHER_ID}/edit"
 
 
-def test_unset_means_fail_closed_on_both_scopes():
-    """The server's default, and the opposite of the library's. Nothing configured is a
-    restrictive answer, not an absent one."""
+def test_unset_now_means_every_file_on_both_scopes():
+    """**REVERSED in v0.31.0.** Unset used to refuse everything.
+
+    The state nobody actually ran: the README itself told operators to set `*`, so the default
+    produced a setup step rather than a control, and a bound every operator removes teaches
+    people to paste `*` without reading. See `policy.DEFAULT_ENABLED`.
+    """
     policy = _config.settings_from_env({}).policy
     assert policy is not None
-    assert not policy.read.all_files and not policy.read.ids
-    assert not policy.modify.all_files and not policy.modify.ids
+    assert policy.read.all_files and policy.modify.all_files
+
+
+@pytest.mark.parametrize("value", [
+    "https://drive.google.com/drive/folders/XYZ",   # a folder, refused loudly by design
+    "1a2b3c",                                       # a bare id, indistinguishable from a typo
+    "# only a comment",                             # parses, lists nothing
+])
+def test_a_malformed_list_is_refused_loudly_rather_than_widened(value):
+    """The distinction that carries the reversal: **unset is not the same as unparseable.**
+
+    Unset is an operator who has not narrowed anything, and now means `*`. Malformed is an
+    operator who *tried* and failed — and widening that to `*` would hand them the exact
+    opposite of what they wrote, silently.
+
+    It raises rather than falling back to an empty scope, which is stronger than the old
+    behaviour: the server does not start with a policy nobody can read, instead of starting and
+    refusing everything for reasons the operator has to go looking for.
+    """
+    with pytest.raises(AllowlistError):
+        _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": value})
 
 
 def test_the_usual_posture_read_star_modify_list():
@@ -316,21 +341,40 @@ def test_a_url_is_never_mistaken_for_a_path():
     assert policy is not None and policy.modify.ids == frozenset({_ALLOW_ID})
 
 
-def test_the_unset_diagnosis_does_not_mention_a_file_to_create():
-    """It used to name a default path. There is no such thing now, and saying otherwise would
-    send someone to create a file that would never be read."""
-    policy = _config.settings_from_env({}).policy
-    assert policy is not None
-    assert "no file to create" in (policy.modify.reason or "")
+def test_a_refusal_does_not_send_anyone_looking_for_a_file_to_create():
+    """The allowlist lives in the environment; there has never been a file. A message implying
+    otherwise sends somebody to create one that would never be read."""
+    with pytest.raises(AllowlistError) as e:
+        _config.settings_from_env({"CSA_GW_ALLOWLIST_MODIFY": "1a2b3c"})
+    assert "create" not in str(e.value).lower()
 
 
 # --- what the user is told at startup --------------------------------------
 
 def test_startup_warnings_say_when_nothing_is_permitted():
-    settings = _config.settings_from_env({})
+    """**No longer reachable from the environment**, and the message still has to be right.
+
+    After v0.31.0 an unset variable means `*` and a malformed one raises, so no configuration
+    produces a silently-empty scope. An *embedder* can still build one — `Policy(read=
+    Scope.nothing())` through the DI seam — and when they do, the startup line is what tells
+    somebody why nothing works. Constructed directly here because that is now the only route to
+    it; deleting the test would drop the message from coverage rather than retire it.
+    """
+    from csa_google_workspace.policy import Policy, Scope
+    settings = replace(
+        _config.settings_from_env({}),
+        policy=Policy(enabled=frozenset(),
+                      read=Scope.nothing(reason="set CSA_GW_ALLOWLIST_READ"),
+                      modify=Scope.nothing(reason="set CSA_GW_ALLOWLIST_MODIFY")))
     lines = " ".join(_config.startup_warnings(settings))
     assert "nothing permitted" in lines
-    assert "CSA_GW_ALLOWLIST_READ" in lines and "CSA_GW_ALLOWLIST_MODIFY" in lines
+
+
+def test_an_unconfigured_server_says_it_is_unrestricted():
+    """The default is now the permissive one, so the startup line has to be loud about it.
+    "Everything" must never be something an operator discovers later."""
+    lines = " ".join(_config.startup_warnings(_config.settings_from_env({})))
+    assert lines.count("UNRESTRICTED") == 2
 
 
 def test_startup_warnings_say_when_everything_is_permitted():
@@ -372,12 +416,19 @@ def test_a_profile_sets_the_capabilities():
     assert settings.policy.enabled == PROFILES["commenter"]
 
 
-@pytest.mark.parametrize("name", ["reader", "commenter", "editor", "full"])
+@pytest.mark.parametrize("name", ["reader", "commenter", "writer", "fileOrganizer",
+                                 "organizer", "editor", "full"])
 def test_every_profile_name_is_accepted_and_case_insensitive(name):
-    from csa_google_workspace.policy import PROFILES
+    """Aliases included: `editor` and `full` are our pre-v0.31.0 vocabulary and keep working.
+
+    `fileOrganizer` is the one worth parametrizing by name — it is Drive's own camelCase
+    spelling, and an earlier draft of `resolve_profile` lowercased the input and compared
+    against the raw keys, so the documented name was rejected as unknown."""
+    from csa_google_workspace.policy import PROFILES, resolve_profile
+    expected = PROFILES[resolve_profile(name)]
     for spelling in (name, name.upper(), f"  {name} "):
         policy = _config.settings_from_env({"CSA_GW_PROFILE": spelling}).policy
-        assert policy is not None and policy.enabled == PROFILES[name]
+        assert policy is not None and policy.enabled == expected
 
 
 def test_an_unknown_profile_lists_the_real_ones():
@@ -387,8 +438,24 @@ def test_an_unknown_profile_lists_the_real_ones():
         _config.settings_from_env({"CSA_GW_PROFILE": "admin"})
     message = str(e.value)
     assert "not a known profile" in message
-    for name in ("reader", "commenter", "editor", "full"):
+    for name in ("reader", "commenter", "writer", "fileOrganizer", "organizer"):
         assert name in message
+
+
+@pytest.mark.parametrize("label,target", [
+    ("manager", "organizer"), ("Content Manager", "fileOrganizer"),
+    ("viewer", "reader"), ("contributor", "writer"), ("owner", "organizer"),
+])
+def test_a_google_ui_label_is_refused_by_naming_the_api_name(label, target):
+    """Config accepts one spelling - the API string, because it is what `get_file_permissions`
+    returns. But an operator who writes `manager` has not made a typo; they used Google's own
+    interface label. A bare "unknown profile" would send them to the docs to discover that the
+    thing they already know is called something else here."""
+    with pytest.raises(ValueError) as e:
+        _config.settings_from_env({"CSA_GW_PROFILE": label})
+    message = str(e.value)
+    assert target in message
+    assert "interface label" in message
 
 
 def test_an_explicit_capability_list_overrides_a_profile():

@@ -84,16 +84,31 @@ def test_config_omits_the_reasons():
     assert "WG lead" not in text and "CCM v5" not in text
 
 
-def test_config_explains_a_fail_closed_scope_including_why():
-    text = _read(_server({}), CONFIG_URI)
+def test_config_explains_a_closed_scope_including_why():
+    """**No longer the default (v0.31.0)**, and the explanation still has to be right.
+
+    Unset now means every file, so this is reached only when an *embedder* builds a closed scope
+    through the DI seam. When they do, this text is what tells somebody why nothing works —
+    deleting the test would drop the message from coverage rather than retire it."""
+    from dataclasses import replace
+
+    from csa_google_workspace.policy import Policy, Scope
+    settings = replace(
+        settings_from_env({}),
+        policy=Policy(enabled=frozenset(),
+                      read=Scope.nothing(reason="CSA_GW_ALLOWLIST_READ is not set"),
+                      modify=Scope.nothing(reason="CSA_GW_ALLOWLIST_MODIFY is not set")))
+    text = render_config(settings)
     assert "Read: nothing" in text and "Modify: nothing" in text
     assert "will be refused" in text
     assert "is not set" in text                    # the specific diagnosis, not just "nothing"
 
 
-def test_config_distinguishes_blank_from_unset():
-    text = _read(_server({"CSA_GW_ALLOWLIST_READ": "  "}), CONFIG_URI)
-    assert "set but empty" in text
+def test_config_reports_an_unconfigured_server_as_unrestricted():
+    """The replacement for the test above, on the path an operator actually takes. The default
+    being permissive is exactly the thing that must not be discoverable only by trying it."""
+    text = _read(_server({}), CONFIG_URI)
+    assert "every file" in text.lower()
 
 
 def test_config_says_the_policy_cannot_be_changed_from_here():
@@ -161,9 +176,14 @@ def test_describe_configuration_returns_the_same_facts_structured():
     assert out["help_resource"] == HELP_URI
 
 
-def test_describe_configuration_surfaces_the_blocked_reason():
+def test_describe_configuration_reports_no_blocked_reason_when_nothing_is_blocked():
+    """**Changed with the v0.31.0 defaults.** An unconfigured server blocks nothing, so
+    `blocked_reason` must be absent rather than carrying stale text about an unset variable —
+    a model reading a reason where there is no refusal will explain a failure that did not
+    happen."""
     out = _call(_server({}), "describe_configuration")
-    assert out["blocked_reason"] and "is not set" in out["blocked_reason"]
+    assert not out.get("blocked_reason")
+    assert out["capabilities_disabled"] == []
 
 
 def test_describe_configuration_omits_reasons_too():

@@ -97,7 +97,9 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     register_file_tools(app, get_workspace)
     register_content_write_tools(app, get_workspace)
     register_comment_tools(app, get_workspace,
-                           export_dir=settings.export_dir if settings else None)
+                           export_dir=settings.export_dir if settings else None,
+                           local_read=settings.local_read if settings else True,
+                           local_write=settings.local_write if settings else True)
     register_suggestion_tools(app, get_workspace)
     if settings is not None:
         register_auth_tools(app, settings)

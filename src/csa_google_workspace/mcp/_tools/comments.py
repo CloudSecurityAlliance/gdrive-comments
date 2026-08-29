@@ -46,7 +46,8 @@ def _parse_since(value: str | None):
 
 
 def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
-                           export_dir: str | None = None) -> None:
+                           export_dir: str | None = None,
+                           local_read: bool = True, local_write: bool = True) -> None:
     @app.tool(annotations=READ)
     @_errors
     def list_comments(fileId: str, resolved: bool | None = None,
@@ -241,6 +242,13 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
             out["sheet_url"] = ref.url
             out["detail"] += f' Written to a new Google Sheet, "{name}".'
         elif destination in ("file", "xlsx"):
+            if not local_write:
+                raise ValueError(
+                    "writing the register to this machine is switched off "
+                    "(CSA_GW_LOCAL_WRITE). That is a DATA-HANDLING setting, not a permission: "
+                    "it keeps review material inside this client rather than on disk. Use "
+                    'destination="sheet" to put it in Drive, or destination="rows"/"csv" to '
+                    "get the content back and let the client decide where it goes.")
             # ValueError -> `_errors` turns it into a readable tool error with the remedy.
             suffix = _export.XLSX_SUFFIX if destination == "xlsx" else _export.CSV_SUFFIX
             target, note = _export.resolve_export_path(
@@ -314,6 +322,11 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         if not source.is_file():
             raise ValueError(f"{source} is not a file. Pass the .csv or .xlsx that "
                              f"export_comments wrote.")
+        if not local_read:
+            raise ValueError(
+                "reading a register from this machine is switched off (CSA_GW_LOCAL_READ). "
+                "That is a data-handling setting, not a permission. Without it the register "
+                "workflow is unavailable; the individual comment tools still work.")
         doc = get_workspace().open(fileId)
         rows = _apply.read_rows(source)
         report = _apply.apply_rows(doc, rows, apply=apply, force=force)
@@ -327,6 +340,11 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
             # with an exception. An .xlsx open in Excel is the EXPECTED state seconds after
             # somebody finishes filling the register in. (#168)
             try:
+                if not local_write:
+                    raise ValueError(
+                        "CSA_GW_LOCAL_WRITE is off, so completion markers were not written "
+                        "back. The document WAS updated; re-running is safe but will repeat "
+                        "the rows, because nothing on disk records that they landed.")
                 _apply.write_back(source, rows, _apply.header_for(rows))
             except Exception as error:            # noqa: BLE001 - reported, never fatal
                 register_error = (

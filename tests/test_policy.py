@@ -61,21 +61,31 @@ def test_the_default_permits_everything_that_can_be_undone():
         assert p.allows(capability), capability
 
 
-def test_the_default_refuses_everything_that_cannot_be_undone():
-    """The other half, and the reason the grouping changed in v0.21.0.
+def test_the_default_now_permits_everything_and_the_irreversible_three_are_still_named():
+    """**REVERSED in v0.31.0**, and the reversal is the point of the test.
 
-    Until then the default permitted both IRREVERSIBLE operations and forbade a REVERSIBLE
-    one, because it was drawn on "what this library already did" rather than on consequence:
+    v0.21.0 drew the default on "can this be undone?", which was a better line than the
+    verb-alarm ordering it replaced. v0.31.0 stopped using it to decide what is ON.
 
-        comment.edit    Google keeps no visible edit history. The previous text is gone.
-        comment.delete  the soft delete strips content AND author. Gone.
-        file.share      the grant is revocable; a copy the recipient took is not.
+    The reasons are in `policy.DEFAULT_ENABLED`, and the one that makes it coherent rather than
+    a retreat: **a capability enabled here is not a permission granted.** Every call still runs
+    as the authorizing user against Drive's ACLs, so this model is a ceiling *below* Drive's,
+    never an expansion. "Everything on" means *subtract nothing; let Drive decide.*
 
-    "Editing is safe because everything is versioned" holds for document content and does not
-    hold for comments. That mismatch is what this test now pins."""
+    The recoverability ordering did not go away - it still orders the profiles and still tells
+    an operator what they are switching off. `IRREVERSIBLE` is where it lives now, and only
+    `organizer` includes those three.
+    """
     p = Policy.default()
-    for capability in (policy.COMMENT_EDIT, policy.COMMENT_DELETE, policy.FILE_SHARE):
-        assert not p.allows(capability), capability
+    for capability in policy.ALL_CAPABILITIES:
+        assert p.allows(capability), f"{capability} is off by default; nothing should be"
+
+    assert policy.IRREVERSIBLE == {policy.COMMENT_EDIT, policy.COMMENT_DELETE,
+                                   policy.FILE_SHARE}
+    assert policy.IRREVERSIBLE <= policy.PROFILES["organizer"]
+    assert not policy.IRREVERSIBLE & policy.PROFILES["writer"], (
+        "the three that cannot be undone must still be absent from `writer` - the default "
+        "changed, the ladder did not")
 
 
 def test_no_capability_can_destroy_something_beyond_recovery():
@@ -371,23 +381,29 @@ def test_an_empty_scope_without_a_reason_still_produces_a_usable_message():
 
 # --- named capability profiles ---------------------------------------------
 
-def test_the_editor_profile_is_exactly_the_historical_default():
-    """Held together here rather than by a module-level assert, which bandit flags and
-    `python -O` strips. If they drift, an install silently changes what it may do."""
-    assert policy.PROFILES["editor"] == policy.DEFAULT_ENABLED
+def test_writer_is_exactly_what_editor_used_to_be():
+    """`editor` was renamed to `writer` in v0.31.0 to match Drive's API vocabulary, and the
+    capability set is **identical** - a rename, not a redefinition. Asserted because an alias
+    that quietly means something slightly different from what it aliases is worse than no
+    alias: an operator's configuration keeps working while doing something else."""
+    assert policy.PROFILES["writer"] == frozenset({
+        policy.COMMENT_CREATE, policy.COMMENT_REPLY, policy.COMMENT_RESOLVE,
+        policy.CONTENT_WRITE, policy.FILE_CREATE, policy.FILE_UPDATE, policy.FILE_TRASH})
+    assert policy.PROFILES[policy.PROFILE_ALIASES["editor"]] == policy.PROFILES["writer"]
+    assert policy.PROFILES[policy.PROFILE_ALIASES["full"]] == policy.PROFILES["organizer"]
 
 
 def test_profiles_ascend():
     """Each profile must be a superset of the one before, or "pick the next one up" stops
     being sound advice."""
     from itertools import pairwise  # 3.10+, and exactly this idiom
-    names = ["reader", "commenter", "editor", "full"]
+    names = ["reader", "commenter", "writer", "fileOrganizer", "organizer"]
     for narrower, wider in pairwise(names):
         assert policy.PROFILES[narrower] < policy.PROFILES[wider], f"{narrower} ⊄ {wider}"
 
 
-def test_full_is_every_capability_and_reader_is_none():
-    assert policy.PROFILES["full"] == set(policy.ALL_CAPABILITIES)
+def test_organizer_is_every_capability_and_reader_is_none():
+    assert policy.PROFILES["organizer"] == set(policy.ALL_CAPABILITIES)
     assert policy.PROFILES["reader"] == frozenset()
 
 
