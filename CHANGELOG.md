@@ -10,6 +10,60 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-29 — v0.31.1 (diagnostics you can turn up, because the client already keeps them) — not released yet
+
+Closes **#145**, which was specced as a logging subsystem and shrank to a level variable once
+somebody checked whether the MCP client was already doing the work.
+
+### What the check found
+
+Measured against live installs, reading the files on disk:
+
+* **Claude Code** keeps `~/Library/Caches/claude-cli-nodejs/<project>/mcp-logs-<server>/
+  <timestamp>.jsonl` — **JSONL**, one file per connection, carrying `sessionId`, `cwd`, an ISO
+  timestamp, and **our stderr verbatim**. 31 files over three days for this server.
+* **Claude Desktop** keeps `~/Library/Logs/Claude/mcp-server-csa-google-workspace.log` — different
+  format, same capture, plus the whole JSON-RPC exchange.
+
+Two clients, not coordinating, both already persisting it. And their copy is **better than one
+written here**: it is the *parent* capturing the *child*, so it survives the case a log is most
+wanted for — failing to start, crashing mid-call, hanging. A file this process writes is missing
+exactly then.
+
+So `CSA_GW_LOG_DIR`, a JSONL writer, session-id generation, retention sweeping and `0600`
+handling were all **dropped before being built**. Roughly a day of work that would have been the
+worse version of something already there.
+
+### What shipped instead
+
+**`CSA_GW_LOG_LEVEL`** — `DEBUG` · `INFO` · `WARNING` (default) · `ERROR` · `CRITICAL`. An
+unrecognised value is an error rather than a silent fallback, because the failure mode of guessing
+is somebody setting `LOG_LEVEL=verbose`, seeing nothing extra, and concluding the tool has no more
+to say.
+
+Until now there was **no logging configuration at all**: ten `log.warning` calls and Python's
+`lastResort` handler, so WARNING and above reached stderr and everything below was silently
+dropped. There was no way to turn anything up.
+
+Every tool now records **one line per call** — tool name, file id, outcome, duration — through the
+`_errors` decorator every tool already passes through. Refusals are **INFO, not WARNING**: a policy
+refusal or a missing file is the system working, and a log that cries wolf gets filtered, taking
+the real warnings with it.
+
+### The rule the client's free persistence makes stricter
+
+**Raising the level raises detail about the _operation_, never about the _content_.** No document
+or comment text is logged at any level. That capture lands in a cache directory we cannot see or
+purge, under the client's retention — so a debug log of untrusted content would be a persistence
+step for an injection payload, somewhere nobody is watching.
+
+`tests/test_logging_level.py` (19 tests) holds it in **both directions**, and both were verified
+by falsification rather than assumed: logging `kwargs` makes the `create_comment` / `replace_text`
+cases fail (content passed *in*), and logging the result makes the `read_file_content` /
+`list_comments` cases fail (content read *back*). Also asserted: nothing reaches stdout, the
+handler is bound to stderr, `configure` is idempotent, the root logger is untouched, and importing
+the library attaches nothing — only an application configures logging.
+
 ## 2026-08-28 — v0.31.0 (the capability model is Google Drive's, and the defaults are open)
 
 Closes **#195**, and with it the last issue from audit `2026-08-27-01`.
