@@ -299,9 +299,49 @@ no longer anything this project can do that a client cannot reach.
 - [ ] **C2 The flavour switch.** Restrict the server to Google's or the claude.ai connector's
       surface. It is a **config surface**, so its shape must land pre-1.0 even though the
       feature itself is optional. Registration-time filter — see the `_tools/` split.
-- [ ] **C3 Decide the caching knob**, even if the default stays off. Caching is off *by design*
-      (live multi-reviewer sessions make a self-invalidated cache actively wrong), but adding
-      one later changes observable behaviour. Name the parameter now; leave it off.
+- [x] ~~**C3 Decide the caching knob**~~ — **removed as a gate 2026-08-30.** Not deferred:
+      it was never a gate, and the feature has no stated reason to exist.
+
+      **Nobody ever wrote down why we would cache.** The original design spec lists
+      `_cache.py  # optional per-file cache (off by default)` in its file layout — a placeholder
+      module, never built, carried forward as a TODO because libraries usually have a cache.
+      There is no benchmark, no latency requirement, and no complaint anywhere in this
+      repository.
+
+      **The gate reasoning does not survive checking.** It said *"adding one later changes
+      observable behaviour"*. That is only true of a cache that ships **on by default**, and the
+      multi-reviewer argument says it never would. A default-off cache added in some later
+      version changes nothing for anyone who does not opt in, so it is purely **additive**. The
+      name-it-before-1.0 rule applies to things that must exist and whose vocabulary people
+      write into configs — the log level, the flavour switch — not to an optional feature that
+      may never be built.
+
+      **And the case for it is weaker than it looks** (CINO, 2026-08-30):
+
+      - **Offline is void.** No network means no Google Docs at all; a cache does not make the
+        tool work offline, it only makes it wrong faster.
+      - **Correctness costs the saving.** A cache you must validate before trusting is another
+        round trip, so you save payload bytes and not latency — and latency was never the
+        measured problem.
+      - **Staleness lands exactly where the tool is used.** Live multi-reviewer sessions are the
+        use case; a self-invalidated cache is silently wrong the moment a human resolves a
+        thread you did not.
+
+      **Requeued as research, not as work:** *does caching help at all — and if so, where?*
+      Measure first: which calls are actually slow, whether anyone hits a Drive quota, whether
+      an agent loop repeats reads within one session. Build nothing until a number says so.
+
+      One thing to carry into that research: **a cache already exists.**
+      `Sheet._cell_map_cache` holds the XLSX-export-derived comment→cell map, because building
+      it means exporting and parsing the whole workbook. It is invalidated on `create_comment`
+      and `batch_update`. So "this project runs uncached" is already not quite true — and it is
+      the shape any future caching should copy: an internal detail with an explicit invalidation
+      story, not a configuration knob.
+
+      And the constraint from the folder analysis, which any such work inherits: **a security
+      cache going stale is strictly worse than a data cache going stale** — it means a revoked
+      grant still works for the cache's lifetime. Whatever gets cached, it is never
+      authorization.
 - [ ] **C5 Reading the text of uploaded files** — `.docx`, `.xlsx`, `.pptx`, `.odt`, PDF.
       **Added as a 1.0.0 gate 2026-08-27**, at the CINO's direction, after a plain question
       exposed how the gap actually behaves: *"if I upload a docx and call `read_file_content`
@@ -341,11 +381,34 @@ no longer anything this project can do that a client cannot reach.
       Likely shape: Office in-process behind the existing hardening, PDF and images via Drive
       conversion, in-process PDF argued separately.
 
-- [ ] **C4 Logging, and an error store** —
-      [#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145).
-      **Added as a 1.0.0 gate 2026-08-26**, at the CINO's direction, and it belongs in Gate C
-      rather than Gate D for the reason Gate C exists: *the absence of it would force a breaking
-      change later.*
+- [x] **C4 Logging** — **done 2026-08-29** (v0.31.1),
+      [#145](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/145). The gate
+      was right and the scope was wrong: it was specced as a logging *subsystem* and shipped as
+      `CSA_GW_LOG_LEVEL` plus one line per tool call.
+
+      **The check that shrank it:** the MCP client already persists our stderr. Claude Code keeps
+      per-connection **JSONL** with a `sessionId` under `~/Library/Caches/claude-cli-nodejs/`;
+      Claude Desktop keeps `~/Library/Logs/Claude/mcp-server-<name>.log`. Two clients, not
+      coordinating. Their copy is also better than one written here — the *parent* capturing the
+      *child* survives the server crashing, which a self-written file does not. So the log
+      directory, JSONL writer, session ids, retention and `0600` handling were dropped before
+      being built. Written up for every Python MCP server we build in
+      `CINO-Platform-Engineering/research/mcp-servers/LOGGING-BELONGS-TO-THE-CLIENT.md`.
+
+      **The "error store" half is not built and is not a gate.** What made C4 a gate was the
+      config surface — the level name, spelled the way it will stay — and that has landed. A
+      store can be added later without breaking anything.
+
+      What the gate correctly predicted: raising the level had to mean **more about the
+      operation, never more about the content**, because the client's free persistence lands our
+      stderr in a cache directory nobody watches. Enforced, and verified by falsification in both
+      directions.
+
+- [ ] ~~**C4 the original scoping**~~ — superseded by the entry above. The old text argued for a
+      dedicated `csa_google_workspace.audit` logger name on the grounds that introducing one
+      later means asking people to change filters they already wrote. Still true, and still not
+      needed: nothing today emits an audit stream distinct from diagnostics, and naming a channel
+      before it has content is how a name ends up meaning something other than it says.
 
       Every log call in this library is `log.warning` — ten of them, no other level, no
       configuration. Three things follow, and the third is what makes it a gate:
@@ -420,6 +483,20 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       release build so a removed reviewer stops the release it would otherwise let through
       unattended. Reports OK / VIOLATED / **UNVERIFIABLE** and never counts the third as the
       first.
+- [ ] **Folder support in the allowlist** — **deferred 2026-08-29** at the CINO's direction
+      (*"lets do folder support later"*). The seven design questions below are unchanged and
+      unanswered; nothing about the v0.31.0 defaults reversal makes them easier, and one of them
+      gets *harder*: with the modify allowlist defaulting to every file, a folder list is
+      something an operator opts into rather than the thing standing between an agent and the
+      Drive, which lowers the cost of not having it.
+
+- [ ] **Multi-account** — **targeted at 2.0.0, 2026-08-29** at the CINO's direction. It changes
+      the shape of the tool surface rather than adding to it (an `account` parameter on every
+      tool, or a server per account), which is what a major version is for. The analysis is in
+      PR #174, deliberately left open: its central correction — that against prompt injection
+      designs A and B are *identical*, because the model is the attack surface and process
+      isolation does not stop the model being persuaded — stands regardless of when it ships.
+
 - [ ] **Cover branch protection in CI, via an optional read-only `CONTROLS_TOKEN`** — **deferred
       to 1.0.0, 2026-08-28, at the CINO's direction** (*"don't worry about branch protection yet,
       lets make that a 1.0.0 thing"*).
@@ -537,6 +614,7 @@ owes someone who depends on it. C1 says what will not change; this says what did
 | **#8 Docs `batchUpdate` breadth** | A programme, not a release gate. Tables first, post-1.0. |
 | **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
 | **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
+| **A local corpus — search, bulk analysis, vector index** | **Post-1.0.0.** Kept on the roadmap deliberately, and the framing matters: this is **not read caching** — that was dropped as unmeasured. It is about **capabilities the API does not have**, such as semantic search across documents. Needs a design first, and one rule is already settled: the index is for **discovery, never for answers**. Detail below. |
 
 ### Decided 2026-08-27
 
@@ -1152,9 +1230,51 @@ These are recorded design decisions, **not bugs**:
 
 - [ ] **`Location.tab` resolution** — multi-tab cell disambiguation via `workbook.xml` +
   rels (part → sheet-name). Real correctness gap for multi-tab sheets; its own task.
-- [ ] **Caching pass** — accessors re-fetch per call by design (the tool is used in live
-  multi-reviewer sessions where a self-only-invalidated cache goes stale). An *opt-in* /
-  request-scoped cache is the biggest runtime win for embedded review sessions.
+- [ ] ~~**Caching pass** (as a read-through cache)~~ — **dropped 2026-08-30.** Accessors
+  re-fetch per call and that is how it works, not a gap. The claim this item made — *"the biggest
+  runtime win for embedded review sessions"* — was never measured, and three things argue against
+  it: **offline is void** (no network, no Google Docs, cache or not); **validating a cache costs
+  another round trip**, so the saving is payload bytes rather than latency; and **staleness lands
+  exactly where the tool is used**, since a self-invalidated cache is silently wrong the moment a
+  human resolves a thread you did not.
+
+  **But that killed the wrong thing along with the right one**, and the distinction is worth
+  keeping — see below.
+
+- [ ] **A local corpus — search, bulk analysis, and possibly a vector index** — **on the
+  post-1.0.0 roadmap** (CINO, 2026-08-30; see *Explicitly not 1.0* above). *A different idea from
+  the cache above, despite sharing the word — and the framing is the point: **less about read
+  caching, more about adding capabilities like vector search**.*
+
+  **A read-through cache answers "can I skip this fetch?" A corpus answers "what can I do that
+  the API cannot?"** Drive's search is filename-and-full-text over Google's index; it will not do
+  semantic search, cross-document analysis, "which of these forty documents contradict the CCM
+  mapping", or anything a local embedding index makes cheap. Those are capabilities, not
+  optimisations, and none of the three arguments above touches them:
+
+  - **Offline is still void for reads**, but a corpus is *useful* offline in a way a cache is not
+    — you can search and analyse what you already have.
+  - **Validation cost does not apply**: you are not deciding whether to trust a cached value in
+    place of a fetch.
+  - **Staleness is expected and fine**, because a corpus is for **discovery, never for answers**.
+    Every search engine works this way. You search to find candidates, then read them
+    authoritatively through the normal path.
+
+  **That last line is the design rule, and it is a security rule, not a style one.** The index
+  must never be a way to *read* a document — only to *find* one. Otherwise it becomes a
+  read-authorization bypass that persists: content indexed while you had access is still there
+  after the grant is revoked or the allowlist narrows, which is the "stale security cache" problem
+  in a worse form, because it survives on disk. Anything found in the index gets re-fetched, and
+  the re-fetch is where the allowlist and Drive's own ACLs apply.
+
+  **The sync mechanism already has an entry**: `changes` (`getStartPageToken` / `list` / `watch`)
+  in the API inventory below, which is exactly how a corpus stays current without re-reading
+  everything.
+
+  **Not scheduled.** Wanted, plausible, and needs a design before any code: what is stored, where,
+  under whose retention, how it is invalidated, and how it is scoped per account. The
+  `export_comments` register is the existing precedent for derived local data, and the
+  `CSA_GW_LOCAL_*` switches are the existing precedent for letting an operator refuse it.
 - [x] **10 MB XLSX export cap** — large sheets degrade the cell-map. ✅ No longer *silent*
   as of PR #26: the shared logging story records a WARNING naming the cause. (Raising the
   cap itself is still out of reach — it's a Google export limit.)
