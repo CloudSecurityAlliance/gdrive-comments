@@ -296,9 +296,13 @@ no longer anything this project can do that a client cannot reach.
       It also came with the **pre-1.0.0 API review** the policy is only meaningful with — see
       the v0.21.0 CHANGELOG entry for the three findings, two of which were defects that would
       have been permanent after 1.0.0.
-- [ ] **C2 The flavour switch.** Restrict the server to Google's or the claude.ai connector's
-      surface. It is a **config surface**, so its shape must land pre-1.0 even though the
-      feature itself is optional. Registration-time filter — see the `_tools/` split.
+- [ ] **C2 The flavour switch** — **confirmed as a 1.0.0 deliverable 2026-08-30**, with its
+      scope rewritten: a flavour **allows only those tools AND advertises only those tools**.
+      The advertising half is what makes it a genuine drop-in replacement, because a model shown
+      36 tools behaves differently from one shown 8 however identical the names are. Today a
+      narrowed install still registers everything and refuses at call time. Registration-time
+      filter — see the `_tools/` split, and the full rewritten rationale under *Flavour switch*
+      below, including the refusal-legibility tradeoff it must handle.
 - [x] ~~**C3 Decide the caching knob**~~ — **removed as a gate 2026-08-30.** Not deferred:
       it was never a gate, and the feature has no stated reason to exist.
 
@@ -993,13 +997,47 @@ token per user on their behalf is the half nobody at CSA has built yet.
 - [ ] **`CSA_GW_FLAVOUR=google | claude | full`** (default `full`). Registers only the tools the
   chosen server exposes, under **their** names, with **their** descriptions and argument shapes.
 
-  Why it is worth building:
-  - **A predictable, smaller surface on request.** `google` is 8 tools with no share, no trash,
-    no rename/move — a materially safer profile, chosen by a vendor who could have exposed more.
-  - **Drop-in substitution.** Anyone already prompting against those servers keeps working;
-    switching costs nothing and can be reverted.
-  - **It forces the alignment work anyway.** Same names, same parameters, same descriptions is
-    exactly what makes tools transferable between servers, whether or not the switch is used.
+  **Scope rewritten 2026-08-30 (CINO), and it is now a 1.0.0 deliverable.** A flavour is a
+  **surface guarantee**, and it has two halves that only work together:
+
+  1. **Only those tools are allowed.**
+  2. **Only those tools are advertised** — the rest are not registered at all.
+
+  **The second half is the one that makes it real, and it is what the original framing missed.**
+  Today a narrowed install still registers all 36 tools and refuses at call time, so a model
+  sees a surface that does not match what it can do. That is not a drop-in replacement: the
+  model behaves differently because it has different options in front of it, however identical
+  the names are. Advertising without allowing is a lie; allowing without advertising is what we
+  have now.
+
+  Two of the three original reasons no longer carry it, and saying so is the point of this
+  rewrite:
+
+  - ~~*It forces the alignment work anyway*~~ — **already delivered.** The overlapping tools
+    already carry matching names and argument shapes, verified against live schemas and
+    documented in the README. That was the real value and it is banked without the switch.
+  - ~~*Drop-in substitution* as a compatibility argument~~ — **software-mindset thinking.** API
+    compatibility matters when *code* is pinned to names. A model reads schemas fresh each
+    session and adapts. What a model does *not* adapt to is being shown tools that are not
+    there in the server it is standing in for.
+  - **A predictable, smaller surface** — still true, and now the whole justification. `google`
+    is 8 tools with no share, no trash, no rename/move; that is a materially safer surface,
+    chosen by a vendor who could have exposed more.
+
+  **The tradeoff to handle, not to ignore.** Hiding a tool changes what a refusal looks like.
+  Today an agent calling `share_file` gets *"the `file.share` capability is disabled for this
+  server; an operator enables it in configuration"* — informative, and relayable to the user.
+  An absent tool instead reads as *"this server cannot do that"*, and the model may tell the
+  user it is impossible or go looking for another route — the same route-around-a-refusal
+  failure `csa-gw://help/capabilities` exists to prevent. So a flavour must **say what it is
+  hiding**: a line in the server instructions and in `describe_configuration` naming the
+  flavour and the count, pointing at `csa-gw://config`.
+
+  **Related but distinct, and worth building either way:** the same not-registering behaviour
+  driven by the **policy** rather than by a vendor name — if `CSA_GW_PROFILE=reader`, do not
+  advertise the write tools. That needs no new vocabulary, works for any narrowing rather than
+  two vendor shapes, and serves the context-hygiene argument directly. The flavour switch and
+  policy-driven registration are the same machinery with two different inputs.
 
   Prerequisite: implement the overlapping tools with matching names and argument shapes
   (see the coverage section below). The verified detail that matters — the tool *names and
