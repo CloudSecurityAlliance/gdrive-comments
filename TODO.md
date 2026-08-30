@@ -299,9 +299,49 @@ no longer anything this project can do that a client cannot reach.
 - [ ] **C2 The flavour switch.** Restrict the server to Google's or the claude.ai connector's
       surface. It is a **config surface**, so its shape must land pre-1.0 even though the
       feature itself is optional. Registration-time filter — see the `_tools/` split.
-- [ ] **C3 Decide the caching knob**, even if the default stays off. Caching is off *by design*
-      (live multi-reviewer sessions make a self-invalidated cache actively wrong), but adding
-      one later changes observable behaviour. Name the parameter now; leave it off.
+- [x] ~~**C3 Decide the caching knob**~~ — **removed as a gate 2026-08-30.** Not deferred:
+      it was never a gate, and the feature has no stated reason to exist.
+
+      **Nobody ever wrote down why we would cache.** The original design spec lists
+      `_cache.py  # optional per-file cache (off by default)` in its file layout — a placeholder
+      module, never built, carried forward as a TODO because libraries usually have a cache.
+      There is no benchmark, no latency requirement, and no complaint anywhere in this
+      repository.
+
+      **The gate reasoning does not survive checking.** It said *"adding one later changes
+      observable behaviour"*. That is only true of a cache that ships **on by default**, and the
+      multi-reviewer argument says it never would. A default-off cache added in some later
+      version changes nothing for anyone who does not opt in, so it is purely **additive**. The
+      name-it-before-1.0 rule applies to things that must exist and whose vocabulary people
+      write into configs — the log level, the flavour switch — not to an optional feature that
+      may never be built.
+
+      **And the case for it is weaker than it looks** (CINO, 2026-08-30):
+
+      - **Offline is void.** No network means no Google Docs at all; a cache does not make the
+        tool work offline, it only makes it wrong faster.
+      - **Correctness costs the saving.** A cache you must validate before trusting is another
+        round trip, so you save payload bytes and not latency — and latency was never the
+        measured problem.
+      - **Staleness lands exactly where the tool is used.** Live multi-reviewer sessions are the
+        use case; a self-invalidated cache is silently wrong the moment a human resolves a
+        thread you did not.
+
+      **Requeued as research, not as work:** *does caching help at all — and if so, where?*
+      Measure first: which calls are actually slow, whether anyone hits a Drive quota, whether
+      an agent loop repeats reads within one session. Build nothing until a number says so.
+
+      One thing to carry into that research: **a cache already exists.**
+      `Sheet._cell_map_cache` holds the XLSX-export-derived comment→cell map, because building
+      it means exporting and parsing the whole workbook. It is invalidated on `create_comment`
+      and `batch_update`. So "this project runs uncached" is already not quite true — and it is
+      the shape any future caching should copy: an internal detail with an explicit invalidation
+      story, not a configuration knob.
+
+      And the constraint from the folder analysis, which any such work inherits: **a security
+      cache going stale is strictly worse than a data cache going stale** — it means a revoked
+      grant still works for the cache's lifetime. Whatever gets cached, it is never
+      authorization.
 - [ ] **C5 Reading the text of uploaded files** — `.docx`, `.xlsx`, `.pptx`, `.odt`, PDF.
       **Added as a 1.0.0 gate 2026-08-27**, at the CINO's direction, after a plain question
       exposed how the gap actually behaves: *"if I upload a docx and call `read_file_content`
@@ -1189,9 +1229,14 @@ These are recorded design decisions, **not bugs**:
 
 - [ ] **`Location.tab` resolution** — multi-tab cell disambiguation via `workbook.xml` +
   rels (part → sheet-name). Real correctness gap for multi-tab sheets; its own task.
-- [ ] **Caching pass** — accessors re-fetch per call by design (the tool is used in live
-  multi-reviewer sessions where a self-only-invalidated cache goes stale). An *opt-in* /
-  request-scoped cache is the biggest runtime win for embedded review sessions.
+- [ ] ~~**Caching pass**~~ — **removed 2026-08-30.** Accessors re-fetch per call and that is
+  now simply how it works, not a gap awaiting a fix. The claim this item made — *"the biggest
+  runtime win for embedded review sessions"* — was never measured, and three things argue
+  against it: **offline is void** (no network, no Google Docs, cache or not); **validating a
+  cache costs another round trip**, so the saving is payload bytes rather than latency; and
+  **staleness lands exactly where the tool is used**, since a self-invalidated cache is silently
+  wrong the moment a human resolves a thread you did not. Requeued as *research* under Gate C —
+  measure whether it helps at all before building anything.
 - [x] **10 MB XLSX export cap** — large sheets degrade the cell-map. ✅ No longer *silent*
   as of PR #26: the shared logging story records a WARNING naming the cause. (Raising the
   cap itself is still out of reach — it's a Google export limit.)

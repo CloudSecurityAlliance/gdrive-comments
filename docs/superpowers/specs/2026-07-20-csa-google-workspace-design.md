@@ -74,7 +74,12 @@ src/csa_google_workspace/
     sheet.py             # Sheet   — ranges + XLSX comment→cell mapping
     slides.py            # Slides  — slide/text read/write
   _cellmap.py            # XLSX export + threadedComments parse + fuzzy match (Sheets)
-  _cache.py              # optional per-file cache (off by default)
+  # _cache.py            # PLANNED AND NEVER BUILT - removed from the plan 2026-08-30.
+  #                      No reason to cache was ever written down; offline is void, cache
+  #                      validation costs a round trip, and staleness lands exactly in the
+  #                      live multi-reviewer sessions this is for. Accessors re-fetch per
+  #                      call. The one real cache is Sheet._cell_map_cache, an internal
+  #                      detail with its own invalidation, not a module. See TODO.md.
   exceptions.py          # typed error hierarchy
 tests/                   # pytest; unit tests use FakeBackend (no network)
 ```
