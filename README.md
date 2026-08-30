@@ -162,6 +162,7 @@ means *subtract nothing; let Drive decide*.
 | `CSA_GW_CAPABILITIES` | the same, as an explicit list. Overrides the profile | see profile | a profile is nearly right and you need one capability off |
 | `CSA_GW_READ_ONLY=1` | the blunt one — no writes, and narrower OAuth scopes | writes are **on** | you want the narrowest possible posture in one variable |
 | `CSA_GW_LOCAL_READ` / `CSA_GW_LOCAL_WRITE` | whether registers may be read from and written to **this machine** | on | your data-handling policy says review material stays inside the client. **Not a disclosure control** — the content is in the model's context either way |
+| `CSA_GW_FLAVOUR` | which **tool surface** to publish — `full` (default), `google`, `claude` | `full` | you want a drop-in for one of the vendor servers: those tools and no others, **advertised as well as allowed** |
 | `CSA_GW_LOG_LEVEL` | how much goes to stderr — `DEBUG`…`CRITICAL` | `WARNING` | you are reproducing a problem. **There is no log-file setting**: your MCP client already persists our stderr — see below |
 
 A **malformed** list is refused loudly and the server will not start. Unset is an operator who

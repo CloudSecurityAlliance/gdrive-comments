@@ -232,6 +232,33 @@ data, because by the time either runs the content is already in the model's cont
 | `CSA_GW_LOCAL_READ` | `apply_comment_actions` reading a register from this machine | on |
 | `CSA_GW_LOCAL_WRITE` | `export_comments` writing a `.csv`/`.xlsx`, and write-back of markers | on |
 
+### Flavour — which tool surface this server publishes
+
+`CSA_GW_FLAVOUR` — `full` (default) · `google` · `claude`.
+
+`google` and `claude` restrict this server to that vendor's Drive tool surface: **those tools and
+no others, allowed *and* advertised**. The rest are never registered, which is what makes it a
+genuine drop-in — a model shown 36 tools behaves differently from one shown 8, however identical
+the eight are.
+
+| flavour | publishes |
+|---|---|
+| `full` | this server's own surface |
+| `claude` | the 11 tools the claude.ai Drive connector publishes |
+| `google` | the 8 Google's own Drive MCP server publishes |
+
+Google's 8 are the claude.ai connector's 11 minus `update_file`, `share_file` and
+`trash_file` — three a vendor who could have exposed them chose not to.
+
+Three tools survive every flavour, because they are not Drive operations: `authenticate` (without
+it an install with no token cannot get one), `describe_configuration` (where the server says what
+it is hiding) and `read_server_resource` (the route to this document). A restriction should not be
+undiagnosable.
+
+**A hidden tool is switched off, not impossible.** `describe_configuration` reports the flavour
+and counts what is hidden, so a refusal can be reported as configuration rather than as a missing
+capability.
+
 ### Diagnostics
 
 `CSA_GW_LOG_LEVEL` — `DEBUG` · `INFO` · `WARNING` (default) · `ERROR` · `CRITICAL`. Turn it up

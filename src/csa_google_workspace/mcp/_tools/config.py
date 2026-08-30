@@ -16,6 +16,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from ... import __version__
 from ..._environment import describe_environment
 from ...policy import ALL_CAPABILITIES, Policy
+from .. import _flavours
 from .._capabilities import reachable_capabilities
 from .._config import Settings
 from .._resources import CEILING_URI, CONFIG_URI, HELP_URI, render_ceiling, render_config, render_help
@@ -59,6 +60,14 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
             "capabilities_unreachable": sorted(policy.enabled - reachable),
             "capabilities_disabled": sorted(set(ALL_CAPABILITIES) - policy.enabled),
             "read_only": settings.read_only,
+            "flavour": settings.flavour,
+            # Counted live rather than assumed: `published` is what the server actually
+            # registered, and `hidden` is what the flavour filter removed at startup. A
+            # restriction that cannot say its own size is not much of a disclosure.
+            "flavour_note": _flavours.describe(
+                settings.flavour,
+                published=len(app._tool_manager.list_tools()),
+                hidden=getattr(app, "_csa_flavour_hidden", 0)),
             "blocked_reason": blocked,
             # Asked for repeatedly and previously answerable only out-of-band, by reading
             # pyproject.toml in a checkout. A model that cannot say which version it is

@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-27 (v0.30.13)
+**Last verified:** 2026-08-30 (v0.32.0)
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -78,9 +78,11 @@ it means installing it and importing it.
 - **Config:** `CSA_GW_TOKEN` (token cache, default
   `~/.csa_google_workspace/token.json`), `CSA_GW_READ_ONLY=1` (refuse writes),
   `CSA_GW_CLIENT_SECRETS` (needed by `login` only — a cached token carries its
-  own client id and secret).
+  own client id and secret), `CSA_GW_LOG_LEVEL` (stderr verbosity; the MCP client
+  persists that stream for you), `CSA_GW_FLAVOUR=google|claude` (publish only that
+  vendor's Drive tool surface). Full reference: `csa-gw://help/configuration`.
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.31.1.
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.32.0.
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a
@@ -88,7 +90,9 @@ it means installing it and importing it.
   ```bash
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"healthcheck","version":"0"}}}}' | csa-google-workspace-mcp
   ```
-  Expect a JSON-RPC result listing 36 tools.
+  Expect a JSON-RPC result listing 36 tools — or 14 / 11 under
+  `CSA_GW_FLAVOUR=claude` / `google`, which is the point of that variable: it changes
+  what the server *advertises*, not only what it permits.
 - **Owner:** Kurt Seifried
 - **Notes:** A missing or expired token does **not** stop the server starting —
   it starts and reports the remedy through a tool error. So "the process is

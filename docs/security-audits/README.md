@@ -52,7 +52,7 @@ looked for, which is the reason this table exists.
 |---|---|
 | `src/csa_google_workspace/` — top level | 2026-08-27 · claude-code |
 | `documents/` — per-type content | 2026-07-22 · claude-code |
-| `mcp/` — server, auth flow, config, resources | **partial** — 13/14 at 2026-08-27 |
+| `mcp/` — server, auth flow, config, resources | **partial** — 13/15 at 2026-08-27 |
 | `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
 | `demo/` | 2026-08-27 · claude-code |
 | `tests/` as code | **not yet audited** |

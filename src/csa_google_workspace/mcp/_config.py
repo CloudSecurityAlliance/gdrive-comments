@@ -27,6 +27,7 @@ from ..allowlist import ALL_SYNONYMS, AllowlistError, Listing, parse_setting
 from ..exceptions import AuthError
 from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, PROFILES, Policy, Scope, resolve_profile
 from ..workspace import Workspace
+from . import _flavours
 
 DEFAULT_TOKEN_PATH = "~/.csa_google_workspace/token.json"   # nosec B105 - a path, not a secret
 DEFAULT_CLIENT_SECRETS_PATH = "~/.csa_google_workspace/client_secret.json"  # nosec B105 - a path
@@ -122,6 +123,10 @@ class Settings:
     # same concern as authorization.
     #
     # Default ON, because they are not a boundary and off would break every existing export.
+    # Which vendor's tool surface this server publishes - `full`, `google` or `claude`. A
+    # flavour ALLOWS and ADVERTISES only those tools; see mcp/_flavours.py.
+    flavour: str = _flavours.DEFAULT_FLAVOUR
+
     local_read: bool = True      # apply_comment_actions reading a filled-in register
     local_write: bool = True     # export_comments -> .csv/.xlsx, and write-back of markers
 
@@ -285,6 +290,7 @@ def settings_from_env(env: Mapping[str, str]) -> Settings:
         policy=policy_from_env(env),
         profile=_profile_from_env(env),
         export_dir=(env.get("CSA_GW_EXPORT_DIR") or "").strip() or DEFAULT_EXPORT_DIR,
+        flavour=_flavours.flavour_from_env(env),
         local_read=_switch(env, "CSA_GW_LOCAL_READ"),
         local_write=_switch(env, "CSA_GW_LOCAL_WRITE"),
     )

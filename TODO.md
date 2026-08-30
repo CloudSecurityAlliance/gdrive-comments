@@ -60,13 +60,13 @@ below; this is the index.
 
 | item | note |
 |---|---|
-| **C2 flavour switch** | Rewritten: **allow only those tools AND advertise only those tools**. The advertising half is what makes it a real drop-in |
-| **C6 MCP Registry listing** | Last, because C2 changes the surface it advertises |
+| **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
 | **`accessproposals`** | *Not* "request access" — it is the owner's side: see and resolve requests. `list` is a read; **`resolve` is `file.share` in disguise** |
 | **Drive labels** | The one inventory item that is security-adjacent — classification is what DLP keys on |
 | **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
 | **Dead-entry detection** | An allowlisted file that has been trashed |
 | **`CONTROLS_TOKEN`** | A decision, not code: store a read-only PAT so CI can verify branch protection, or leave it verified locally |
+| ~~C2 flavour switch~~ | **Shipped** v0.32.0 — allowed *and* advertised; `claude` 14 tools, `google` 11 |
 | ~~C4 logging~~ | **Shipped** v0.31.1 |
 | ~~C3 caching knob~~ | **Dissolved** — never a gate, because a default-off cache is additive |
 
@@ -367,13 +367,24 @@ no longer anything this project can do that a client cannot reach.
       It also came with the **pre-1.0.0 API review** the policy is only meaningful with — see
       the v0.21.0 CHANGELOG entry for the three findings, two of which were defects that would
       have been permanent after 1.0.0.
-- [ ] **C2 The flavour switch** — **confirmed as a 1.0.0 deliverable 2026-08-30**, with its
-      scope rewritten: a flavour **allows only those tools AND advertises only those tools**.
-      The advertising half is what makes it a genuine drop-in replacement, because a model shown
-      36 tools behaves differently from one shown 8 however identical the names are. Today a
-      narrowed install still registers everything and refuses at call time. Registration-time
-      filter — see the `_tools/` split, and the full rewritten rationale under *Flavour switch*
-      below, including the refusal-legibility tradeoff it must handle.
+- [x] ~~**C2 The flavour switch**~~ — **shipped in v0.32.0 (2026-08-30)**, with the rewritten
+      scope intact: a flavour **allows only those tools AND advertises only those tools**.
+      `CSA_GW_FLAVOUR=google|claude|full`, default `full`; `claude` publishes 14 and `google` 11
+      (the vendor surface plus the three in `ALWAYS`).
+
+      The advertising half is what made it worth doing — a model shown 36 tools behaves
+      differently from one shown 8, however identical the names are — so the filter runs at
+      **registration**, last in `create_server`, and a hidden tool answers `Unknown tool` from
+      dispatch rather than a policy refusal from the backend.
+
+      The refusal-legibility tradeoff was handled the way the rationale below requires: the
+      restriction announces itself in the server instructions and in `describe_configuration`,
+      which names the flavour and **counts what is hidden**. `authenticate`,
+      `describe_configuration` and `read_server_resource` survive every flavour, because a
+      restricted server must still be switchable-on and able to explain itself.
+
+      What is left of the item is the open question below — **what `full` should say about
+      itself** — which is a wording decision, not a gate. See `tests/test_flavour_switch.py`.
 - [x] ~~**C3 Decide the caching knob**~~ — **removed as a gate 2026-08-30.** Not deferred:
       it was never a gate, and the feature has no stated reason to exist.
 
@@ -1187,10 +1198,16 @@ token per user on their behalf is the half nobody at CSA has built yet.
 
 ## Flavour switch — restrict this server to Google's or Claude's surface
 
-- [ ] **`CSA_GW_FLAVOUR=google | claude | full`** (default `full`). Registers only the tools the
-  chosen server exposes, under **their** names, with **their** descriptions and argument shapes.
+- [x] ~~**`CSA_GW_FLAVOUR=google | claude | full`** (default `full`)~~ — **shipped in v0.32.0
+  (2026-08-30)**. Registers only the tools the chosen server exposes, under their names and
+  argument shapes. `mcp/_flavours.py`, `tests/test_flavour_switch.py`.
 
-  **Scope rewritten 2026-08-30 (CINO), and it is now a 1.0.0 deliverable.** A flavour is a
+  **One deliberate gap, recorded rather than claimed:** the surviving tools keep **our**
+  descriptions, not the vendor's. Names and parameters match — that was the alignment work — but
+  copying Claude's model-facing wording is a separate, per-tool exercise, and ours carry guidance
+  of their own (the untrusted-content rule, the `export_comments` steer). Left open below.
+
+  The scope was rewritten 2026-08-30 (CINO) and shipped as rewritten. A flavour is a
   **surface guarantee**, and it has two halves that only work together:
 
   1. **Only those tools are allowed.**
@@ -1217,20 +1234,36 @@ token per user on their behalf is the half nobody at CSA has built yet.
     is 8 tools with no share, no trash, no rename/move; that is a materially safer surface,
     chosen by a vendor who could have exposed more.
 
-  **The tradeoff to handle, not to ignore.** Hiding a tool changes what a refusal looks like.
+  **The tradeoff, handled rather than ignored — this is what shipped.** Hiding a tool changes
+  what a refusal looks like.
   Today an agent calling `share_file` gets *"the `file.share` capability is disabled for this
   server; an operator enables it in configuration"* — informative, and relayable to the user.
   An absent tool instead reads as *"this server cannot do that"*, and the model may tell the
   user it is impossible or go looking for another route — the same route-around-a-refusal
   failure `csa-gw://help/capabilities` exists to prevent. So a flavour must **say what it is
   hiding**: a line in the server instructions and in `describe_configuration` naming the
-  flavour and the count, pointing at `csa-gw://config`.
+  flavour and the count, pointing at `csa-gw://config`. Both landed. Three tools survive every
+  flavour for the same reason — `authenticate` (or the server is bricked, not restricted),
+  `describe_configuration` (where it says what it is hiding) and `read_server_resource` (the
+  route to `csa-gw://help/capabilities`).
 
-  **Related but distinct, and worth building either way:** the same not-registering behaviour
-  driven by the **policy** rather than by a vendor name — if `CSA_GW_PROFILE=reader`, do not
-  advertise the write tools. That needs no new vocabulary, works for any narrowing rather than
-  two vendor shapes, and serves the context-hygiene argument directly. The flavour switch and
-  policy-driven registration are the same machinery with two different inputs.
+- [ ] **Policy-driven registration** — the same not-registering behaviour driven by the
+  **policy** rather than by a vendor name: if `CSA_GW_PROFILE=reader`, do not advertise the write
+  tools. **Now cheap**, because v0.32.0 built the machinery — the filter in `create_server` takes
+  a set of names; only the input differs. It needs no new vocabulary, works for *any* narrowing
+  rather than two vendor shapes, and serves the context-hygiene argument directly.
+
+  It also needs the same care about legibility, and a bit more of it: a `reader` install that
+  simply lacks the write tools cannot tell a model *why*, and "an operator can enable it" is
+  exactly the sentence a user needs. Reuse `_flavours.describe`'s shape — say what is hidden and
+  how many.
+
+- [ ] **Copy the vendor descriptions**, per tool, under `claude`/`google`. Verified detail: the
+  names and parameters are identical between Google's and Claude's servers; only the
+  *descriptions* differ, and **Claude's carry extra model-facing guidance** (e.g. "do not put
+  document-type words inside `title`/`fullText` clauses") that exists because models get it
+  wrong. Worth having; not a gate, because a description mismatch degrades quality rather than
+  breaking substitution.
 
   Prerequisite: implement the overlapping tools with matching names and argument shapes
   (see the coverage section below). The verified detail that matters — the tool *names and
