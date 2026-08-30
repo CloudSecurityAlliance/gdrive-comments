@@ -60,13 +60,13 @@ below; this is the index.
 
 | item | note |
 |---|---|
-| **C2 flavour switch** | Rewritten: **allow only those tools AND advertise only those tools**. The advertising half is what makes it a real drop-in |
-| **C6 MCP Registry listing** | Last, because C2 changes the surface it advertises |
+| **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
 | **`accessproposals`** | *Not* "request access" — it is the owner's side: see and resolve requests. `list` is a read; **`resolve` is `file.share` in disguise** |
 | **Drive labels** | The one inventory item that is security-adjacent — classification is what DLP keys on |
 | **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
 | **Dead-entry detection** | An allowlisted file that has been trashed |
 | **`CONTROLS_TOKEN`** | A decision, not code: store a read-only PAT so CI can verify branch protection, or leave it verified locally |
+| ~~C2 flavour switch~~ | **Shipped** v0.32.0 — allowed *and* advertised; `claude` 14 tools, `google` 11 |
 | ~~C4 logging~~ | **Shipped** v0.31.1 |
 | ~~C3 caching knob~~ | **Dissolved** — never a gate, because a default-off cache is additive |
 
