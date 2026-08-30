@@ -618,6 +618,7 @@ owes someone who depends on it. C1 says what will not change; this says what did
 | **#8 Docs `batchUpdate` breadth** | A programme, not a release gate. Tables first, post-1.0. |
 | **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
 | **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
+| **Provenance trust — whose files, not which files** | **Post-1.0.0.** Only interact with files owned by, and writable only by, trusted emails/domains. A genuinely new axis Drive cannot express, and the strongest answer to "should we parse untrusted binary formats". Gates on **potential** rather than history, because `displayName` is impersonatable and `emailAddress` is not guaranteed — which means the permissions list alone answers it and revisions are not needed. See below. |
 | **Traversal primitive · corpus · revisions** | **Post-1.0.0**, one connected thread — see *Traversal, corpus and revisions* below. Folder walking with shortcut resolution; a local corpus for cross-file comment queries Drive cannot do at all; revision caching, which is the one thing genuinely safe to cache because revisions are append-only. Contains one **probe** worth running early: whether Google prunes Docs revisions, which decides how urgent the rest is. |
 | **A local corpus — search, bulk analysis, vector index** | **Post-1.0.0.** Kept on the roadmap deliberately, and the framing matters: this is **not read caching** — that was dropped as unmeasured. It is about **capabilities the API does not have**, such as semantic search across documents. Needs a design first, and one rule is already settled: the index is for **discovery, never for answers**. Detail below. |
 
@@ -759,6 +760,85 @@ Draft and review where the comments are, typeset where the brand rules are, put 
 where it can be reviewed again. The export half is #6 and lands now; the import half is #4 —
 `create_file` should accept `text/markdown` and let Drive convert, rather than uploading plain
 text and losing the structure.
+
+## Provenance trust — whose files, not which files — post-1.0.0
+
+**Decided post-1.0.0 on 2026-08-30 (CINO)**, after the design was worked through far enough to
+see its real size. It began as *"defang the PDF parser"* and turned into its own capability with
+an identity problem underneath it.
+
+**The idea.** Only interact with files that are **owned by me, or by a trusted list of
+emails/domains**, and to which **only trusted parties could have written**. A genuinely new axis:
+the allowlist says *which files*, this says *whose files*. Drive cannot express it at all.
+
+**Why it is worth having.** It attacks the **supply of attacker-chosen bytes** rather than trying
+to harden a parser. Anyone who knows your email can share a file into your Drive today; provenance
+trust removes that as an input path. It is the strongest available answer to *"should we parse
+untrusted binary formats"* — which is exactly why C5 must not lean on it while it is unbuilt.
+
+### The chain that forced gating on *potential* rather than *actual*
+
+Worth recording, because the conclusion reverses the instinct and the reversal is earned:
+
+1. **You cannot trust `emailAddress` on a `User`.** Documented: *"This may not be present in
+   certain contexts if the user has not made their email address visible to the requester."*
+2. **`permissionId` bridges it** — *"the user's ID as visible in Permission resources"* — so an
+   unresolvable email can sometimes be resolved through the file's own permissions list.
+3. **But `displayName` is user-settable**, so *"Bob wrote this revision"* means only *"someone
+   whose display name is Bob"*. **Who actually wrote is unverifiable.**
+4. **Therefore the gate must be on potential**, not on history — and once it is, **revisions are
+   not needed at all**. They answer "who did", which cannot be verified; the permissions list
+   answers "who could have", which can. One call, no identity resolution, no dependency on the
+   revision-pruning question, and `get_file_permissions` already exists.
+
+### The rule, which needs no `User` object
+
+| permission | meaning | verdict |
+|---|---|---|
+| `type: anyone` + write | **anyone on the internet** could have edited it | refuse |
+| `type: domain` outside trusted | anyone at that domain could have | refuse |
+| `type: group` + write | membership is **not visible** from the Drive API | unresolvable → refuse |
+| `type: user` + write, untrusted email | a named outsider could have | refuse |
+| email unresolvable | cannot confirm trust | refuse |
+
+**Unresolvable fails closed, and that is the correct direction** — if we cannot establish who
+somebody is, we cannot confirm they are trusted. There is a helpful asymmetry: inside a Workspace
+domain members' emails are generally visible to each other, while the accounts most likely to hide
+one are external — the ones to refuse anyway. The link-shared case (`anyone` + `writer`) is the
+single clearest untrusted-provenance signal available, and it is free.
+
+### What makes it a feature rather than a check
+
+- **Permissions are NOT append-only.** Revisions never change, so caching them is safe.
+  Permissions are added, changed and **removed**, so a permissions cache can outlive the grant
+  that justified a "trusted" verdict — staleness in the dangerous direction. And **permissions
+  inherit from folders**, so one folder change silently flips the trust status of everything
+  beneath it. Short TTL or explicit invalidation; it cannot work like the revision cache.
+- **The authoritative history is not reconstructable by us.** Drive's API has no permission
+  history — snapshots are all we can build, and ours only start when we start watching. The real
+  record is the **Workspace Admin audit log** (Reports API): different API, admin-scoped,
+  server-side. Same conclusion as everywhere else: the durable version lives on the server.
+- **It interacts badly with the corpus.** Content indexed under a trust decision keeps that
+  content after the decision changes. Corpus entries need the verdict recorded and re-validated,
+  or purged when it flips.
+- **It should probably gate writes too.** *"Do not edit a document anyone on the internet can also
+  edit"* is at least as sensible as not reading one, and it is where an injected instruction and
+  an unbounded grant combine.
+
+### Open before any code
+
+- [ ] Is `permissions.list` reliably readable for every file we can read, and how does it behave
+      on **shared drives**? That decides whether "unresolvable" is rare or routine — and routine
+      would make the control unusable rather than strict.
+- [ ] Config shape: one variable taking `me`, emails and `*@domain`, applying to owner and to
+      writers. A `permissionId` escape hatch for identities that never resolve.
+- [ ] Reads only, or reads and writes.
+
+### The consequence for 1.0.0
+
+**C5 cannot count on this.** The PDF decision has to stand on its own merits, without provenance
+filtering to lean on — which strengthens the case for declining in-process PDF parsing at 1.0.0
+and saying so in `csa-gw://help/capabilities`.
 
 ## Traversal, corpus and revisions — post-1.0.0
 
