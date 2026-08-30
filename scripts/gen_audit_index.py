@@ -158,6 +158,13 @@ def tracked_files() -> list[str]:
 
     Not `Path.glob`: that would count untracked scratch files and a `.venv`, and would make
     the answer depend on the state of somebody's working tree rather than on the commit.
+
+    **The sharp edge that follows, and it has bitten once.** A brand-new module is invisible here
+    until it is `git add`ed, so `--check` and `tests/test_audit_index.py` pass locally while you
+    are writing it and fail in CI the moment it is committed - a green local suite and five red
+    matrix jobs, from one untracked file. That is the correct trade (the alternative counts
+    `.venv`), but if the index is stale in CI and clean on your machine, run `git add` first and
+    look again.
     """
     out = subprocess.run(["git", "-C", str(ROOT), "ls-files"],
                          capture_output=True, text=True, check=True)

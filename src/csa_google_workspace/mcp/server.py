@@ -124,9 +124,14 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     #
     # Applied last so it filters everything uniformly - a tool added to any register_* function
     # in future is covered without anyone remembering this exists.
-    if settings is not None and settings.flavour != _flavours.DEFAULT_FLAVOUR:
-        allowed = _flavours.permitted(settings.flavour)
-        assert allowed is not None            # noqa: S101 - `full` returned above
+    #
+    # `permitted()` returning None IS the "unrestricted" answer, so it is the branch condition
+    # itself rather than a separate `flavour != "full"` test narrowed by an assert. Two encodings
+    # of one fact have to agree, and an `assert` for the narrowing would vanish under `python -O`
+    # - leaving a `None` where a set is iterated, at startup, in the code that decides which
+    # tools exist.
+    allowed = _flavours.permitted(settings.flavour) if settings is not None else None
+    if allowed is not None:
         registered = [t.name for t in app._tool_manager.list_tools()]
         for name_ in registered:
             if name_ not in allowed:
