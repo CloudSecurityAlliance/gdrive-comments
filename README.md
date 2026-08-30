@@ -260,6 +260,10 @@ project, bounding an unattended run, keeping an experiment away from production 
 **not** *"this is how my data is secured"*: anyone who can edit this configuration can also call
 the Drive API directly. See [`SECURITY.md`](./SECURITY.md).
 
+There is also a plainly practical reason: **a smaller world is a cleaner context.** Fewer
+irrelevant search hits, less chance of the model reaching for the neighbouring document because
+the name was similar, less window spent on things that were never relevant.
+
 **The list lives in the configuration — there is no allowlist file.** That is a deliberate
 restriction, not a missing feature: the client config is the artifact you control and can *see*,
 so reading it tells you exactly what the agent may touch. A path would add an indirection whose

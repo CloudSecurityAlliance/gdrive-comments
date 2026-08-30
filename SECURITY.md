@@ -290,6 +290,13 @@ The right reason to narrow the configuration here is *"I want this agent doing l
 scoping a project, limiting blast radius on unattended runs, keeping an experiment away from
 production documents. It is not *"this is how my data is secured."*
 
+**And there is a third reason, which is not about safety at all: context hygiene.** A narrower
+scope means fewer irrelevant search results, less chance of the model editing the neighbouring
+document because the name was similar, and less of the context window spent on things that were
+never relevant. That is a *performance* argument rather than a security one, and it is probably
+the most honest reason most operators will narrow anything. A model given a smaller world does
+better work in it.
+
 ## Logging is the same shape
 
 Everything above applies again, unchanged: **if you want an audit trail, it has to be server-side.
