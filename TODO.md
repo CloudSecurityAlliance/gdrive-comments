@@ -347,6 +347,42 @@ no longer anything this project can do that a client cannot reach.
       grant still works for the cache's lifetime. Whatever gets cached, it is never
       authorization.
 - [ ] **C5 Reading the text of uploaded files** — `.docx`, `.xlsx`, `.pptx`, `.odt`, PDF.
+      **DECIDED 2026-08-30 (CINO): explicitly NOT supported, and blocked on security work rather
+      than merely scheduled after it.** It does not ship until provenance trust — and whatever
+      else that pass brings — is built. This is a dependency, not a queue position.
+
+      **The gate itself is discharged**, because what had to land before people depend on the
+      surface was never the parsing. It was one contract question: **does `read_file_content`
+      ever create a file?** The answer is **no**.
+
+      That rules out Drive conversion (`files.copy` to a Google-native mime) permanently, and
+      rules it out for good reasons beyond the contract: it needs `file.create` *and* cleanup, so
+      a **read** would acquire two write capabilities; it consumes the user's storage quota; and
+      it litters their Drive if the process dies between create and cleanup. Under
+      `API-STABILITY.md` it would also be **breaking with no name changed** — `PROFILE=reader`
+      would stop being able to read a `.docx`, and the tool's `readOnlyHint=True` annotation
+      would become a lie.
+
+      With that answered, **in-process extraction is purely additive** whenever it does ship:
+      `read_file_content` starts succeeding where it used to refuse, needing no new capability,
+      and nothing an existing configuration says changes meaning. So there is no contract reason
+      to hurry it, and a good security reason to wait.
+
+      **What already works today, so the gap is narrower than it reads:** `get_file_metadata` and
+      `download_file_content` both work on any file. Only *text extraction* is Google-native, and
+      `read_file_content` already refuses with a message naming two workarounds — converting the
+      file in Drive by hand, or taking the bytes.
+
+      **When it is picked up**, the shape from the earlier analysis still holds: Office formats
+      are zip + XML with a precedent already in the tree (`_cellmap.py` parses XLSX behind
+      `defusedxml` and three size caps), and **PDF is the genuinely risky one** — a complex binary
+      with a long CVE history in every parser, where *anyone who can share a file chooses the
+      bytes*. Provenance trust is what removes that supply, which is exactly why this waits for it.
+
+      **`.docx` comments are a separate question**, and a more interesting one for a
+      comments-first tool: a Word document that has been through review is the same artifact as a
+      commented Google Doc in a different container, but its comments live in `word/comments.xml`
+      rather than in the Drive API. Also additive; also not urgent.
       **Added as a 1.0.0 gate 2026-08-27**, at the CINO's direction, after a plain question
       exposed how the gap actually behaves: *"if I upload a docx and call `read_file_content`
       on it, what happens?"*

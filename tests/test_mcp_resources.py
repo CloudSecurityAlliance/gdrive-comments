@@ -290,3 +290,16 @@ class TestTheCeilingResource:
         app = _server(POSTURE)
         out = asyncio.run(app.call_tool("read_server_resource", {"uri": CEILING_URI}))
         assert "cannot do" in str(out)
+
+    def test_the_ceiling_names_uploaded_formats_and_says_it_is_conditional(self):
+        """C5, decided 2026-08-30: uploaded-format text extraction is withheld until provenance
+        controls exist. The ceiling has to say so, and say it is *conditional* rather than
+        impossible — a model that believes a thing is impossible stops, where one that knows it
+        is switched off can tell the user what would change it.
+
+        It must also name what DOES work, because metadata and raw bytes work on any file and a
+        blanket "not supported" would hide two tools that solve the caller's problem."""
+        body = self.text()
+        assert ".docx" in body and "PDF" in body
+        assert "download_file_content" in body, "the working alternative must be named"
+        assert "provenance" in body, "the reason it is withheld, and what would lift it"
