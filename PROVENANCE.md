@@ -9,16 +9,24 @@ style is worse than reading it.
 
 ## Authorship
 
-**Every non-bot commit is authored `Kurt Seifried <kurt@seifried.org>`** — 113 of them at the
+**Every non-bot commit is authored `Kurt Seifried <kurt@seifried.org>`** — 208 of them at the
 time of writing, plus 2 from Dependabot. He owns the repository, the Google Cloud project, the
 PyPI trusted-publisher configuration, and every design decision recorded in
 `docs/superpowers/specs/`.
 
-**A large share of the content — code, tests, specs, plans, this file — was written by an AI
-assistant (Claude, via Claude Code) working from his direction, in sessions where he set the
-goals, chose between options, rejected approaches, and reviewed what landed.** The commits are
-attributed to him because he is accountable for them; the drafting was frequently not his
-keystrokes.
+**The content — code, tests, specs, plans, this file — was written by an AI assistant (Claude,
+via Claude Code) working from his direction.** Not "a large share", which is how this paragraph
+read until 2026-08-30 and understated it: the drafting is the assistant's, in sessions where he
+sets the goals, chooses between options, rejects approaches, corrects framings, and reviews what
+lands. The commits are attributed to him because **he is accountable for them**, which is the
+part attribution is actually for.
+
+That is stated plainly rather than softened because a provenance document that hedges its own
+central fact is worth less than no document. It is also why there are **no per-commit
+"AI-assisted" trailers** and will not be: a trailer exists to *distinguish*, and here there is
+nothing to distinguish. A marker on every commit is noise. (A handful of early commits carry
+`Co-authored-by:` trailers from tooling defaults; they mark nothing this paragraph does not
+already say about all of them.)
 
 Two things follow, and both matter more than the attribution itself:
 

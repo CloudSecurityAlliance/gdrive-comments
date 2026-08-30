@@ -509,10 +509,16 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       "installing this by accident is harmful", not "this is old": a leaked credential, data
       loss or corruption, a write the configured policy should have refused (the policy failing
       *open*), or an artifact not matching its tag. Not for an outdated surface or embarrassment.
-- [ ] **Consider `Assisted-by:` trailers going forward.** `PROVENANCE.md` states the division of
-      labour at project level; per-commit attribution would make it greppable. Deferred because
-      it is only useful if applied consistently, and retrofitting 113 commits is not worth a
-      history rewrite.
+- [x] ~~**Consider `Assisted-by:` trailers going forward**~~ — **closed 2026-08-30 (CINO): not
+      doing it.** The premise was that per-commit attribution would make AI involvement
+      greppable. It would not, because **there is no variation to record**: *"100% of this was
+      written by AI with the human sitting in Claude Code, directing."* A trailer exists to
+      distinguish, and a marker on every single commit is noise.
+
+      What it did surface was an understatement worth fixing: `PROVENANCE.md` said *"a large
+      share of the content"* and *"frequently not his keystrokes"*, which is weaker than the
+      truth. Corrected — a provenance document that hedges its own central fact is worth less
+      than no document.
 - [x] **Add `scripts/check_release_history.py` to CI** — **done 2026-08-27**, as a step in the
       `lint` job. It already treated an unreachable PyPI as *skip the comparison* rather than a
       failure, so no guard was needed. Earns its place: it caught v0.27.0, which the changelog
