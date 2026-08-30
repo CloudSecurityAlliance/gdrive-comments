@@ -423,6 +423,13 @@ access to…"*. These decide who may *set* policy rather than use the file, and 
 silently **removes** access from people who are not present; Google's own dialog warns *"Some
 people may lose access."* Governance decisions belong in Drive's interface with a human.
 
+**Read the text of an uploaded `.docx`, `.pptx`, `.odt` or PDF.** Metadata and raw bytes work on
+any file — `get_file_metadata` and `download_file_content` — but *text extraction* is Google-native
+only. Extracting text from an uploaded format means parsing an untrusted binary in-process, and
+whoever shared the file chose those bytes. It is deliberately withheld until the provenance
+controls that would bound that input exist. To read one now: open it in Google Docs from Drive,
+which makes a native copy this server can read.
+
 **Write a live formula into a spreadsheet.** `update_cells` and `append_rows` store values
 verbatim. Formula-writing exists in the library for a developer who has decided; it is not
 offered here, because content passing through this server is frequently derived from untrusted
