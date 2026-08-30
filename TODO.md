@@ -51,10 +51,65 @@ the control that scopes it existed.
   write-on-by-default defensible rather than merely convenient. The open remainder — folders,
   per-capability scope, expiry, dead-entry detection, dry-run — is Gate A4.
 
+## Where everything stands — the three buckets
+
+**Sorted 2026-08-30.** Every open item has a bucket and a reason. Details are in the sections
+below; this is the index.
+
+### 1.0.0
+
+| item | note |
+|---|---|
+| **C2 flavour switch** | Rewritten: **allow only those tools AND advertise only those tools**. The advertising half is what makes it a real drop-in |
+| **C6 MCP Registry listing** | Last, because C2 changes the surface it advertises |
+| **`accessproposals`** | *Not* "request access" — it is the owner's side: see and resolve requests. `list` is a read; **`resolve` is `file.share` in disguise** |
+| **Drive labels** | The one inventory item that is security-adjacent — classification is what DLP keys on |
+| **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
+| **Dead-entry detection** | An allowlisted file that has been trashed |
+| **`CONTROLS_TOKEN`** | A decision, not code: store a read-only PAT so CI can verify branch protection, or leave it verified locally |
+| ~~C4 logging~~ | **Shipped** v0.31.1 |
+| ~~C3 caching knob~~ | **Dissolved** — never a gate, because a default-off cache is additive |
+
+### Post-1.0.0
+
+| item | note |
+|---|---|
+| **Provenance trust** | *Whose* files, not which. Gates on **potential**, because `displayName` is impersonatable so "who actually wrote" is unverifiable |
+| **C5 uploaded formats** | **Blocked on** provenance trust — a dependency, not a queue position |
+| **`.docx` comments** | Separate from C5's text extraction, and more interesting for a comments-first tool |
+| **Traversal · corpus · revisions · vector search** | Contains the **probe** worth running early: does Google prune Docs revisions? |
+| **Folders in the allowlist** | Distinct from folder-as-corpus-scope, which is a different and easier question |
+| **Per-capability scope · allowlist expiry** | Both weakened by the defaults reversal |
+| **Document-text Resource · comment-triage Prompt** | Conveniences over tools that already exist |
+| **Docs `batchUpdate` breadth · MCPB bundle · `PlaywrightBackend`** | Unchanged |
+| **The API inventory** | **Committed wholesale** — all of it gets built, timing by value |
+
+### 2.0.0 — a change in the *shape* of the tool surface
+
+| item | note |
+|---|---|
+| **Multi-account** | An `account` parameter on every tool, or a server per account. PR #174 |
+| **Hosted server · `files.watch`** | Different transport, auth model and threat model |
+
+### Parked / closed
+
+**#113** differential audit benchmark (parked) · **`Assisted-by:` trailers** (closed — nothing to
+distinguish) · **the discovery question** (stale, shipped v0.15.0) · **`permissions.*`** (done
+v0.30.14).
+
 ## No 1.0.0 milestone — keep shipping `0.N+1.0`
 
 **Decided 2026-08-27 by the CINO: stop treating 1.0.0 as a thing to reach.** Ship
 `0.N+1.0` improvements continuously and let the version number follow the work.
+
+> **Amended 2026-08-30.** 1.0.0 came back, as a **bucketing device rather than a finish line**.
+> Every open item now gets one of three answers — *1.0.0*, *post-1.0.0*, or *2.0.0* — and the
+> question asked of each is "when", never "whether". That is compatible with the decision above
+> rather than a reversal of it: the objection was to a milestone that shaped priorities, and a
+> three-bucket sort does the opposite, because it forces the reasoning to be written down per
+> item. Releases still ship continuously; the buckets say what a release is allowed to contain.
+> **2.0.0 means a change in the SHAPE of the tool surface** — multi-account, the hosted server —
+> rather than a size of change.
 
 That matches how this project actually operates — **33 releases in five weeks** — and it
 removes a milestone that was starting to shape priorities rather than reflect them. Items below
@@ -125,12 +180,28 @@ arrived *after* the gate that turns them off.
             nothing, and `*` must be typed. Folder URLs are a **loud error**, not an inert
             entry. `search_files` results are filtered to the read scope. Denials log at
             WARNING.
-      - [ ] **Still open in the basic form:** per-capability scope ("commentable but not
-            editable" needs a structured value, which the flat list cannot express), optional
-            expiry, dead-entry detection (an allowlisted file that has been trashed), and a
-            **dry-run** answering "what would this run touch" before it touches anything.
-            Note that any structured format has to stay *environment-shaped* — the decision
-            that the policy lives in the client config, not in a file, is deliberate.
+      - [ ] **Split 2026-08-30 (CINO)**, because the four remaining pieces aged differently
+            once the defaults were reversed in v0.31.0. Any structured format still has to stay
+            *environment-shaped* — the policy lives in the client config, not a file, deliberately.
+
+            **1.0.0:**
+            - **dry-run** — *"what would this run touch, before it touches anything"*. It has
+              grown **more** valuable, not less: conceived as a safety check under fail-closed
+              defaults, it is now the honest answer to *"what does this install actually
+              reach?"*, which is a bigger question when the answer is "everything unless you
+              narrowed it". It also composes with two things decided the same day — previewing a
+              **flavour** ("which tools would this register?") and later a **corpus enumeration**
+              ("which 47 files would this index?"). Same shape, three consumers.
+            - **dead-entry detection** — an allowlisted file that has been trashed. Cheap, and a
+              silently dead entry is a policy that says less than its author believes.
+
+            **Post-1.0.0:**
+            - **per-capability scope** — *"commentable but not editable"* for one file. Needs a
+              structured value the flat list cannot express, and the Drive-role profiles now
+              cover most of what people actually wanted from it.
+            - **expiry** — weakest of the four. It was designed when an allowlist was *the*
+              boundary; it is now an opt-in scope somebody deliberately chose, and time-bounding
+              a choice is much less compelling than time-bounding a grant.
       - [x] **The no-allowlist default: decided and flipped** (v0.9.0). Unset is fail closed
             in the MCP server; `*` is the typed escape hatch. The library keeps a permissive
             default, because `from_credentials` is called by a developer who has made a
@@ -1173,9 +1244,25 @@ token per user on their behalf is the half nobody at CSA has built yet.
 
 ## Underlying API capability inventory — what we could build
 
+**Committed wholesale 2026-08-30 (CINO): "we'll just do all that, either pre 1.0.0 or post
+1.0.0."** So this stopped being a menu and became a backlog — everything here gets built, and the
+only open question per item is *when*, answered by value rather than by a bucket decision. Two
+items were pulled out and dated explicitly (`accessproposals` and Drive labels, both 1.0.0);
+everything else is taken when it is worth taking.
+
+That is a deliberate change of status for this section, and it removes a recurring cost: each of
+these was being re-litigated as "should we?" every time it came up, when the answer was always
+going to be yes eventually. The list is long, individually small, and mostly additive — three
+properties that make per-item scheduling more expensive than just doing them.
+
+**Two things that stay true regardless of order.** Anything mutating needs a `_GATES` entry and a
+capability decision, because `PolicyBackend` fails closed on an unlisted method — so "just add
+it" is never quite just adding it. And anything reading needs to inherit the untrusted-content
+posture rather than assuming a new endpoint returns something safer than the last one.
+
 Enumerated from the discovery documents (see
 [`research/drive-mcp-servers-and-api-surface.md`](research/drive-mcp-servers-and-api-surface.md)).
-This is the honest ceiling of the Python client, not a plan — but several items are closer to
+This was the honest ceiling of the Python client — but several items are closer to
 "help people get work done" than more file management would be.
 
 ### Drive v3 — exposed by nobody, including us
@@ -1197,10 +1284,36 @@ This is the honest ceiling of the Python client, not a plan — but several item
   `changes.list` polling covers the same ground locally until then. This is a genuine want —
   reacting the moment a comment lands is a different product from sweeping on a timer.
 - [ ] **`files.modifyLabels` / `listLabels`** — Drive labels, i.e. classification and data
-  governance. Plainly relevant to CSA's own work.
-- [ ] `permissions.*` (full: list/create/get/update/delete) — **gated on
-  [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)**, see below.
-- [ ] `accessproposals` — resolve "can I have access?" requests.
+  governance. **1.0.0 (CINO, 2026-08-30): "Drive labels need to be supported."**
+
+  The one item in this inventory that is **security-adjacent rather than convenience**: labels are
+  how an organisation marks sensitivity, and they are what Drive DLP rules key on. For a tool
+  published by CSA, being able to read a document's classification before acting on it — and to
+  set one — is closer to the point of the product than most of the list below.
+
+  Read and write are different asks: `listLabels` is a read, `modifyLabels` changes a
+  classification and should have its own capability rather than riding on `content.write`.
+  Mislabelling a document is not a content edit.
+- [x] ~~`permissions.*` (full: list/create/get/update/delete)~~ — **done**, and the gating note
+  was stale. `list` and `create` shipped in v0.15.0; `update` and `delete` shipped **2026-08-29**
+  in v0.30.14 (#235), both under `file.share` because ungranting is the same authority as
+  granting. It was never actually gated on #82.
+- [ ] **`accessproposals`** — **1.0.0 (CINO, 2026-08-30)**, called a basic capability.
+
+  **Checked before scheduling, and it does not do what the name suggests to an English ear.**
+  Three methods — `get`, `list`, `resolve` — and **no `create`**. It does *not* let you request
+  access to a file you cannot reach; it lets a file **owner see and approve/deny requests other
+  people made** through the Drive UI. The other side of that interaction.
+
+  Which makes it a better fit here than "request access" would have been: *"three people have
+  asked for access to your WG document, here they are"* is a **triage workflow**, sitting next to
+  comment triage, which is what this server is for.
+
+  **Two capabilities, not one, and the split matters:**
+  - `list` / `get` are genuinely read-only. *"Who is waiting?"* has no write in it.
+  - **`resolve` is `file.share` in disguise.** Approving a proposal *grants a permission* — same
+    outbound authority, same irreversibility once a copy is taken. It must be gated as
+    `file.share`, however administrative "resolve a request" sounds.
 - [ ] ~~`drives.*` — shared drive administration.~~ Out of scope: it does not help anyone
   review a document.
 - [ ] ~~`files.delete` / `emptyTrash` — **permanent** deletion.~~ Out of scope for now. Both
@@ -1349,8 +1462,12 @@ below `share_file` despite sounding worse.
 
 ### Checklist
 
-- [ ] **Decide the discovery question.** Widen the library to support `files.list`/search, or
-  decline parity on those two tools and say why in the README. Everything else waits on this.
+- [x] ~~**Decide the discovery question.**~~ — **stale, closed 2026-08-30.** It asked whether to
+  widen the library to `files.list`/search or decline parity, and said *"everything else waits on
+  this"*. It shipped in **v0.15.0**: `workspace.files` has `search`, `recent`, `get`, `create`,
+  `copy`, `update`, `trash`, `share` and `download`, and `search_files` / `list_recent_files` are
+  live tools. An item that gated "everything else" and was silently satisfied fifteen releases ago
+  is worth striking loudly rather than quietly deleting.
 - [ ] **Decide how much parity is actually wanted.** Google's 8 tools may be the better
   target than the connector's 11: matching Google means matching a vendor's considered
   judgement about what is safe to expose, and the three it omits are the three this project
