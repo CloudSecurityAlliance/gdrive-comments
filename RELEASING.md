@@ -139,7 +139,20 @@ is why it no longer fails on a true claim.
 
 **The consequential direction is a stale simple index, because that is what pip resolves from.**
 After v0.30.0 a clean-venv install returned **0.29.0** — the version the release had just fixed.
-`--no-cache-dir` does not help: it bypasses pip's cache, not PyPI's CDN.
+
+**Two different causes produce an identical symptom, and only one of them is PyPI's.** Both look
+like `No matching distribution found`, with a version list that stops at the previous release:
+
+* **PyPI's CDN edge is stale.** `--no-cache-dir` cannot help — it bypasses *pip's* cache, not
+  PyPI's. This is the case the retry loop below exists for.
+* **pip's own HTTP cache of the index page is warm.** A fresh `venv` does *not* clear this: the
+  cache lives in `~/Library/Caches/pip`, outside any virtualenv, so "clean venv" is not clean in
+  the way that matters here. `--no-cache-dir` fixes it immediately.
+
+Seen at v0.32.0, where the simple index, both JSON endpoints and the integrity endpoint all
+confirmed the release while `pip install` insisted the newest version was 0.31.1 — a false alarm
+that reads exactly like a failed publish. **So pass `--no-cache-dir` on the verification install
+always**: it costs nothing, and it removes one of the two explanations for free.
 
 **And polling an endpoint first is NOT sufficient** — tried at v0.30.1 and it still failed. The
 simple index reported `0.30.1` present, and pip then installed `0.30.0` from a different CDN edge.
@@ -180,9 +193,11 @@ was written this way.
    ```
 4. Verify the upload — <https://pypi.org/project/csa-google-workspace/> — then in a clean venv:
    ```bash
-   pip install csa-google-workspace
+   pip install --no-cache-dir csa-google-workspace
    python -c "import csa_google_workspace; print(csa_google_workspace.__version__)"
    ```
+   `--no-cache-dir` is not optional here — see the two-causes note above. Without it, a warm pip
+   index cache reports the *previous* version and looks exactly like a failed publish.
 
 ## Notes
 
