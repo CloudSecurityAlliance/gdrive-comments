@@ -1229,14 +1229,50 @@ These are recorded design decisions, **not bugs**:
 
 - [ ] **`Location.tab` resolution** — multi-tab cell disambiguation via `workbook.xml` +
   rels (part → sheet-name). Real correctness gap for multi-tab sheets; its own task.
-- [ ] ~~**Caching pass**~~ — **removed 2026-08-30.** Accessors re-fetch per call and that is
-  now simply how it works, not a gap awaiting a fix. The claim this item made — *"the biggest
-  runtime win for embedded review sessions"* — was never measured, and three things argue
-  against it: **offline is void** (no network, no Google Docs, cache or not); **validating a
-  cache costs another round trip**, so the saving is payload bytes rather than latency; and
-  **staleness lands exactly where the tool is used**, since a self-invalidated cache is silently
-  wrong the moment a human resolves a thread you did not. Requeued as *research* under Gate C —
-  measure whether it helps at all before building anything.
+- [ ] ~~**Caching pass** (as a read-through cache)~~ — **dropped 2026-08-30.** Accessors
+  re-fetch per call and that is how it works, not a gap. The claim this item made — *"the biggest
+  runtime win for embedded review sessions"* — was never measured, and three things argue against
+  it: **offline is void** (no network, no Google Docs, cache or not); **validating a cache costs
+  another round trip**, so the saving is payload bytes rather than latency; and **staleness lands
+  exactly where the tool is used**, since a self-invalidated cache is silently wrong the moment a
+  human resolves a thread you did not.
+
+  **But that killed the wrong thing along with the right one**, and the distinction is worth
+  keeping — see below.
+
+- [ ] **A local corpus — search, bulk analysis, and possibly a vector index** — *possible later,
+  and a different idea from the cache above despite sharing the word.* Raised by the CINO
+  2026-08-30.
+
+  **A read-through cache answers "can I skip this fetch?" A corpus answers "what can I do that
+  the API cannot?"** Drive's search is filename-and-full-text over Google's index; it will not do
+  semantic search, cross-document analysis, "which of these forty documents contradict the CCM
+  mapping", or anything a local embedding index makes cheap. Those are capabilities, not
+  optimisations, and none of the three arguments above touches them:
+
+  - **Offline is still void for reads**, but a corpus is *useful* offline in a way a cache is not
+    — you can search and analyse what you already have.
+  - **Validation cost does not apply**: you are not deciding whether to trust a cached value in
+    place of a fetch.
+  - **Staleness is expected and fine**, because a corpus is for **discovery, never for answers**.
+    Every search engine works this way. You search to find candidates, then read them
+    authoritatively through the normal path.
+
+  **That last line is the design rule, and it is a security rule, not a style one.** The index
+  must never be a way to *read* a document — only to *find* one. Otherwise it becomes a
+  read-authorization bypass that persists: content indexed while you had access is still there
+  after the grant is revoked or the allowlist narrows, which is the "stale security cache" problem
+  in a worse form, because it survives on disk. Anything found in the index gets re-fetched, and
+  the re-fetch is where the allowlist and Drive's own ACLs apply.
+
+  **The sync mechanism already has an entry**: `changes` (`getStartPageToken` / `list` / `watch`)
+  in the API inventory below, which is exactly how a corpus stays current without re-reading
+  everything.
+
+  **Not scheduled.** Wanted, plausible, and needs a design before any code: what is stored, where,
+  under whose retention, how it is invalidated, and how it is scoped per account. The
+  `export_comments` register is the existing precedent for derived local data, and the
+  `CSA_GW_LOCAL_*` switches are the existing precedent for letting an operator refuse it.
 - [x] **10 MB XLSX export cap** — large sheets degrade the cell-map. ✅ No longer *silent*
   as of PR #26: the shared logging story records a WARNING naming the cause. (Raising the
   cap itself is still out of reach — it's a Google export limit.)
