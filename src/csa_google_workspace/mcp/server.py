@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from mcp.server import MCPServer
 
+from . import _flavours
 from ._config import Settings
 from ._resources import register_resources
 from ._tools import (
@@ -92,7 +93,11 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     worker threads, so the provider can hand each thread its own Workspace rather than share
     a `googleapiclient` client across threads.
     """
-    app = MCPServer(name=name, instructions=INSTRUCTIONS)
+    # The flavour note is appended at construction because `instructions` is read-only
+    # afterwards. It carries the rule, not the counts; `describe_configuration` has those.
+    flavour = settings.flavour if settings else _flavours.DEFAULT_FLAVOUR
+    app = MCPServer(name=name,
+                    instructions=INSTRUCTIONS + _flavours.instruction_note(flavour))
     register_content_tools(app, get_workspace)
     register_file_tools(app, get_workspace)
     register_content_write_tools(app, get_workspace)
@@ -110,4 +115,26 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
         register_demo_tools(app, settings)
         register_feedback_tools(app, settings)
         register_resources(app, settings)
+
+    # The flavour filter, applied LAST and by removal rather than by not registering.
+    #
+    # Removal because `remove_tool` is a public API and this stays one readable loop, instead of
+    # threading a predicate through eight `register_*` functions or intercepting the decorator.
+    # The cost is constructing a few handlers that are then discarded, once, at startup.
+    #
+    # Applied last so it filters everything uniformly - a tool added to any register_* function
+    # in future is covered without anyone remembering this exists.
+    if settings is not None and settings.flavour != _flavours.DEFAULT_FLAVOUR:
+        allowed = _flavours.permitted(settings.flavour)
+        assert allowed is not None            # noqa: S101 - `full` returned above
+        registered = [t.name for t in app._tool_manager.list_tools()]
+        for name_ in registered:
+            if name_ not in allowed:
+                app.remove_tool(name_)
+        # Stashed rather than recomputed, because "how many did we hide?" is only knowable at
+        # this instant: after this returns, the tools that were removed leave no trace, and the
+        # full surface is a property of the build rather than something a caller can count.
+        # `describe_configuration` reads it back to report the number.
+        app._csa_flavour_hidden = (            # type: ignore[attr-defined]
+            len(registered) - len(app._tool_manager.list_tools()))
     return app

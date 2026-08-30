@@ -130,6 +130,8 @@ class ConfigOut(TypedDict):
     capabilities_unreachable: list[str]  # enabled but no tool here uses them
     capabilities_disabled: list[str]
     read_only: bool
+    flavour: str                       # "full" | "google" | "claude"
+    flavour_note: str                  # "" when full; otherwise what is hidden and why
     blocked_reason: str | None         # why something permits nothing, when it does
     server_version: str                # csa-google-workspace's own version
     # The environment, carried here and not only in `report_a_problem`, because this is the

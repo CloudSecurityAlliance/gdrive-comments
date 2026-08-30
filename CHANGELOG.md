@@ -10,6 +10,103 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-30 — v0.32.0 (a flavour: stand in for another Drive server, exactly) — not released
+
+Closes **C2**. `CSA_GW_FLAVOUR=google|claude|full` (default `full`) restricts this server to
+another vendor's Drive tool surface — **those tools and no others, allowed *and* advertised**.
+
+### The half that was missing
+
+An earlier framing of this feature was "refuse the tools the other server doesn't have". That is
+not a drop-in replacement, and the reason is worth stating because it applies to every MCP server:
+
+**A model shown 36 tools behaves differently from one shown 8, however identical the eight are.**
+It plans differently, reaches for capabilities the server it is standing in for does not have, and
+spends context on schemas it will never call. Registering everything and refusing at call time —
+which is what every profile did until now — changes what *happens* and not what the model *sees*.
+
+So a flavour filters registration. Under `google` the comment tools are not gated, they are
+**absent from `tools/list`**, and a call to one gets `Unknown tool: create_comment` from dispatch
+rather than a policy refusal from the backend.
+
+### What the vendors publish
+
+Read from live schemas (`research/drive-mcp-servers-and-api-surface.md`), not from documentation:
+
+| flavour | tools |
+|---|---|
+| `full` | this server's own 36 |
+| `claude` | the claude.ai Drive connector's 11 |
+| `google` | Google's own 8 — the same minus `update_file`, `share_file`, `trash_file` |
+
+The shared tools are genuinely the same tools: names and parameters match and only the
+descriptions differ. That alignment landed releases ago, which is what makes this switch small.
+
+### Three tools survive every flavour
+
+`ALWAYS` is not a hedge — a flavour restricts the **Drive surface**, not the server's ability to
+be switched on or to explain itself:
+
+* **`authenticate`** — without it, an install with no cached token has no way to get one, and the
+  server is *bricked* rather than restricted. Google's has no equivalent because it is hosted and
+  authorized elsewhere; this one is a local subprocess.
+* **`describe_configuration`** — where the server says what it is hiding. Hiding the tool that
+  explains the hiding would be perverse.
+* **`read_server_resource`** — the route to `csa-gw://help/capabilities`, which is how a model
+  learns a thing is switched off instead of guessing.
+
+### It says what it is hiding
+
+Hiding a tool changes what a refusal looks like, and not for the better. A gated-but-registered
+`share_file` tells an agent *"the `file.share` capability is disabled; an operator enables it"* —
+informative, and relayable to the user. An **absent** tool reads as *"this server cannot do that"*,
+which invites the failure `csa-gw://help/capabilities` exists to prevent: satisfying the request
+through some other integration, succeeding, and looking fine.
+
+So the restriction announces itself, in the two places a model and an operator actually look:
+
+* the **server instructions**, which say a missing tool is *switched off by configuration, not
+  impossible*, and to say so rather than route around it;
+* **`describe_configuration`** and `csa-gw://config`, which name the flavour and **count what is
+  hidden** — "8 published, 28 hidden" is actionable in a way "restricted" is not.
+
+Restriction that announces itself is a restriction. Restriction that is silent is a missing
+feature.
+
+### A flavour is not a policy
+
+Two different questions, and neither substitutes for the other: a **flavour** says which tools
+*exist*; a **profile** says what they may *do*. They compose, and a flavour never widens anything
+— `CSA_GW_FLAVOUR=claude` with `CSA_GW_PROFILE=reader` publishes `share_file` and still refuses
+the call, naming `file.share`. `tests/test_flavour_switch.py` asserts exactly that, because a
+switch that quietly granted a capability would be the worst possible bug in this file.
+
+An unrecognised value is an **error**, not a fallback to `full`: somebody typing
+`CSA_GW_FLAVOUR=googl` in order to *restrict* the server must not silently get the unrestricted
+one.
+
+### Changed
+
+* `mcp/_flavours.py` (new) — the vendor surfaces, the `ALWAYS` set, and the two notes.
+* `mcp/server.py` — instructions composed at construction (`MCPServer.instructions` is read-only
+  after it); the filter applied **last**, after every `register_*` has run, so a tool added later
+  cannot escape it by registration order.
+* `mcp/_config.py`, `_schemas.py`, `_tools/config.py` — `flavour` through `Settings` and out
+  through `describe_configuration`.
+* `mcp/_resources.py`, `README.md` — `CSA_GW_FLAVOUR` documented in
+  `csa-gw://help/configuration` and the config table. (`tests/test_docs_do_not_drift.py` caught
+  the omission before a human would have.)
+
+### Tests
+
+`tests/test_flavour_switch.py` — 36 tests. Verified by falsification rather than by passing:
+disabling the filter fails 11 of them and silencing the note fails 2 more, which are the feature's
+two halves. One assertion needed tightening for the same reason — **every** failing MCP tool call
+raises `ToolError`, including a published tool that merely errored, so `pytest.raises(Exception)`
+passed whether or not the tool was hidden. Only `"Unknown tool"` tells the two apart.
+
+Full suite: 1432 passed, 12 skipped.
+
 ## 2026-08-29 — v0.31.1 (diagnostics you can turn up, because the client already keeps them)
 
 Closes **#145**, which was specced as a logging subsystem and shrank to a level variable once
