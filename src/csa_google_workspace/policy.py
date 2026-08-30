@@ -322,6 +322,9 @@ _GATES: dict[str, Gate] = {
     # sees whatever the user's credentials see.
     "get_file_metadata": READS_FILE,
     "list_permissions": READS_FILE,
+    # "Who is waiting for access?" has no write in it. Ungated like every other read, and
+    # file-scoped like them: it discloses who has asked, which is disclosure about the file.
+    "list_access_proposals": READS_FILE,
     "search_files": READS_LISTING,
     "list_comments": READS_FILE,
     "get_comment": READS_FILE,
@@ -354,6 +357,21 @@ _GATES: dict[str, Gate] = {
     # either extreme and is the state this library was in until #235.
     "update_permission": Gate(FILE_SHARE, MODIFY),
     "delete_permission": Gate(FILE_SHARE, MODIFY),
+    # Accepting an access proposal GRANTS A PERMISSION, so it is `file.share` in disguise and
+    # is gated as `file.share` - not as some gentler "administrative" capability, however much
+    # "resolve a request" sounds like paperwork. The outbound authority is identical: somebody
+    # who could not read this file now can, and a copy they take is not recallable.
+    #
+    # Google's own scope table is the empirical form of the same argument: `list` accepts the
+    # `.readonly` scopes, `resolve` demands `drive` or `drive.file`.
+    #
+    # DENY runs through this gate too. That is deliberate, and it is the one direction worth
+    # justifying: denying grants nothing, so gating it is strictly conservative. But `action`
+    # is a runtime argument, so a capability that depended on it would be a gate whose answer
+    # the CALLER chooses - and an operator who has switched `file.share` off has said this
+    # server does not decide who gets access, which is a statement about the workflow and not
+    # only about the grant. Refusing both keeps that promise legible.
+    "resolve_access_proposal": Gate(FILE_SHARE, MODIFY),
     # comment writes
     "create_comment": Gate(COMMENT_CREATE, MODIFY),
     "create_reply": Gate(_reply_gate, MODIFY),   # reply vs resolve/reopen — see above

@@ -29,6 +29,12 @@ from ._plan import Outcome, Report, State, Step, build, initial_state
 # excludes things is a coverage report that can be gamed.
 NOT_EXERCISED = {
     "authenticate": "opens a browser and waits for a human; the demo cannot answer it",
+    # Not a gap in the demo - a gap in what any API can stage. `accessproposals` has no
+    # `create`: a proposal exists only because a DIFFERENT person, who does NOT have access,
+    # clicked "Request access" in Drive. Nothing this process can do produces one, so there is
+    # never anything to resolve. `list_access_proposals` IS exercised, and returns zero.
+    "resolve_access_proposal": (
+        "needs a pending request, which only another human without access can create"),
 }
 
 

@@ -1,5 +1,6 @@
 from . import exceptions  # noqa: F401
 from ._formats import EXPORT_FORMATS
+from .access_proposals import AccessProposal, RoleAndView
 from .allowlist import AllowlistError, Listing, parse_setting
 from .backend import Backend
 from .base import Document
@@ -21,7 +22,8 @@ __all__ = [
     # load-bearing types for embedders / custom backends (audit #26)
     "Backend", "Document", "CommentCollection", "DetachedError",
     "FileRef", "FileCollection", "Permission",
+    "AccessProposal", "RoleAndView",
     # policy / allowlisting (#82)
     "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",
 ]
-__version__ = "0.32.0"
+__version__ = "0.33.0"

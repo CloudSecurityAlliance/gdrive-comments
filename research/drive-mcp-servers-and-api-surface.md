@@ -118,7 +118,7 @@ Enumerated from the discovery documents. **Docs v1 has exactly three methods** �
 | **`changes`** | `getStartPageToken`, `list`, `watch` | Incremental sync. The correct answer to "sweep my documents" instead of re-reading everything. |
 | **`files.watch`** | + `changes.watch` | **Push notifications.** A review bot could react to a new comment instead of polling. |
 | `files.modifyLabels`, `files.listLabels` | | Drive **labels** — classification and data governance. Obvious CSA relevance. |
-| **`accessproposals`** | `list`, `get`, `resolve` | Handling "can I have access?" requests. |
+| **`accessproposals`** | `list`, `get`, `resolve` — **no `create`** | Answering "can I have access?" requests. **Shipped** — see §accessproposals below. |
 | `permissions` | `list`, `create`, `get`, `update`, `delete` | Full permission management; the connector exposes only a share-shaped slice of it. |
 | `drives` | `create`, `list`, `get`, `update`, `hide`, `unhide`, `delete` | Shared drive administration. |
 | `files.delete`, `files.emptyTrash` | | **Permanent** deletion. Note the connector deliberately stops at `trash_file`. |
@@ -160,3 +160,64 @@ Already used here: `files.get`/`export`, `comments.*`, `replies.*`.
    full `drive` scope and attacker-influenceable document text, granting access to an arbitrary
    email address is an exfiltration path. Google avoids this by never taking full scope; we
    took full scope for a real reason and must buy the property back in software.
+
+
+## `accessproposals`, read from the discovery document
+
+`[probed]` — 2026-08-30, against the discovery document the installed `googleapiclient` resolves,
+not against Google's prose. Shipped in the library and as two MCP tools.
+
+### The name misleads, and the shape is the opposite of what it suggests
+
+| method | HTTP | scopes |
+|---|---|---|
+| `list` | `GET files/{fileId}/accessproposals` | incl. `drive.readonly`, `drive.metadata.readonly` |
+| `get` | `GET files/{fileId}/accessproposals/{proposalId}` | incl. the `.readonly` pair |
+| `resolve` | `POST files/{fileId}/accessproposals/{proposalId}:resolve` | **`drive` or `drive.file` only** |
+
+**There is no `create`.** This API cannot request access to a file you cannot reach; it lets an
+owner see and answer requests other people made through Drive's UI. That is the *other side* of
+the interaction the name suggests — and the better side for a triage tool.
+
+**The scope table settles the capability question empirically.** `list`/`get` accept the
+`.readonly` scopes; `resolve` demands a write scope. Google itself classifies resolving as a
+write, which is why `resolve_access_proposal` is gated as `file.share` rather than as something
+gentler — approving *grants a permission*.
+
+It is a **file sub-resource**, so it fits the `file_id`-first `Backend` shape directly, unlike
+search and create (which forced the account axis in `files.py`).
+
+### Schemas
+
+```
+AccessProposal:  createTime  fileId  proposalId  recipientEmailAddress
+                 requestMessage  requesterEmailAddress  rolesAndViews[]
+AccessProposalRoleAndView:      role  view
+ResolveAccessProposalRequest:   action  role[]  sendNotification  view
+ListAccessProposalsResponse:    accessProposals[]  nextPageToken
+```
+
+Three things worth knowing before using it:
+
+1. **`action` is `ACTION_UNSPECIFIED | ACCEPT | DENY`** — a three-state whose third member means
+   "you did not decide". `src/csa_google_workspace/access_proposals.py` therefore exposes
+   `accept()` and `deny()` and keeps the raw string at the `Backend` seam, so "undecided" is
+   unrepresentable rather than merely invalid. See `CLAUDE.md` invariants 9 and 10 for the two
+   times this repository was bitten by exactly that shape.
+2. **`role` on the resolve body is a LIST**, despite granting a single role.
+3. **`requesterEmailAddress` is a plain, always-present string** — a genuine exception to this
+   API's reluctance to identify people. `User.emailAddress` elsewhere in Drive is conditional
+   ("may not be present … if the user has not made their email address visible"), and comment
+   authors usually have none. A request for access is unactionable without it.
+
+### `requestMessage` is the sharpest untrusted input this project has
+
+Every other untrusted string here — document text, comment bodies — was written by somebody who
+**already had access** to the file. `requestMessage` is free text from somebody with **no access
+at all**, and it reaches a model being asked to decide whether to **give them some**. The barrier
+to injecting it is clicking "Request access" on a link.
+
+That does not make the capability unsafe to ship, but it does set the rules: decide on
+`requesterEmailAddress`, never on the message or a display name; report the message rather than
+acting on it; and keep it out of `__repr__`, because a log line is where injected text gets read
+later by something that has forgotten where it came from.
