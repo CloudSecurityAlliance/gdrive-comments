@@ -614,6 +614,7 @@ owes someone who depends on it. C1 says what will not change; this says what did
 | **#8 Docs `batchUpdate` breadth** | A programme, not a release gate. Tables first, post-1.0. |
 | **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
 | **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
+| **A local corpus — search, bulk analysis, vector index** | **Post-1.0.0.** Kept on the roadmap deliberately, and the framing matters: this is **not read caching** — that was dropped as unmeasured. It is about **capabilities the API does not have**, such as semantic search across documents. Needs a design first, and one rule is already settled: the index is for **discovery, never for answers**. Detail below. |
 
 ### Decided 2026-08-27
 
@@ -1240,9 +1241,10 @@ These are recorded design decisions, **not bugs**:
   **But that killed the wrong thing along with the right one**, and the distinction is worth
   keeping — see below.
 
-- [ ] **A local corpus — search, bulk analysis, and possibly a vector index** — *possible later,
-  and a different idea from the cache above despite sharing the word.* Raised by the CINO
-  2026-08-30.
+- [ ] **A local corpus — search, bulk analysis, and possibly a vector index** — **on the
+  post-1.0.0 roadmap** (CINO, 2026-08-30; see *Explicitly not 1.0* above). *A different idea from
+  the cache above, despite sharing the word — and the framing is the point: **less about read
+  caching, more about adding capabilities like vector search**.*
 
   **A read-through cache answers "can I skip this fetch?" A corpus answers "what can I do that
   the API cannot?"** Drive's search is filename-and-full-text over Google's index; it will not do
