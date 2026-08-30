@@ -614,6 +614,7 @@ owes someone who depends on it. C1 says what will not change; this says what did
 | **#8 Docs `batchUpdate` breadth** | A programme, not a release gate. Tables first, post-1.0. |
 | **MCPB bundle for Desktop drag-and-drop** | Distribution polish; does not shape the API. |
 | **`PlaywrightBackend`** | For the API-impossible ops. Its own major decision. |
+| **Traversal primitive · corpus · revisions** | **Post-1.0.0**, one connected thread — see *Traversal, corpus and revisions* below. Folder walking with shortcut resolution; a local corpus for cross-file comment queries Drive cannot do at all; revision caching, which is the one thing genuinely safe to cache because revisions are append-only. Contains one **probe** worth running early: whether Google prunes Docs revisions, which decides how urgent the rest is. |
 | **A local corpus — search, bulk analysis, vector index** | **Post-1.0.0.** Kept on the roadmap deliberately, and the framing matters: this is **not read caching** — that was dropped as unmeasured. It is about **capabilities the API does not have**, such as semantic search across documents. Needs a design first, and one rule is already settled: the index is for **discovery, never for answers**. Detail below. |
 
 ### Decided 2026-08-27
@@ -754,6 +755,152 @@ Draft and review where the comments are, typeset where the brand rules are, put 
 where it can be reviewed again. The export half is #6 and lands now; the import half is #4 —
 `create_file` should accept `text/markdown` and let Drive convert, rather than uploading plain
 text and losing the structure.
+
+## Traversal, corpus and revisions — post-1.0.0
+
+Decided as a direction 2026-08-30 (CINO). **None of this is 1.0.0 work.** It is recorded here
+because the pieces are related, several are cheap, and one of them has a closing window.
+
+The organising idea, which is the same one behind `comments_by_cell` and `export_comments`
+already: **the API is not the ceiling.** A vendor's own MCP server is a faithful wrapper over
+their API and cannot exceed it. Ours is code running next to the data, so the API is an *input*
+rather than the surface. That is where capabilities Google structurally cannot ship come from.
+
+### 1. A traversal primitive
+
+One low-level capability, several consumers: walk a Drive tree up and down, resolve shortcuts,
+enumerate everything under a folder.
+
+- **Shortcuts must be followed** — `application/vnd.google-apps.shortcut` →
+  `shortcutDetails.targetId`. They are Drive's symlinks, and ignoring them silently omits files.
+- **Cycle detection is required, not optional.** A shortcut pointing at an ancestor is a loop,
+  and the failure mode is a hang rather than an error. Depth limit as well.
+- **The result must be materialized and reviewable** — a list somebody can look at ("these 47
+  files"), not a generator resolving invisibly. That property is what makes folder scoping safe
+  *here* when it was rejected for the allowlist; see below.
+
+### 2. Folder-as-corpus-scope is a different question from folder-as-allowlist-scope
+
+`#82` rejected folders in the **allowlist**, and that stands. But most of its seven objections
+weaken or invert when a folder is a **read/index scope** instead of an authorization scope:
+
+| #82 objection | as a corpus scope |
+|---|---|
+| Anyone who can add to the folder grants **write** access | It is a **read** scope: worst case is an unexpected file indexed, not an attacker with write |
+| Cost, and "the cache that must not exist" | **Inverted** — the enumeration *is* the artifact, done once at index time and kept |
+| Copies get new ids; where do new files sit | Irrelevant when indexing what is there |
+| Shortcuts, multiple parents, shared drives | Still real, but now "missed a file", not "security hole" |
+
+The structural difference: **an allowlist folder is resolved per-access and invisible; a corpus
+folder is enumerated once and the result can be reviewed.** Keep the two questions separate — one
+may open while the other stays shut.
+
+### 3. The corpus, and what it unlocks
+
+Export sheets to CSV per tab plus a `-comments.csv` carrying the comments per cell, across a whole
+folder, and you can ask things Drive cannot answer at all:
+
+- *"show me everything Bob has said"* across forty documents
+- *"show me all the comments and threads about topic X"*
+- holistic review of a working group's whole folder
+
+**This is absent by construction in Drive, not merely missing.** `comments.list` is a sub-resource
+of a file — `GET /files/{fileId}/comments`. There is no `/comments` collection, and `files.list`'s
+`q` has no comment predicate. Cross-file comment search requires iterating files and joining
+locally. Google could not ship it in their own server without building the same thing.
+
+**The value ladder, and the value is front-loaded:**
+
+1. **Corpus + exact filters** — author, date, resolved state, file. This is a `GROUP BY`. No
+   embeddings, no chunking, no staleness strategy. Most of what a reviewer actually asks.
+2. **+ full-text** — *"mentions the shared responsibility model"*.
+3. **+ embeddings / vector index** — *"about topic X"* semantically.
+
+Do not lead with step 3. Step 1 is small and pays immediately, and `export_comments` already
+produces most of the artifact.
+
+**Two things that will bite, both already documented here:**
+
+- **Identity.** `author.email` is *usually absent even when requested* (invariant #2, probe-
+  verified). So *"everything Bob said"* is really *"everything by this display name"*, which is
+  not unique and can change. CSA has a shape for this — Customer360 is identity resolution — but
+  it is a real problem sitting under the most compelling query.
+- **Threads are the unit.** `comments.list` returns replies inline, and resolve/reopen live in the
+  replies. Flatten to one row per comment and you lose the audit trail and have to reassemble
+  threads on read.
+
+**The rule that makes it safe, and it is a security rule:** the index is for **discovery, never
+for answers**. It must never become a way to *read* a document, only to *find* one — otherwise it
+is a read-authorization bypass that persists on disk after a grant is revoked or a scope narrows.
+Anything found there is re-fetched, and the re-fetch is where the allowlist and Drive's ACLs apply.
+
+### 4. Revisions — the one thing genuinely safe to cache
+
+**Revisions are append-only.** A revision, once it exists, never changes; only new ones arrive. So
+a revision cache has **no invalidation problem at all** — you ask "are there newer ones?" and
+nothing else. That is exactly the property document caching lacks, and it makes revisions the one
+part of this API that is safe to keep locally.
+
+Selective by design: cache a file's revisions, a folder's, or a folder plus its subtree — the same
+granularity the traversal primitive gives everything else.
+
+**We expose neither `revisions` nor `keepForever` today.** Nothing in the code.
+
+### 5. `keepForever`, and the correction that matters
+
+The instinct — *"if the history is critical, pin it server-side rather than hoarding it locally"* —
+is right in principle and **does not work for the files we care about**:
+
+| | `keepForever` |
+|---|---|
+| **Binary files** (uploaded `.docx`, PDFs, images) | Yes. Capped at **200 revisions**, which count against storage |
+| **Google-native Docs/Sheets/Slides** | **Not applicable** — documented as only for files with binary content |
+
+Google Docs revisions also cannot be *deleted* through the API; Google manages their retention
+itself. The UI equivalent of pinning is "Name this version", which the API does not appear to
+expose.
+
+**So the durable-server-side answer may not exist for Google Docs**, which inverts the conclusion:
+for native documents a local corpus would not be the convenient option for revision history, it
+would be the **only** one.
+
+- [ ] **PROBE, and it is the hinge: does Google actually prune Docs revisions over time?** The
+      documentation says *you* cannot delete them. It does not say Google does not. One afternoon
+      against a real document with known old edits settles whether revision-caching is a
+      nice-to-have or the entire point. Probe beats docs; this repository has a directory for it.
+
+**Worth having regardless, and cheap:** expose `revisions.list` and `keepForever`, so an operator
+can *see* what is pinned — and, with the traversal primitive, **bulk-mark a whole folder's binary
+files as `keepForever`**. That is a genuine capability: painful per-file in the Drive UI, trivial
+in a loop, and it is the *preventive* answer rather than the hoarding one.
+
+### 6. What this is for, and the policy question it raises
+
+The motivating use case is **crediting volunteers**. Two people write paragraphs that are later
+removed: was one good work that got rewritten and the other work that was simply deleted? That
+matters to an organisation that runs on volunteers, and Drive cannot answer it.
+
+**What attribution is actually available:**
+
+| source | attribution |
+|---|---|
+| **Comments** | `author.displayName` — email usually absent |
+| **Suggestions** | **none at all** — probe-verified; *"do not model a `Suggestion.author`, it cannot be populated"* |
+| **Revisions** | `lastModifyingUser` per revision |
+
+So **revision-diffing is the only route to attributing document text**: diff consecutive revisions,
+credit the diff to that revision's `lastModifyingUser`. It is revision-granular, not paragraph-
+granular — Google batches edits, so one revision may hold a lot of one person's work. Good enough
+for *"Bob contributed this section that later went"*; not for *"Bob wrote these three sentences."*
+And in a review-heavy workflow much volunteer contribution arrives as **suggestions**, which are
+anonymous to the API entirely.
+
+**The policy question, to be answered deliberately rather than arrived at.** A corpus that retains
+*deleted* text, attributes it to named volunteers, and supports *"was that good work?"* has a
+person on the other end. It is legitimate — crediting fairly is a real good, and crediting badly is
+its own harm — but it deserves a stated position on retention, who may query it, and whether
+contributors are told. Especially since we would be preserving precisely what the platform
+discarded. Cheap to write down now; awkward to retrofit.
 
 ## Hosted MCP server — wanted, and a large piece of work
 
