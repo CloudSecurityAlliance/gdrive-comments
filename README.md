@@ -731,7 +731,7 @@ Hosted platforms — **Composio, Klavis AI, Pipedream, Zapier** — wrap the sam
 
 **Two of these are bigger than this project, and it is worth saying which.**
 `taylorwilsdon` covers 12+ Google services with 3095★ and enterprise auth (service accounts,
-Streamable HTTP). `piotr-agier` ships **115 tools** against this project's 40 — Shared Drives,
+Streamable HTTP). `piotr-agier` ships **115 tools** against this project's 50 — Shared Drives,
 revisions, Sheets formatting, Slides authoring, PDF ingestion, Calendar. If you want breadth,
 those are the answer and this is not.
 

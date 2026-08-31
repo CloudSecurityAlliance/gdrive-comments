@@ -314,3 +314,73 @@ class TestTheProfileTableMatchesThePolicy:
         assert not set(IRREVERSIBLE) & PROFILES["writer"], (
             "an irreversible capability reachable from `writer` would make the ladder's whole "
             "ordering meaningless")
+
+
+class TestSecurityMdDescribesTheACTUALDefaults:
+    """The three claims `SECURITY.md` had backwards until 2026-08-31, all in the same direction.
+
+    v0.31.0 reversed the defaults — everything on, both allowlists `*` — and the security document
+    went on saying the opposite for several releases:
+
+    * *"The default refuses rename/move, trash and share"* — all three are enabled.
+    * *"Both fail closed in the MCP server: unset means nothing is permitted"* — unset means every
+      file. What fails closed is a **malformed** list, which is a different statement.
+    * a section headed *"Read-only by default"* — `CSA_GW_READ_ONLY` is off unless set.
+
+    **Every one understated the reach**, which is the dangerous direction: a reader who believes
+    the default is narrow does not narrow it. This is the same failure the `describe` resource had
+    at the same time, so it is not a coincidence of one file — it is what happens when a default
+    changes and the prose describing it lives somewhere else.
+
+    Pinned against the constants rather than against a form of words, so a rewrite is free and a
+    reversal is not.
+    """
+
+    def _security(self) -> str:
+        path = ROOT / "SECURITY.md"
+        if not path.exists():
+            pytest.skip("SECURITY.md is not in this tree")
+        return path.read_text(encoding="utf-8")
+
+    def test_it_does_not_claim_the_default_refuses_what_the_default_allows(self):
+        from csa_google_workspace.policy import DEFAULT_ENABLED
+
+        text = self._security()
+        for capability, phrase in (("file.update", "rename/move"),
+                                   ("file.trash", "trash"),
+                                   ("file.share", "share")):
+            if capability in DEFAULT_ENABLED:
+                assert f"default\n  refuses {phrase}" not in text, (
+                    f"{capability} is enabled by default and SECURITY.md says it is refused")
+        assert "The default\n  refuses rename/move, trash and share" not in text
+
+    def test_it_states_the_capability_default_correctly(self):
+        """Asserted positively as well, because deleting the false sentence and saying nothing
+        would also pass the test above while leaving a reader with no answer."""
+        from csa_google_workspace.policy import DEFAULT_DISABLED
+
+        text = self._security().lower()
+        if not DEFAULT_DISABLED:
+            assert "enabled by default" in text, (
+                "everything is on by default and SECURITY.md does not say so anywhere")
+
+    def test_it_does_not_claim_an_unset_allowlist_permits_nothing(self):
+        """`unset` and `malformed` are different, and only one of them fails closed. Conflating
+        them is how the sentence came to claim a bound that is not there."""
+        from csa_google_workspace.mcp._config import settings_from_env
+
+        unset = settings_from_env({})
+        if unset.policy.modify.all_files:
+            text = self._security()
+            assert "unset means nothing is\n  permitted" not in text
+            assert "unset means nothing is permitted" not in text
+
+    def test_no_heading_claims_read_only_is_the_default(self):
+        from csa_google_workspace.mcp._config import settings_from_env
+
+        if settings_from_env({}).read_only:
+            pytest.skip("read-only really is the default now; the heading would be correct")
+        text = self._security()
+        assert "## Read-only by default" not in text, (
+            "read_only is OFF unless set; a heading saying otherwise is the most inviting "
+            "sentence in the file to get backwards")
