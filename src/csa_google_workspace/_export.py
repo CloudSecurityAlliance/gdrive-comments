@@ -32,8 +32,11 @@ from __future__ import annotations
 from typing import Any
 
 # What the export REPORTS.
+# `tab` sits immediately before `cell` so `tab | cell | cell_text` reads as one thought. It is
+# None for a document, for an unanchored comment, and for a spreadsheet whose relationship graph
+# could not be walked - those are three different reasons and none of them is "the first tab".
 REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
-            "quoted_text", "cell", "cell_text", "cell_text_by_tab")
+            "quoted_text", "tab", "cell", "cell_text", "cell_text_by_tab")
 
 # What somebody FILLS IN, and what the importer ticks. Always empty on export - they are the
 # point of the register being a worksheet rather than a printout.
@@ -101,30 +104,35 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
     """(columns, rows, caveats)."""
     grids, tabs = _cell_lookup(document)
     caveats: list[str] = []
-    if len(tabs) > 1:
-        caveats.append(
-            f"This workbook has {len(tabs)} tabs ({', '.join(tabs)}) and Google's export gives "
-            f"no way to tell which tab a comment is on, so there is no tab column. "
-            f"`cell_text_by_tab` shows what that cell holds on each tab instead - the content "
-            f"usually makes it obvious which one a comment was about.")
 
     rows: list[dict] = []
+    anchored = 0                # comments that name a cell
+    unplaced = 0                # ...of which, the ones whose tab could not be resolved
     for comment in comments:
         location = getattr(comment, "location", None)
         cell = getattr(location, "cell", None) if location else None
+        tab = getattr(location, "tab", None) if location else None
         cell_text = None
         by_tab = None
         if cell and grids:
+            anchored += 1
             row_i = getattr(location, "row", 0)
             col_i = getattr(location, "col", 0)
-            per_tab = {tab: _at(grid, row_i, col_i) for tab, grid in grids.items()}
-            if len(tabs) == 1:
-                cell_text = per_tab[tabs[0]]
+            if tab in grids:
+                # The tab is known (#290), so read only that tab. Offering every tab's
+                # candidate alongside a settled answer invites the reader to second-guess it.
+                cell_text = _at(grids[tab], row_i, col_i)
+            elif len(tabs) == 1:
+                cell_text = _at(grids[tabs[0]], row_i, col_i)
             else:
-                by_tab = per_tab
+                # Unknown tab on a multi-tab workbook: the pre-#290 fallback. `tab` stays None
+                # rather than guessing, and the content of each candidate usually settles it.
+                tab = None
+                unplaced += 1
+                by_tab = {name: _at(grid, row_i, col_i) for name, grid in grids.items()}
 
         author = getattr(comment.author, "display_name", None) if comment.author else None
-        rows.append(_row(thread_id=comment.id, reply_to=None, author=author,
+        rows.append(_row(tab=tab, thread_id=comment.id, reply_to=None, author=author,
                          created_time=_iso(getattr(comment, "created_time", None)),
                          resolved=bool(comment.resolved), text=comment.content,
                          quoted_text=getattr(comment, "quoted_text", None),
@@ -138,6 +146,28 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
             rows.append(_row(thread_id=reply.id, reply_to=comment.id, author=reply_author,
                              created_time=_iso(getattr(reply, "created_time", None)),
                              resolved=bool(comment.resolved), text=reply.content))
+
+    # Emitted AFTER the loop because it counts. The pre-#290 caveat fired on every multi-tab
+    # workbook and said the file had no tab column at all; now most rows carry one, so a blanket
+    # warning would cry wolf on exactly the files this fixed. It reports the shortfall instead.
+    # TWO distinct failure modes, and they need different sentences. This one is "no cell at
+    # all": the XLSX export the mapping depends on was unavailable, or every comment is
+    # file-level. The old blanket multi-tab caveat covered this case by accident - it fired
+    # whenever there was more than one tab - so narrowing that one without adding this would
+    # have left a register with three empty columns and no explanation.
+    if tabs and comments and not anchored:
+        caveats.append(
+            "No comment here could be mapped to a cell, so `cell`, `tab` and `cell_text` are "
+            "empty on every row. Either these are file-level comments, which have no anchor at "
+            "all, or the XLSX export that cell mapping depends on was unavailable for this "
+            "file. The comments themselves are complete either way.")
+    if len(tabs) > 1 and unplaced:
+        caveats.append(
+            f"{unplaced} of {anchored} anchored comment(s) could not be placed on a tab: this "
+            f"workbook has {len(tabs)} tabs ({', '.join(tabs)}) and the export did not say "
+            f"which one those comments are on, so their `tab` is empty. `cell_text_by_tab` "
+            f"shows what that cell holds on each tab instead - the content usually makes it "
+            f"obvious. The other rows' `tab` is exact.")
     return list(COLUMNS), rows, caveats
 
 

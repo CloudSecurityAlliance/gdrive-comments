@@ -37,6 +37,7 @@ class CommentOut(TypedDict):
     resolved: bool
     created_time: str | None
     cell: str | None          # where DRIVE anchored it: A1 for anything created via the API
+    tab: str | None           # which sheet that cell is on; None when it could not be resolved
     linked_cell: str | None   # the cell its deep link points at, if it has one
     # The passage the comment is attached to, from Drive's `quotedFileContent`. `None` means
     # the comment is on the FILE rather than on a passage - a real and common state ("looks
@@ -346,16 +347,20 @@ class ApplyActionsOut(TypedDict):
 class CellCommentsOut(TypedDict):
     """`comments_by_cell` - the answer, plus how much to trust it. (D3)
 
-    The XLSX export carries one `threadedComments` member per SHEET, and the parse collects
-    them flat with no record of which sheet each came from. So on a multi-tab workbook a
-    comment at B11 on Sheet3 is indistinguishable from one at B11 on Sheet1. The ambiguity is
-    reported rather than resolved, because a silently-wrong cell is worse than a stated
-    uncertainty - and it is reported ONLY when there is more than one tab, since on a
-    single-tab workbook the answer is exact and a warning would be noise.
+    The XLSX export carries one `threadedComments` member per SHEET, and **since #290 the
+    relationship graph is walked to recover which sheet that is**, so each comment carries a
+    `tab`. Pass `tab=` to narrow the search to one sheet.
+
+    `tab_ambiguous` therefore means something narrower than it used to: not "this workbook has
+    several tabs" but "at least one comment in this result could not be placed on a tab". That
+    happens when the graph could not be walked - a truncated export, an unusual archive - and
+    it is reported rather than resolved, because a silently-wrong cell is worse than a stated
+    uncertainty. `unplaced` counts them, so a caller can say how much of the answer is exact.
     """
     comments: list[CommentOut]
     tab_ambiguous: bool
     tabs: list[str]
+    unplaced: int
     detail: str
 
 
@@ -419,6 +424,10 @@ def comment_out(comment: Any) -> CommentOut:
         # anchor a comment to a cell at all. `linked_cell` is the cell the deep link points
         # at, which is what somebody asked for.
         "cell": getattr(location, "cell", None) if location else None,
+        # Which sheet `cell` is on. None means the sheet could not be resolved from the export,
+        # NOT the first sheet - on a multi-tab workbook a default here would be a coin flip
+        # presented as a fact.
+        "tab": getattr(location, "tab", None) if location else None,
         "linked_cell": linked.group(1) if linked else None,
         "quoted_text": getattr(comment, "quoted_text", None),
         "replies": [reply_out(r) for r in (comment.replies or [])],

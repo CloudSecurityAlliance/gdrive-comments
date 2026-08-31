@@ -14,6 +14,17 @@ if TYPE_CHECKING:
 
 @dataclass
 class Location:
+    """Where a spreadsheet comment is anchored.
+
+    `cell`/`row`/`col` come from the comment's own `ref` in the XLSX export. `tab` comes from
+    walking that export's relationship graph, which is a separate and more fragile operation -
+    so the two degrade independently, and a comment can know its cell but not its sheet.
+
+    **`tab is None` means the sheet could not be resolved. It never means the first sheet.** On
+    a multi-tab workbook a default here would be a coin flip presented as a fact, which is the
+    failure this library treats as the dangerous direction (see `labels.py` for the same rule
+    about an unresolvable label name).
+    """
     cell: str
     row: int
     col: int

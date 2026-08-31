@@ -392,14 +392,16 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
 
     @app.tool(annotations=READ)
     @_errors
-    def comments_by_cell(fileId: str, cell: str) -> CellCommentsOut:
+    def comments_by_cell(fileId: str, cell: str, tab: str | None = None) -> CellCommentsOut:
         """Which comments are about a given Sheets cell (e.g. "B11"). Spreadsheets only.
 
-        ON A MULTI-TAB WORKBOOK THE ANSWER IS AMBIGUOUS, and the result says so:
-        `tab_ambiguous` is true and `tabs` lists them. A cell reference alone does not name a
-        tab, and the export this reads carries no record of which sheet each comment came
-        from - so a comment at B11 on the third tab is indistinguishable from one at B11 on
-        the first. Report the ambiguity when it is flagged; do not pick a tab.
+        EACH COMMENT NAMES ITS TAB. Pass `tab` ("Summary") to search one sheet only; leave it
+        out to search every sheet and read `tab` on each result.
+
+        A comment whose tab could not be worked out is counted in `unplaced` and, when you
+        named a `tab`, is left out of the results - it might be on that sheet, and saying so
+        would be a guess. `tab_ambiguous` is true when `unplaced` is non-zero: report that
+        shortfall rather than naming a tab for those.
 
         Best-effort, and worth knowing why: the Drive API reports a spreadsheet comment's
         anchor as an OPAQUE range id that cannot be decoded to A1 notation. Recovering the
@@ -414,22 +416,29 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         nothing, and asking for A1 finds it. That surprises people, so say which you
         searched."""
         doc = get_workspace().open(fileId)
-        found = _require(doc, "comments_by_cell", "cell-mapped comments")(cell)
-        # One extra call, on a tool that already exports the whole file as XLSX, to turn a
-        # silent wrongness into a stated uncertainty.
+        found = _require(doc, "comments_by_cell", "cell-mapped comments")(cell, tab)
         tabs = list(getattr(doc, "tabs", []) or [])
-        ambiguous = len(tabs) > 1
+        # `unplaced` counts results whose sheet could not be resolved. Since #290 that is the
+        # exception rather than the rule, so `tab_ambiguous` keys off the actual shortfall
+        # instead of "this workbook has more than one tab" - which used to flag every
+        # multi-tab file, including the ones now answered exactly.
+        unplaced = sum(1 for c in found if getattr(c.location, "tab", None) is None)
+        ambiguous = unplaced > 0
+        where = f" on {tab}" if tab else ""
         if ambiguous:
-            detail = (f"{len(found)} comment(s) anchored at {cell}, but this workbook has "
-                      f"{len(tabs)} tabs ({', '.join(tabs)}) and the export gives no way to "
-                      f"tell WHICH tab each comment is on. A result may be about a different "
-                      f"tab than the one intended - say so rather than naming a tab.")
+            detail = (f"{len(found)} comment(s) anchored at {cell}{where}, but {unplaced} of "
+                      f"them could not be placed on a tab - the export did not say which sheet "
+                      f"they are on. Say so for those rather than naming a tab; the rest are "
+                      f"exact.")
+        elif tab:
+            detail = f"{len(found)} comment(s) anchored at {cell} on {tab}."
         else:
-            detail = (f"{len(found)} comment(s) anchored at {cell}. "
-                      + (f"One tab ({tabs[0]}), so the cell is unambiguous."
-                         if tabs else "Tab list unavailable."))
+            detail = (f"{len(found)} comment(s) anchored at {cell}, each naming its tab. "
+                      + (f"One tab ({tabs[0]}), so the cell is unambiguous." if len(tabs) == 1
+                         else f"{len(tabs)} tabs ({', '.join(tabs)})." if tabs
+                         else "Tab list unavailable."))
         return {"comments": [comment_out(c) for c in found], "tab_ambiguous": ambiguous,
-                "tabs": tabs, "detail": detail}
+                "tabs": tabs, "unplaced": unplaced, "detail": detail}
 
     @app.tool(annotations=WRITE)
     @_errors
