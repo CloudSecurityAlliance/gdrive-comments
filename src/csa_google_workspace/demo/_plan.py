@@ -285,6 +285,14 @@ def per_type(kind: str) -> list[Step]:
              "See who can reach it",
              "Reading who has access is ungated. GRANTING access is not - see the next step.",
              group=kind),
+        Step("list_access_proposals", lambda s, key=key: {"fileId": s[key]},
+             "See who has ASKED to reach it",
+             "The other side of access: people who hit the file without permission and "
+             "requested it. Expect zero here - a proposal needs a different human, with no "
+             "access, to click 'Request access', which no API can do. Zero is the answer, not "
+             "a failure. Note what the tool does NOT do: there is no way to request access, "
+             "only to answer requests.",
+             group=kind),
         Step("copy_file", lambda s, key=key, k=kind: {"fileId": s[key],
                                                       "name": f"{s['prefix']} {k} (copy)",
                                                       **_folder(s)},

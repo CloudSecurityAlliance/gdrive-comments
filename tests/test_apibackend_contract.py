@@ -102,8 +102,14 @@ def test_all_writes_are_non_idempotent(monkeypatch):
     # revocation rather than an error, and the caller would never learn the first one worked.
     b.update_permission("f", "p1", role="reader")
     b.delete_permission("f", "p1")
+    # Answering an access request. It returns None, like `delete_permission`, so a retried 5xx
+    # that had already landed would look like a clean second resolve - and the mutation it may
+    # have already applied is A GRANT OF ACCESS. Worst thing on this list to double-apply
+    # silently, because the second call would report success for something already done and
+    # nobody would go looking.
+    b.resolve_access_proposal("f", "ap1", action="ACCEPT", roles=["reader"])
 
-    assert captured == [False] * 14    # a single True here is a silent double-apply risk
+    assert captured == [False] * 15    # a single True here is a silent double-apply risk
 
 
 class _FilesStub:
@@ -267,3 +273,80 @@ def test_update_permission_asks_for_the_fields_the_model_needs_back():
     fields = perms.calls[0][1]["fields"]
     for wanted in ("id", "role", "type"):
         assert wanted in fields
+
+
+# --- accessproposals: pagination, and the body `resolve` actually sends ------------
+#
+# Both invisible to `FakeBackend`, which never sees a request (CLAUDE.md invariant 4).
+
+
+class _ProposalsStub:
+    def __init__(self, pages):
+        self._pages, self._i = pages, 0
+        self.list_calls, self.resolve_calls = [], []
+
+    def list(self, **kwargs):
+        self.list_calls.append(kwargs)
+        page = self._pages[self._i]
+        self._i += 1
+        return _Request(page)
+
+    def resolve(self, **kwargs):
+        self.resolve_calls.append(kwargs)
+        return _Request({})
+
+
+class _DriveWithProposals:
+    def __init__(self, stub): self._stub = stub
+    def accessproposals(self): return self._stub
+
+
+class _ServicesWithProposals:
+    def __init__(self, stub): self.drive = _DriveWithProposals(stub)
+
+
+def test_list_access_proposals_follows_pagination():
+    """A file with more pending requests than one page is exactly the file somebody needs the
+    tool for. Stopping at page one would report a SHORTER queue than exists, which reads as
+    "everyone has been dealt with"."""
+    stub = _ProposalsStub([
+        {"accessProposals": [{"proposalId": "a"}], "nextPageToken": "n1"},
+        {"accessProposals": [{"proposalId": "b"}]},
+    ])
+    out = ApiBackend(_ServicesWithProposals(stub)).list_access_proposals("f")
+
+    assert [p["proposalId"] for p in out] == ["a", "b"]
+    assert len(stub.list_calls) == 2
+    assert stub.list_calls[0]["fileId"] == "f"
+    assert "pageToken" not in stub.list_calls[0]
+    assert stub.list_calls[1]["pageToken"] == "n1"
+
+
+def test_an_empty_page_is_an_empty_list_not_a_crash():
+    """Drive omits `accessProposals` entirely when nothing is pending, and "nobody has asked"
+    is the common case rather than an edge one."""
+    stub = _ProposalsStub([{}])
+    assert ApiBackend(_ServicesWithProposals(stub)).list_access_proposals("f") == []
+
+
+def test_resolve_sends_the_action_and_the_role_google_expects():
+    """The field names are Google's, not ours: `action`, `role` (a LIST, despite granting one
+    role), `sendNotification`. A wrong name here is a 400 from Google that `FakeBackend` will
+    never produce, on the one call that hands out access."""
+    stub = _ProposalsStub([{}])
+    ApiBackend(_ServicesWithProposals(stub)).resolve_access_proposal(
+        "f", "ap1", action="ACCEPT", roles=["writer"], notify=True)
+
+    call = stub.resolve_calls[0]
+    assert call["fileId"] == "f" and call["proposalId"] == "ap1"
+    assert call["body"] == {"action": "ACCEPT", "sendNotification": True, "role": ["writer"]}
+
+
+def test_a_denial_sends_no_role_at_all():
+    """A DENY carrying a role would be contradictory - naming an access level while refusing
+    access - and it is the kind of thing an API accepts today and rejects later."""
+    stub = _ProposalsStub([{}])
+    ApiBackend(_ServicesWithProposals(stub)).resolve_access_proposal(
+        "f", "ap1", action="DENY", notify=False)
+
+    assert stub.resolve_calls[0]["body"] == {"action": "DENY", "sendNotification": False}

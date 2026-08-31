@@ -115,6 +115,26 @@ class PermissionsOut(TypedDict):
     writers: int
 
 
+class AccessProposalOut(TypedDict):
+    id: str
+    # The one identity Google vouches for here, and the field to act on. `requested_roles` is
+    # what they ASKED for, which is not the same thing as what they should get.
+    requester_email: str
+    requested_roles: list[str]
+    create_time: str | None
+    # UNTRUSTED, and more sharply than anything else on this surface: written by somebody with
+    # NO access to the file, reaching a model deciding whether to give them some. Returned
+    # because a person triaging requests needs to read it - never because it is evidence.
+    request_message: str | None
+
+
+class AccessProposalsOut(TypedDict):
+    proposals: list[AccessProposalOut]
+    # A count, so "is anyone waiting?" is answerable without the model counting a list and
+    # getting it wrong on an empty one.
+    pending: int
+
+
 class ConfigOut(TypedDict):
     """What this server may do. Reasons from the allowlist are deliberately absent — they are
     written for whoever reviews the configuration and may name people or unannounced work."""
@@ -353,6 +373,17 @@ def permissions_out(perms: list) -> PermissionsOut:
     return {"permissions": [permission_out(p) for p in perms],
             "public": any(p.is_public for p in perms),
             "writers": sum(1 for p in perms if p.can_write)}
+
+
+def access_proposal_out(p: Any) -> AccessProposalOut:
+    return {"id": p.id, "requester_email": p.requester_email,
+            "requested_roles": p.requested_roles, "create_time": p.create_time,
+            "request_message": p.request_message}
+
+
+def access_proposals_out(proposals: list) -> AccessProposalsOut:
+    return {"proposals": [access_proposal_out(p) for p in proposals],
+            "pending": len(proposals)}
 
 
 def file_ref_out(ref: Any) -> FileRefOut:

@@ -10,6 +10,106 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-30 — v0.33.0 (answering "can I have access?") — not released
+
+Ships Drive's `accessproposals` as two MCP tools and a library mixin. A **1.0.0** item.
+
+### The name misleads, and checking first changed the design
+
+`accessproposals` has `get`, `list`, `resolve` — and **no `create`**. It cannot request access to
+a file you cannot reach. It lets a file's **owner see and answer requests other people made**
+through Drive's UI: the other side of that interaction, and the better side for this tool.
+*"Three people have asked for access to your working-group document, here they are"* is a triage
+workflow, which is what this server is for.
+
+Read from the discovery document rather than from prose — full findings in
+`research/drive-mcp-servers-and-api-surface.md` §accessproposals.
+
+### Approving is sharing, and Google's own scopes say so
+
+`accept` **grants a permission**. However administrative "resolve a request" sounds, the outbound
+authority is identical to `share_file`: somebody who could not read the file now can, and a copy
+they take is not recallable. So it costs **`file.share`**, not a gentler capability invented for
+it.
+
+The scope table is the empirical form of that argument, and it is why this was worth probing:
+`list` and `get` accept the `.readonly` scopes; **`resolve` demands `drive` or `drive.file`**.
+Google classifies resolving as a write.
+
+**`deny` costs the same capability.** Denying grants nothing, so gating it is strictly
+conservative — but `action` is a *caller-supplied* argument, and a capability that varied on it
+would be a gate whose answer the untrusted side picks. An operator who switched `file.share` off
+said *this server does not decide who gets access*; answering "no" is still deciding.
+
+### `accept()` and `deny()`, not `resolve(action=…)`
+
+Google's enum is `ACTION_UNSPECIFIED | ACCEPT | DENY` — a three-state whose third member means
+"you did not decide". This repository has been bitten by exactly that shape twice (invariants 9
+and 10; `_apply.decision()`), so the raw string stays at the `Backend` seam and the public
+surface is two named methods. "Undecided" becomes **unrepresentable** rather than merely invalid.
+
+### The requester does not choose their own access level
+
+`accept()` defaults to **`reader`**, not to the role that was requested. The requested role is
+chosen by the person asking — defaulting to it would let them pick their own access. Granting
+less than was asked is a normal outcome; granting more by default is not. `owner` is refused, as
+in `share()`.
+
+### `request_message` is the sharpest untrusted input in this library
+
+Every other untrusted string here — document text, comment bodies — was written by somebody who
+**already had access** to the file. `request_message` is free text from somebody with **no access
+at all**, reaching a model deciding whether to **give them some**. The barrier to injecting it is
+clicking "Request access" on a link.
+
+It is still returned, because a person triaging requests needs to read it. The rules around it:
+decide on `requester_email` (which Google supplies and vouches for), never on the message or a
+display name; `find_access_proposal(email)` exists so *"approve the request from alice@…"* can be
+actioned without matching on the attacker-controlled field; and it is kept out of `__repr__`,
+because a log line is where injected text gets read later by something that has forgotten where it
+came from.
+
+### A guard that could not catch its own next case
+
+`tests/test_repr_redaction.py` stayed **green** with the new model's redacting `__repr__`
+deleted — it was a hand-maintained list of models and had never heard of it. `Permission` had
+been missing for longer.
+
+It now reflects over the package the way `test_policy.py` reflects over `Backend`: every
+`@dataclass` either writes its own `__repr__` or is named in `GENERATED_REPR_IS_SAFE` **with a
+reason it cannot carry user data**, and two further tests reject a stale exemption and one that
+covers a class which redacts anyway. Adding a model now forces the decision.
+
+It reads source with `ast` rather than importing: `pkgutil.walk_packages` over this package
+**hangs**, because importing every module runs things never meant to run at import time. A guard
+that has to import the world is a guard that stops being run.
+
+### Changed
+
+* `access_proposals.py` (new) — `AccessProposal`, `RoleAndView`, `AccessProposalsMixin`
+  (`access_proposals`, `accept_access_proposal`, `deny_access_proposal`,
+  `find_access_proposal`). Exported from the package root.
+* `backend.py` — `list_access_proposals` (paginated) and `resolve_access_proposal`
+  (`idempotent=False`) on the protocol, the fake and `ApiBackend`. Accepting in the fake grants
+  a real permission, so a test cannot assert "resolve worked" while the thing resolve exists to
+  do goes unexercised.
+* `policy.py` — the two `_GATES` entries. The fail-closed guard turned the suite red before any
+  policy was written, which is the point of it.
+* `mcp/_tools/files.py`, `_schemas.py`, `_capabilities.py` — `list_access_proposals` and
+  `resolve_access_proposal`. **38 tools**, up from 36.
+* `demo/` — a `list_access_proposals` step (expect zero, and that is the answer, not a failure);
+  `resolve_access_proposal` is in `NOT_EXERCISED`, because staging a proposal needs a different
+  human without access to click a button, which no API can do.
+
+### Tests
+
+`tests/test_access_proposals.py` (29) plus four `ApiBackend` contract tests and four repr-guard
+tests. Verified by falsification: downgrading the gate from `file.share` fails 3, deleting the
+redacting `__repr__` fails 2 (and now fails the *guard*, which it did not before), removing
+pagination fails 1, and dropping `idempotent=False` fails 1.
+
+Full suite: 1469 passed, 12 skipped; coverage 88.77%, and 100% on the new module.
+
 ## 2026-08-30 — v0.32.0 (a flavour: stand in for another Drive server, exactly)
 
 Closes **C2**. `CSA_GW_FLAVOUR=google|claude|full` (default `full`) restricts this server to

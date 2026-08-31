@@ -84,6 +84,13 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     # access may take it back. See policy._GATES.
     "update_file_permission": FILE_SHARE,
     "unshare_file": FILE_SHARE,
+    # Answering an access request. `resolve_access_proposal` is `share_file` under another
+    # name - approving it grants a real permission - so it costs the same capability, and it
+    # costs it for a DENIAL too: an operator who turned `file.share` off said this server does
+    # not decide who gets access, and "no" is still deciding. See policy._GATES.
+    "resolve_access_proposal": FILE_SHARE,
+    # "Who is waiting?" has no write in it.
+    "list_access_proposals": None,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.

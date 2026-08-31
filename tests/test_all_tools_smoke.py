@@ -75,6 +75,11 @@ ARGS: dict[str, dict] = {
     # rather than silently exercising one tool against a missing permission.
     "update_file_permission": {"fileId": DOC, "permissionId": "p1", "role": "reader"},
     "unshare_file":          {"fileId": DOC, "permissionId": "p1"},
+    "list_access_proposals": {"fileId": DOC},
+    # DENY rather than approve, so the smoke run does not leave a permission behind that the
+    # permission tools above would then see. Both branches are exercised properly in
+    # tests/test_access_proposals.py; this asserts the tool is reachable and wired.
+    "resolve_access_proposal": {"fileId": DOC, "proposalId": "ap1", "approve": False},
     # last, and deliberately: it trashes the document every earlier tool needs.
     "trash_file":            {"fileId": DOC},
     "describe_configuration": {},
@@ -112,6 +117,9 @@ def server():
         presentations={DECK: {"slides": [{"objectId": "s1", "pageElements": [_shape()]}]}},
         exports={(DOC, "text/plain"): b"hello world", (DOC, "text/markdown"): b"# hello"},
         permissions={DOC: [{"id": "p1", "type": "user", "role": "writer"}]},
+        access_proposals={DOC: [{"proposalId": "ap1", "fileId": DOC,
+                                 "requesterEmailAddress": "asker@example.com",
+                                 "rolesAndViews": [{"role": "reader"}]}]},
     )
     return create_server(lambda: Workspace(backend), settings=settings_from_env(
         {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",

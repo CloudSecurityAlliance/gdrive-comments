@@ -382,7 +382,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 36, each with structured output and read-only/destructive annotations
+**Tools** — 38, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
@@ -393,6 +393,7 @@ reviews the configuration and may name people or unannounced work.
 | **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
 | **Create** | `create_file` · `copy_file` |
 | **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each OFF unless an operator names its capability |
+| **Access requests** | `list_access_proposals` · `resolve_access_proposal` 🔒 — answering "can I have access?"; approving is sharing, so it costs `file.share` |
 | **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
@@ -543,9 +544,9 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **36** |
+| MCP tools | 8 | 11 | **38** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **25** |
+| Tools they do not have | — | — | **27** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
 The twenty-three they do not have: **eleven** comment tools, five content-write tools,
@@ -633,6 +634,8 @@ accepting a share URL, which neither of theirs does.
 | `update_file_permission` | Change a grant's role — usually a **downgrade** | ✗ | ✗ | ✅ ⁷ |
 | `unshare_file` | Revoke a grant. Neither Google server can take a share back | ✗ | ✗ | ✅ ⁷ |
 | `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✅ ⁷ |
+| `list_access_proposals` | Who has **asked** for access and is still waiting | ✗ | ✗ | ✅ |
+| `resolve_access_proposal` | Approve or refuse a request. Approving **is** sharing | ✗ | ✗ | ✅ ⁷ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
@@ -687,6 +690,8 @@ any of the three servers touches, and how much of one capability lives in a sing
 | `copy_file` | `drive.files.copy` |
 | `update_file` | `drive.files.update` (`name`, `parents`) |
 | `share_file` | `drive.permissions.create` |
+| `list_access_proposals` | `drive.accessproposals.list` |
+| `resolve_access_proposal` | `drive.accessproposals.resolve` |
 | `trash_file` | `drive.files.update` (`trashed=true`) |
 | `list_comments`, `get_comment` | `drive.comments.list` / `.get` |
 | `create_comment` | `drive.comments.create` |

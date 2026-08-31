@@ -45,6 +45,10 @@ class Backend(Protocol):
                           notify: bool = True) -> JsonDict: ...
     def update_permission(self, file_id: str, permission_id: str, *, role: str) -> JsonDict: ...
     def delete_permission(self, file_id: str, permission_id: str) -> None: ...
+    def list_access_proposals(self, file_id: str) -> list[JsonDict]: ...
+    def resolve_access_proposal(self, file_id: str, proposal_id: str, *, action: str,
+                                roles: list[str] | None = None, view: str | None = None,
+                                notify: bool = True) -> None: ...
     def copy_file(self, file_id: str, *, name: str | None = None,
                   parent_id: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
@@ -66,7 +70,7 @@ class FakeBackend:
 
     def __init__(self, files, *, documents=None, spreadsheets=None,
                  values=None, presentations=None, exports=None, media=None, comments=None,
-                 permissions=None):
+                 permissions=None, access_proposals=None):
         self._files = files
         # Keyed (file_id, comment_id) -> raw Drive comment dict, matching what
         # create_comment() builds. The seed exists for fixtures needing fields
@@ -85,6 +89,10 @@ class FakeBackend:
         # file has exactly one representation: itself.
         self._media = media or {}
         self._permissions = {fid: list(ps) for fid, ps in (permissions or {}).items()}
+        # Pending access requests, keyed by file. Seeded rather than creatable, because the API
+        # has no `create` either - a proposal is made from Drive's UI by somebody who does NOT
+        # have access, and there is no endpoint on this side that can produce one.
+        self._proposals = {fid: list(ps) for fid, ps in (access_proposals or {}).items()}
         self._writes = []
 
     def get_file_metadata(self, file_id: str) -> dict:
@@ -299,6 +307,30 @@ class FakeBackend:
     def delete_permission(self, file_id, permission_id):
         perm = self._find_permission(file_id, permission_id)
         self._permissions[file_id].remove(perm)
+
+    def list_access_proposals(self, file_id):
+        self.get_file_metadata(file_id)              # raises NotFoundError
+        return [copy.deepcopy(p) for p in self._proposals.get(file_id, [])]
+
+    def resolve_access_proposal(self, file_id, proposal_id, *, action,
+                                roles=None, view=None, notify=True):
+        self.get_file_metadata(file_id)              # raises NotFoundError
+        for proposal in self._proposals.get(file_id, []):
+            if proposal.get("proposalId") == proposal_id:
+                break
+        else:
+            raise exc.NotFoundError(
+                f"no access proposal {proposal_id!r} on {file_id!r}")
+        self._proposals[file_id].remove(proposal)
+        # ACCEPT grants a permission for real, so the fake grants one too. A fake where
+        # accepting changed nothing observable would let a test assert "resolve worked" while
+        # the thing resolve EXISTS to do - handing somebody access - went unexercised.
+        if action == "ACCEPT":
+            self._seq += 1
+            perm = {"id": f"perm{self._seq}", "type": "user",
+                    "role": (roles or ["reader"])[0],
+                    "emailAddress": proposal.get("requesterEmailAddress")}
+            self._permissions.setdefault(file_id, []).append(perm)
 
     def copy_file(self, file_id, *, name=None, parent_id=None):
         source = self.get_file_metadata(file_id)       # raises NotFoundError
@@ -627,6 +659,44 @@ class ApiBackend:
                 fileId=file_id, permissionId=permission_id, body={"role": role},
                 fields="id, type, role, emailAddress, displayName",
                 supportsAllDrives=True).execute,
+            idempotent=False)
+
+    def list_access_proposals(self, file_id):
+        # "Who has asked for access to this file?" - the OWNER's side of Drive's request-access
+        # flow. Note there is no `create`: this API cannot ask for access, only answer.
+        #
+        # Paginated like every other list here. No `fields` mask: unlike permissions, the
+        # default AccessProposal response already carries the fields that matter
+        # (requesterEmailAddress, requestMessage, rolesAndViews), and the resource is small.
+        out, page = [], None
+        while True:
+            kw = {"fileId": file_id, "pageSize": 100}
+            if page:
+                kw["pageToken"] = page
+            resp = _errors.call(
+                self._services.drive.accessproposals().list(**kw).execute)
+            out.extend(resp.get("accessProposals", []))
+            page = resp.get("nextPageToken")
+            if not page:
+                return out
+
+    def resolve_access_proposal(self, file_id, proposal_id, *, action,
+                                roles=None, view=None, notify=True):
+        # ACCEPT GRANTS A PERMISSION. However administrative "resolve a request" sounds, this
+        # is `create_permission` wearing different clothes - the same outbound authority, the
+        # same irreversibility once a copy is taken - which is why policy._GATES puts it under
+        # `file.share` rather than inventing a gentler capability for it.
+        #
+        # Google's own scopes agree, and that is the empirical version of the argument: `list`
+        # and `get` accept the `.readonly` scopes; `resolve` demands `drive` or `drive.file`.
+        body = {"action": action, "sendNotification": notify}
+        if roles:
+            body["role"] = roles
+        if view:
+            body["view"] = view
+        _errors.call(
+            self._services.drive.accessproposals().resolve(
+                fileId=file_id, proposalId=proposal_id, body=body).execute,
             idempotent=False)
 
     def delete_permission(self, file_id, permission_id):

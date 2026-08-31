@@ -61,11 +61,11 @@ below; this is the index.
 | item | note |
 |---|---|
 | **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
-| **`accessproposals`** | *Not* "request access" — it is the owner's side: see and resolve requests. `list` is a read; **`resolve` is `file.share` in disguise** |
 | **Drive labels** | The one inventory item that is security-adjacent — classification is what DLP keys on |
 | **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
 | **Dead-entry detection** | An allowlisted file that has been trashed |
 | **`CONTROLS_TOKEN`** | A decision, not code: store a read-only PAT so CI can verify branch protection, or leave it verified locally |
+| ~~`accessproposals`~~ | **Shipped** v0.33.0 — `resolve` gated as `file.share`, confirmed by Google's own scope table |
 | ~~C2 flavour switch~~ | **Shipped** v0.32.0 — allowed *and* advertised; `claude` 14 tools, `google` 11 |
 | ~~C4 logging~~ | **Shipped** v0.31.1 |
 | ~~C3 caching knob~~ | **Dissolved** — never a gate, because a default-off cache is additive |
@@ -1331,7 +1331,7 @@ This was the honest ceiling of the Python client — but several items are close
   was stale. `list` and `create` shipped in v0.15.0; `update` and `delete` shipped **2026-08-29**
   in v0.30.14 (#235), both under `file.share` because ungranting is the same authority as
   granting. It was never actually gated on #82.
-- [ ] **`accessproposals`** — **1.0.0 (CINO, 2026-08-30)**, called a basic capability.
+- [x] ~~**`accessproposals`**~~ — **shipped v0.33.0 (2026-08-30)**, as scheduled.
 
   **Checked before scheduling, and it does not do what the name suggests to an English ear.**
   Three methods — `get`, `list`, `resolve` — and **no `create`**. It does *not* let you request
@@ -1347,6 +1347,17 @@ This was the honest ceiling of the Python client — but several items are close
   - **`resolve` is `file.share` in disguise.** Approving a proposal *grants a permission* — same
     outbound authority, same irreversibility once a copy is taken. It must be gated as
     `file.share`, however administrative "resolve a request" sounds.
+
+  **Both calls were confirmed against the discovery document before building, and it settled the
+  split empirically**: `list`/`get` accept the `.readonly` scopes, `resolve` demands `drive` or
+  `drive.file`. Google classifies resolving as a write. `deny` ended up under the same capability
+  too — gating it is conservative, but `action` is a caller-supplied argument and a gate that
+  varied on it would let the untrusted side pick its own answer.
+
+  **The probe also found the sharpest untrusted input in this project**, which was not
+  anticipated when this item was scheduled: `requestMessage` is free text from somebody with **no
+  access to the file**, reaching a model deciding whether to grant them some. Written up in
+  `research/drive-mcp-servers-and-api-surface.md` §accessproposals.
 - [ ] ~~`drives.*` — shared drive administration.~~ Out of scope: it does not help anyone
   review a document.
 - [ ] ~~`files.delete` / `emptyTrash` — **permanent** deletion.~~ Out of scope for now. Both
