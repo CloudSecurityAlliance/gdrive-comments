@@ -10,6 +10,57 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-31 — v0.35.1 (a token one scope short is not "no token") — not released
+
+**Found live on the first install to upgrade across v0.34.0**, which is the release that made this
+state reachable at all.
+
+The unauthorized message said both of these at once:
+
+> Not authorized to reach Google yet (**cached credentials lack the required scopes**).
+> **No usable token at** `~/.csa_google_workspace/token.json`.
+
+The second clause was **false**. The token was there, valid, with its original four scopes — one
+short, because v0.34.0 added `drive.labels.readonly`.
+
+### Why the sentence had never been wrong before
+
+Every earlier re-consent was a fresh install or an expiry, and *"no usable token"* was true for
+both. **v0.34.0 is the first release in which an existing, working token became insufficient** —
+and every future scope addition does it again. So a line that had always been correct became
+permanently wrong, silently.
+
+### What a reader does with a wrong answer
+
+1. *"No token"* sends you hunting for a missing file, or concluding a login was lost, when the
+   login is fine and needs re-consenting.
+2. **`login` may not be enough.** A plain `login` can find a loadable token and decline to act;
+   the scope-short case needs `--force`. Telling somebody to run the command that no-ops is worse
+   than saying nothing.
+
+### Fixed
+
+* **The message looks instead of asserting.** It had the path all along and never checked it.
+  `os.path.expanduser` first — omitting that reintroduces the same bug one layer down, and a test
+  pins it.
+* **`login` vs `login --force`** now follows from whether a token exists.
+* **`ScopesMissingError`** (new, an `AuthError` subclass) names the missing scopes by leaf name and
+  says *"this is a re-consent, not a lost login"*. It carries `.scopes` for anything that wants to
+  act on the list rather than read a sentence.
+* **The two callers keep wanting opposite things**, now explicitly: the interactive path treats a
+  scope-short token as "go get consent" and falls through to the browser flow; the non-interactive
+  stdio server cannot prompt, so it raises with detail. Making `_read_cached` raise unconditionally
+  broke the interactive fallback — caught by `test_auth_lifecycle.py`, and the distinction is now
+  pinned by a test of its own rather than by accident.
+
+### Tests
+
+`tests/test_scope_short_token_message.py` (14). Verified by falsification: dropping
+`expanduser` fails 1, restoring the unconditional wording fails 2, dropping the `--force` branch
+fails 1.
+
+Full suite: 1540 passed, 12 skipped.
+
 ## 2026-08-31 — v0.35.0 (what your allowlist actually points at)
 
 Closes the last two open **#82 / A4** items — and they were **one feature**. "Allowlist dry-run"
