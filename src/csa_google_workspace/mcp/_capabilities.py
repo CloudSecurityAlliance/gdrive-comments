@@ -27,6 +27,7 @@ from ..policy import (
     COMMENT_EDIT,
     COMMENT_REPLY,
     COMMENT_RESOLVE,
+    CONTENT_DELETE,
     CONTENT_WRITE,
     FILE_CREATE,
     FILE_SHARE,
@@ -96,6 +97,18 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "list_labels": None,
     # Reads the policy this server already holds and resolves the ids in it.
     "preview_allowlist": None,
+    # Tabs and the ranges. Reads are ungated; adding is a content write; DELETING is its own
+    # capability, because it takes the content with it and there is no trash and no API undo.
+    "list_tabs": None,
+    "list_document_tabs": None,
+    "read_range": None,
+    "add_tab": CONTENT_WRITE,
+    "add_document_tab": CONTENT_WRITE,
+    "insert_text": CONTENT_WRITE,
+    "delete_tab": CONTENT_DELETE,
+    "delete_document_tab": CONTENT_DELETE,
+    "delete_range": CONTENT_DELETE,
+    "clear_cells": CONTENT_DELETE,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.

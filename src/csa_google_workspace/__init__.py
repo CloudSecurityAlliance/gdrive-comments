@@ -27,4 +27,4 @@ __all__ = [
     # policy / allowlisting (#82)
     "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",
 ]
-__version__ = "0.35.2"
+__version__ = "0.36.0"

@@ -3,6 +3,7 @@ import re
 from typing import TYPE_CHECKING
 
 from .. import _cellmap
+from .. import exceptions as exc
 from ..base import Document
 
 if TYPE_CHECKING:
@@ -23,8 +24,71 @@ class Sheet(Document):
 
     @property
     def tabs(self) -> list[str]:
+        """Tab titles, in sheet order. Kept returning plain strings - it is public API and the
+        commonest question is "what are they called". `tab_details` has the rest."""
+        return [tab["title"] for tab in self.tab_details]
+
+    @property
+    def tab_details(self) -> list[dict]:
+        """Each tab as `{title, sheet_id, index, hidden, type}`.
+
+        `hidden` is the one worth having: **a hidden tab still exists, still holds data, and
+        still occupies its name.** A register build that adds a `Title` tab without knowing a
+        hidden one is already called that gets a refusal it cannot explain. `sheet_id` is here
+        because `delete_tab` needs the numeric id, never the title.
+        """
         ss = self._backend.get_spreadsheet(self.id)
-        return [s["properties"]["title"] for s in ss.get("sheets", [])]
+        out = []
+        for sheet in ss.get("sheets", []):
+            props = sheet.get("properties", {})
+            out.append({"title": props.get("title", ""),
+                        "sheet_id": props.get("sheetId"),
+                        "index": props.get("index"),
+                        # Absent means false: Google omits `hidden` on a visible sheet rather
+                        # than sending false, so `.get` without a default would give None and a
+                        # caller testing truthiness would be right by accident.
+                        "hidden": bool(props.get("hidden", False)),
+                        "type": props.get("sheetType")})
+        return out
+
+    def add_tab(self, name: str, index: int | None = None) -> dict:
+        """Add a tab. **Refuses a duplicate name rather than creating `name 2`.**
+
+        Google's own behaviour on a clash is to invent `Title 2`, silently. That is the wrong
+        default for anything re-runnable: a caller building a register a second time needs
+        *already there* told apart from *created*, and a silently-renamed tab means the next
+        write goes to a tab nobody meant.
+
+        The check is case-insensitive because Sheets treats tab names that way in A1 references,
+        so `title` and `Title` would collide at use rather than at creation.
+        """
+        self._require_writable()
+        existing = {t["title"].casefold(): t["title"] for t in self.tab_details}
+        clash = existing.get(name.casefold())
+        if clash is not None:
+            raise exc.ConflictError(
+                f"a tab named {clash!r} already exists in this spreadsheet"
+                + (f" (you asked for {name!r})" if clash != name else "")
+                + ". Nothing was created; use it, or choose another name.")
+        self._cell_map_cache = None
+        return self._backend.sheets_add_tab(self.id, name, index)
+
+    def delete_tab(self, name: str) -> None:
+        """Delete a tab **by name**, resolving it to the numeric id Google requires.
+
+        Requires `content.delete`, not `content.write`: this removes every cell in the tab, with
+        no trash and no undo through the API. Google refuses to delete the only tab in a
+        spreadsheet, and so does this.
+        """
+        self._require_writable()
+        for tab in self.tab_details:
+            if tab["title"].casefold() == name.casefold():
+                break
+        else:
+            raise exc.NotFoundError(
+                f"no tab named {name!r}; present: {[t['title'] for t in self.tab_details]}")
+        self._cell_map_cache = None
+        self._backend.sheets_delete_tab(self.id, tab["sheet_id"])
 
     def values(self, a1_range: str) -> list:
         return self._backend.get_values(self.id, a1_range)

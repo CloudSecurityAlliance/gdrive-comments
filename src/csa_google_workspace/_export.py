@@ -68,7 +68,12 @@ def _cell_lookup(document: Any) -> tuple[dict[str, list[list[Any]]], list[str]]:
     One read per tab, done once for the whole export rather than once per comment - a register
     of forty comments must not be forty API calls.
     """
-    tabs = list(getattr(document, "tabs", []) or [])
+    # SPREADSHEET tabs, which are plain title strings and are used as dict keys below. The
+    # `str` filter is a guard, not tidiness: a Doc briefly had a `tabs` property returning
+    # dicts, and this line raised `unhashable type: 'dict'` two calls later with nothing
+    # pointing back here. Filtering keeps a same-named property on another type from crashing
+    # an export, and `Doc.document_tabs` is now named so the collision cannot recur.
+    tabs = [tab for tab in (getattr(document, "tabs", []) or []) if isinstance(tab, str)]
     if not tabs:
         return {}, []
     grids: dict[str, list[list[Any]]] = {}

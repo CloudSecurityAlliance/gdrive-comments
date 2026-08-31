@@ -51,10 +51,73 @@ class Doc(Document):
         end = content[-1].get("endIndex", 2) if content else 2
         self._backend.docs_batch_update(self.id, [{"insertText": {"location": {"index": end - 1}, "text": text}}])
 
-    def delete_range(self, start: int, end: int) -> None:
+    def delete_range(self, start: int, end: int, tab_id: str | None = None) -> None:
+        """Delete a character range. **Requires `content.delete`, not `content.write`.**
+
+        Moved off `docs_batch_update` onto a dedicated backend method in v0.36.0, so the gate can
+        differ: the generic batch method cannot tell a delete from an edit, and a delete riding on
+        it was ungatable apart from editing.
+
+        `tab_id` addresses a specific tab; without it the request applies to the FIRST tab, which
+        is what every index-addressed Docs request does. Get ids from `tabs`.
+        """
         self._require_writable()
-        self._backend.docs_batch_update(self.id, [{"deleteContentRange": {
-            "range": {"startIndex": start, "endIndex": end}}}])
+        self._backend.docs_delete_range(self.id, start, end, tab_id)
+
+    @property
+    def document_tabs(self) -> list[dict]:
+        """Each tab as `{title, tab_id, index, nesting_level}`, depth-first through nesting.
+
+        **NOT called `tabs`, and that is not cosmetic.** `_export.py` duck-types on
+        `getattr(document, "tabs")` and uses each value as a DICT KEY, which worked while only
+        `Sheet.tabs` existed and returned strings. Naming this one `tabs` made
+        `export_comments` raise `unhashable type: 'dict'` on a Doc - caught by the demo, not by
+        a unit test, because nothing else crossed the two types.
+
+        Same hazard the tool surface avoided by calling these `list_document_tabs` rather than
+        overloading `list_tabs`: a Sheets tab and a Docs tab are different resources sharing a
+        word, and duck-typing on that word is what turns the collision into a crash.
+
+        **Docs tabs nest** — `childTabs`, `parentTabId`, `nestingLevel` — so this is a flattened
+        tree in document order, with `nesting_level` preserving the shape a flat list would
+        otherwise discard. Empty for a document read in the legacy shape, where the response
+        carries no tab metadata at all rather than one implicit tab.
+        """
+        raw = self._backend.get_document(self.id)
+        out: list[dict] = []
+
+        def walk(tab: dict, depth: int) -> None:
+            props = tab.get("tabProperties") or {}
+            out.append({"title": props.get("title", ""),
+                        "tab_id": props.get("tabId", ""),
+                        "index": props.get("index"),
+                        # Google sends nestingLevel; depth is the fallback when it does not.
+                        "nesting_level": props.get("nestingLevel", depth)})
+            for child in tab.get("childTabs") or []:
+                walk(child, depth + 1)
+
+        for tab in raw.get("tabs") or []:
+            walk(tab, 0)
+        return out
+
+    def add_tab(self, title: str | None = None) -> dict:
+        """Add a tab. Google auto-titles it (`"Tab 2"`) when `title` is omitted.
+
+        Unlike `Sheet.add_tab` this does NOT refuse a duplicate title, because Docs tabs are
+        addressed by `tabId` rather than by name — two tabs may legitimately share a title, and
+        refusing would invent a constraint Google does not have.
+        """
+        self._require_writable()
+        return self._backend.docs_add_tab(self.id, title)
+
+    def delete_tab(self, tab_id: str) -> None:
+        """Delete a tab **by id**. Requires `content.delete`.
+
+        By id and not by title, deliberately: Docs permits duplicate titles, so a
+        delete-by-name would be ambiguous exactly when it matters. Get ids from `tabs`.
+        """
+        self._require_writable()
+        self._backend.docs_delete_tab(self.id, tab_id)
 
     def batch_update(self, requests: list) -> dict:
         self._require_writable()

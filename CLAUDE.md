@@ -29,6 +29,13 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
 - **`docs/superpowers/plans/`** — the six phased, bite-sized TDD implementation plans (foundations, comments, …). Each shipped phase was built from its plan; phase 2 still needs its plan written.
 - **`src/csa_google_workspace/`** — the library (see layout below).
 - **`TODO.md`** — the post-roadmap backlog: a *menu*, ordered by leverage-to-effort, with the explicit deferrals and their rationale. Check it before proposing "missing" features — most are already recorded decisions.
+- **`docs/` audit reports are OUT OF SCOPE unless you are told otherwise** (CINO, 2026-08-31).
+  Audits run in **other sessions** — a `codex` run may be mid-audit against your working tree
+  right now, and its report can appear untracked in `docs/` while you work. Do not read it, do
+  not act on it, and **do not commit it** (`git add -A` will sweep it up — add paths explicitly).
+  **An audit notifies by FILING AN ISSUE.** That is the channel; an unreferenced file in `docs/`
+  is work in progress, not a message to you. This is the same principle as the rule below that
+  an audit amends `THREAT_MODEL.md` by filing an issue rather than editing it.
 - **`THREAT_MODEL.md`** (repo root) — the **living threat register**: 35 enumerated threats, each with actor, surface, impact × likelihood, a current `status` and its evidence. Adopted 2026-08-28 from audit `2026-08-27-01` (#197); its threat text is as that audit wrote it and §0 accounts for every status that has moved since. An audit **proposes** changes here by filing an issue, never by editing the file. `tests/test_threat_model.py` asserts §0 explains every difference from the audit's frozen snapshot — so a status cannot quietly improve.
 - **`SECURITY.md`** — the **framing**, not the register: how the risk is shaped and who owns which part. **Prompt injection through document/comment content is the named primary risk**, and it constrains any change that surfaces content to a model (all of phase 2). Also: token custody, scope breadth, per-user isolation.
 - **`research/`** — canonical API-behavior references: `google-drive-comments-reference.md` (Drive comments), `docs-suggestions-reference.md` (Docs suggestions), `server-landscape.md` (prior art), `drive-mcp-servers-and-api-surface.md` (what the two Drive MCP servers actually do, read from live schemas — their `update_file` is metadata-only and neither can edit existing content — plus the full Drive v3 / Docs v1 method inventory). `mcp-server-design.md` / `mcp-protocol-notes.md` are **earlier** MCP notes, kept for reference only — the `docs/superpowers/specs/` one above is authoritative.
