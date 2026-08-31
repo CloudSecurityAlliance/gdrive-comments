@@ -25,7 +25,12 @@ import pytest
 
 from csa_google_workspace.mcp._config import settings_from_env
 from csa_google_workspace.mcp._resources import render_config
-from csa_google_workspace.policy import ALL_CAPABILITIES, DEFAULT_DISABLED, DEFAULT_ENABLED
+from csa_google_workspace.policy import (
+    ALL_CAPABILITIES,
+    DEFAULT_DISABLED,
+    DEFAULT_ENABLED,
+    IRREVERSIBLE,
+)
 
 
 def rendered(**env) -> str:
@@ -40,7 +45,12 @@ class TestTheDefaultSentence:
 
     def test_it_does_not_claim_to_exclude_something_it_includes(self):
         """The exact contradiction that shipped: listing `file.trash` and then saying the
-        default excludes trashing."""
+        default excludes trashing.
+
+        Skipped when nothing is disabled, because there is then no excludes clause at all -
+        and that state has its own tests below, since it is the one that shipped broken."""
+        if not DEFAULT_DISABLED:
+            pytest.skip("nothing is disabled by default; see TestTheEmptyCaseIsTheOneThatShipped")
         text = rendered()
         excludes = text.split("which excludes", 1)[1].split("\n", 1)[0]
         for capability in DEFAULT_ENABLED:
@@ -48,10 +58,69 @@ class TestTheDefaultSentence:
                 f"{capability} is IN the default set and the text says it is excluded")
 
     def test_the_excluded_ones_are_exactly_the_disabled_ones(self):
+        if not DEFAULT_DISABLED:
+            pytest.skip("nothing is disabled by default; see the empty-case tests below")
         text = rendered()
         excludes = text.split("which excludes", 1)[1].split("\n", 1)[0]
         for capability in DEFAULT_DISABLED:
             assert f"`{capability}`" in excludes, f"{capability} is off by default, unmentioned"
+
+
+class TestTheEmptyCaseIsTheOneThatShipped:
+    """`DEFAULT_DISABLED` became EMPTY in v0.31.0 when everything was turned on by default, and
+    the sentence rendered:
+
+        "...which excludes  - the three Google gives you no way to undo."
+
+    An empty gap where a list should be, a hardcoded count that was four by then, and a claim
+    that the default excludes capabilities the same sentence had just listed as INCLUDED. It
+    understated the default's reach, which is the dangerous direction, in the resource whose
+    entire job is telling the truth about the configuration.
+
+    **Both guards above passed it, vacuously.** One iterates `DEFAULT_ENABLED` checking nothing
+    appears inside an excludes clause that had become the empty string; the other iterates
+    `DEFAULT_DISABLED`, so its body never ran. Iterating a collection that can be empty is not a
+    check when it is empty - that is the case to test, not the case to skip.
+    """
+
+    def test_it_never_says_it_excludes_nothing_in_particular(self):
+        """The literal broken rendering. No assertion above could see it."""
+        text = rendered()
+        assert "excludes  " not in text
+        assert "excludes -" not in text and "excludes," not in text
+
+    def test_when_nothing_is_disabled_it_says_so_plainly(self):
+        if DEFAULT_DISABLED:
+            pytest.skip("something is disabled by default; the excludes-clause tests apply")
+        text = rendered()
+        assert "which excludes" not in text, (
+            "with nothing disabled there is no excludes clause to write; saying "
+            "'excludes <nothing>' is how the broken sentence read")
+        assert "everything" in text.lower(), "the default's reach must be stated, not implied"
+
+    def test_the_irreversible_ones_are_named_when_they_are_on_by_default(self):
+        """Understating this is the dangerous direction: an operator reading that the default
+        excludes the irreversible capabilities will not narrow, and it does not."""
+        on_by_default = IRREVERSIBLE & DEFAULT_ENABLED
+        if not on_by_default:
+            pytest.skip("no irreversible capability is on by default")
+        text = rendered()
+        for capability in on_by_default:
+            assert f"`{capability}`" in text, (
+                f"{capability} is irreversible AND on by default, and is not named")
+
+    def test_no_count_is_hardcoded(self):
+        """"the three" survived the set becoming four. A number in prose that a constant
+        controls has to be derived from it."""
+        text = rendered()
+        for word in ("the three ", "the two ", "the four ", "the five "):
+            assert word not in text, (
+                f"{word!r} is a hardcoded count; derive it from the constant so it cannot "
+                f"drift the way 'the three' did")
+
+    def test_the_stated_total_matches_the_constant(self):
+        text = rendered()
+        assert f"all {len(DEFAULT_ENABLED)} capabilities" in text or DEFAULT_DISABLED
 
 
 class TestItReportsTheACTUALPolicy:

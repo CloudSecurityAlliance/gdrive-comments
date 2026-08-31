@@ -157,6 +157,63 @@ real bound on the surface, use `CSA_GW_FLAVOUR` or a profile, which this server 
 you ran those, you already have it. It is a *meta-installer*, not an install method for this
 project: the instructions above are the canonical ones, and are what a person outside CSA uses.
 
+## Security — narrowing what this can do
+
+Everything below this heading is about bounding the server. Two things belong at the top rather
+than buried, because they are the ones people get wrong:
+
+**1. Turn off the built-in Drive connector** (next section). Leaving both enabled **defeats the
+scoping entirely** — the connector reaches the same account with none of these controls, so a
+refusal here stops being a refusal.
+
+**2. This is a ceiling *below* Drive's permissions, never an expansion.** Every call runs as the
+authorizing user against Drive's own ACLs. These controls stop an agent doing what you *could* do
+but did not intend; they cannot grant anything. The named primary risk stays **prompt injection
+through document and comment content** ([`SECURITY.md`](./SECURITY.md)), and this is **damage
+containment, not prevention**.
+
+### Which one to reach for
+
+In order. Most installs need only the first, and each line is independently useful:
+
+| Want | Set | Why this one |
+|---|---|---|
+| **triage / read and report only** | `CSA_GW_READ_ONLY=1` | The strongest and simplest. The guarantee is *which credential exists* — a separate token cache and `.readonly` OAuth scopes — not which code path runs, so there is no write authority to reach even if something else is misconfigured |
+| **comment, but never edit the document** | `CSA_GW_PROFILE=commenter` | Additive only; a resolve leaves a visible reply |
+| **edit, but never share or destroy history** | `CSA_GW_PROFILE=writer` | Everything *recoverable*. Drive's own Editor cannot share either |
+| **one capability off an otherwise-right profile** | `CSA_GW_CAPABILITIES=…` | An explicit **complete** list, not a delta, so it reviews like code |
+| **the agent to see less than you can** | `CSA_GW_ALLOWLIST_READ` | A project or working set instead of your whole Drive |
+| **to bound what a successful injection can damage** | `CSA_GW_ALLOWLIST_MODIFY` | Almost always worth a short explicit list. `READ="*"` with a narrow `MODIFY` is a coherent posture; `*` on both is the one to talk yourself out of |
+| **a smaller tool surface** | `CSA_GW_FLAVOUR` | Fewer tools published — allowed *and* advertised |
+
+**The ladder is ordered by what can be undone, not by how alarming the verb sounds.** Four
+capabilities are irreversible and flagged as such: **`comment.edit`**, **`comment.delete`**,
+**`content.delete`** and **`file.share`**. Trashing a file is *not* among them — Drive's bin holds
+it for 30 days and its owner can restore it — so `writer` may trash while holding **none** of the
+four. All three of the local ones arrive together at `fileOrganizer`; `file.share` is what
+`organizer` adds, because it is the only one that moves data out of the organisation. There is no
+permanent delete anywhere in this library, and nothing that empties the trash.
+
+### Checking your own work
+
+Reading a config back is a different act from writing one, and these answer the question the
+table cannot:
+
+```bash
+csa-google-workspace-mcp describe        # the effective policy, from a terminal
+```
+
+| Ask the server | Tells you |
+|---|---|
+| `describe_configuration` | the live effective policy as structured output — what is on, what is off |
+| `preview_allowlist` | each allowlist entry resolved to its **real Drive name**, and whether it is `ok`, `trashed` or `unreachable` |
+
+`preview_allowlist` is the one worth running after any edit: an allowlist entry is a bare file id,
+so a wrong paste under a right-looking comment is invisible until something resolves it. Note that
+**matching is by file id** — a *copy* of an allowlisted document is not allowlisted.
+
+The full reference lives at `csa-gw://help/configuration`; the sections below are the reasoning.
+
 ### Turn off the built-in Google Drive connector
 
 **If you use this server, disable Claude's own Google Drive connector.** Not merely to avoid
@@ -481,7 +538,7 @@ The server never prompts, because under stdio its stdout **is** the JSON-RPC cha
 Google consent flow writes to stdout and blocks. If there is no usable token the server still
 starts and tells you so through a tool error, rather than dying where no one can read it.
 
-### Troubleshooting
+## Troubleshooting
 
 | What you see | What it means |
 |---|---|
