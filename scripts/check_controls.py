@@ -61,9 +61,14 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+# This repository's values, and the defaults for the flags below. They are DEFAULTS rather than
+# constants because the three controls are not specific to this project: any repo publishing to
+# PyPI over Trusted Publishing rests on the same premises, and a sibling repo should be able to
+# run this file unmodified rather than fork it. A forked copy is how a check quietly stops
+# matching the thing it checks - which is the exact failure this script exists to catch.
 REPO = "CloudSecurityAlliance/csa-google-workspace"
 PACKAGE = "csa-google-workspace"
-ENVIRONMENT = "pypi"
+ENVIRONMENT = "pypi"        # `csa-ai-foundation-model-api-clients` calls its environment `release`
 BRANCH = "main"
 TIMEOUT = 20
 
@@ -106,7 +111,8 @@ def get(url: str, token: str | None = None) -> tuple[int, object]:
 
 
 # --- 1. the publisher binding ------------------------------------------------------------
-def check_publisher_environment(repo: str) -> Result:
+def check_publisher_environment(repo: str, *, package: str = PACKAGE,
+                                environment: str = ENVIRONMENT) -> Result:
     """Constrained to `pypi`, read from the published attestation.
 
     PyPI does not expose a project's publisher CONFIGURATION publicly, so this asserts the
@@ -120,8 +126,8 @@ def check_publisher_environment(repo: str) -> Result:
     also exactly what PyPI emails about ("Trusted Publisher ... can be made more secure"), so
     the two together cover it from both ends.
     """
-    name = "PyPI Trusted Publisher is constrained to the `pypi` environment"
-    status, data = get(f"https://pypi.org/pypi/{PACKAGE}/json")
+    name = f"PyPI Trusted Publisher is constrained to the `{environment}` environment"
+    status, data = get(f"https://pypi.org/pypi/{package}/json")
     if status != 200 or not isinstance(data, dict):
         return Result(name, UNVERIFIABLE, f"PyPI unreachable (HTTP {status}).")
     version = data["info"]["version"]
@@ -130,7 +136,7 @@ def check_publisher_environment(repo: str) -> Result:
         return Result(name, UNVERIFIABLE, f"{version} has no wheel to check.")
 
     status, prov = get(
-        f"https://pypi.org/integrity/{PACKAGE}/{version}/{files[0]}/provenance")
+        f"https://pypi.org/integrity/{package}/{version}/{files[0]}/provenance")
     if status == 404:
         return Result(name, VIOLATED,
                       f"{version} has NO attestation. Either it was not published by the "
@@ -143,49 +149,51 @@ def check_publisher_environment(repo: str) -> Result:
         return Result(name, VIOLATED, f"{version} carries no attestation bundle.")
     publishers = [b.get("publisher", {}) for b in bundles]
     wrong = [p for p in publishers
-             if p.get("environment") != ENVIRONMENT or p.get("repository") != repo]
+             if p.get("environment") != environment or p.get("repository") != repo]
     if wrong:
         return Result(name, VIOLATED,
                       f"{version} was published from {wrong!r}, not environment "
-                      f"{ENVIRONMENT!r} of {repo}.")
+                      f"{environment!r} of {repo}.")
     return Result(name, OK,
-                  f"{version} attests publisher environment={ENVIRONMENT!r} "
+                  f"{version} attests publisher environment={environment!r} "
                   f"repository={repo!r} workflow="
                   f"{publishers[0].get('workflow')!r}.")
 
 
 # --- 2. the environment's reviewers ------------------------------------------------------
-def check_environment_reviewers(repo: str, token: str | None) -> Result:
+def check_environment_reviewers(repo: str, token: str | None = None, *,
+                                environment: str = ENVIRONMENT) -> Result:
     """The gate that makes a publish stop for a human. It was removed once before."""
-    name = f"`{ENVIRONMENT}` environment still requires a reviewer"
+    name = f"`{environment}` environment still requires a reviewer"
     status, data = get(f"https://api.github.com/repos/{repo}/environments", token)
     if status != 200 or not isinstance(data, dict):
         return Result(name, UNVERIFIABLE, f"could not read environments (HTTP {status}).")
 
-    matching = [e for e in data.get("environments", []) if e.get("name") == ENVIRONMENT]
+    matching = [e for e in data.get("environments", []) if e.get("name") == environment]
     if not matching:
         return Result(name, VIOLATED,
-                      f"there is no `{ENVIRONMENT}` environment. release.yml names it, so "
+                      f"there is no `{environment}` environment. release.yml names it, so "
                       f"the publish job is running with no gate at all.")
     rules = [r.get("type") for r in matching[0].get("protection_rules", [])]
     if "required_reviewers" not in rules:
         return Result(name, VIOLATED,
-                      f"`{ENVIRONMENT}` has protection rules {rules or '[]'} - no required "
+                      f"`{environment}` has protection rules {rules or '[]'} - no required "
                       f"reviewers, so a publish proceeds unattended.")
     return Result(name, OK, f"protection rules: {rules}.")
 
 
 # --- 3. branch protection ----------------------------------------------------------------
-def check_branch_protection(repo: str, token: str | None) -> Result:
+def check_branch_protection(repo: str, token: str | None = None, *,
+                            branch: str = BRANCH) -> Result:
     """Required status checks on `main`.
 
     `dependabot-auto-merge.yml` holds `contents: write` on a pull_request trigger and merges
     on green. What stops that from merging something red is branch protection, not the
     workflow - so this is the premise the auto-merge rests on.
     """
-    name = f"branch protection on `{BRANCH}` requires status checks"
+    name = f"branch protection on `{branch}` requires status checks"
     status, data = get(
-        f"https://api.github.com/repos/{repo}/branches/{BRANCH}/protection", token)
+        f"https://api.github.com/repos/{repo}/branches/{branch}/protection", token)
     if status in (401, 403):
         return Result(name, UNVERIFIABLE,
                       f"needs admin rights (HTTP {status}). A workflow's GITHUB_TOKEN cannot "
@@ -193,8 +201,10 @@ def check_branch_protection(repo: str, token: str | None) -> Result:
                       f"Supply a read-only token with administration:read, or run locally.")
     if status == 404:
         return Result(name, VIOLATED,
-                      f"`{BRANCH}` has NO branch protection. dependabot-auto-merge.yml holds "
-                      f"contents: write and merges on green, with nothing enforcing green.")
+                      f"`{branch}` has NO branch protection - anyone with write access can "
+                      f"push straight to it, and any auto-merge workflow holding "
+                      f"`contents: write` is merging against nothing. (Here that is "
+                      f"dependabot-auto-merge.yml; in another repo, check what can merge.)")
     if status != 200 or not isinstance(data, dict):
         return Result(name, UNVERIFIABLE, f"could not read protection (HTTP {status}).")
 
@@ -217,16 +227,22 @@ def check_branch_protection(repo: str, token: str | None) -> Result:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=REPO)
+    parser.add_argument("--repo", default=REPO, help=f"owner/name (default {REPO})")
+    parser.add_argument("--package", default=PACKAGE,
+                        help=f"PyPI distribution name (default {PACKAGE})")
+    parser.add_argument("--environment", default=ENVIRONMENT,
+                        help=f"the protected GitHub environment (default {ENVIRONMENT})")
+    parser.add_argument("--branch", default=BRANCH, help=f"protected branch (default {BRANCH})")
     parser.add_argument("--strict", action="store_true",
                         help="treat UNVERIFIABLE as a failure")
     args = parser.parse_args()
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
 
     results = [
-        check_publisher_environment(args.repo),
-        check_environment_reviewers(args.repo, token),
-        check_branch_protection(args.repo, token),
+        check_publisher_environment(args.repo, package=args.package,
+                                    environment=args.environment),
+        check_environment_reviewers(args.repo, token, environment=args.environment),
+        check_branch_protection(args.repo, token, branch=args.branch),
     ]
     for result in results:
         print(result.line())

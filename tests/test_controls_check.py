@@ -23,6 +23,7 @@ package and needs the network), so it is loaded here by path — the same reason
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import re
 import sys
 from pathlib import Path
@@ -267,21 +268,21 @@ class TestTheReleasePathChecksThemToo:
                                                                         monkeypatch):
         """The property that makes it safe on the release path, asserted directly."""
         monkeypatch.setattr(controls, "check_publisher_environment",
-                            lambda repo: controls.Result("p", controls.OK, ""))
+                            lambda repo, **kw: controls.Result("p", controls.OK, ""))
         monkeypatch.setattr(controls, "check_environment_reviewers",
-                            lambda repo, token: controls.Result("e", controls.UNVERIFIABLE, ""))
+                            lambda repo, token=None, **kw: controls.Result("e", controls.UNVERIFIABLE, ""))
         monkeypatch.setattr(controls, "check_branch_protection",
-                            lambda repo, token: controls.Result("b", controls.UNVERIFIABLE, ""))
+                            lambda repo, token=None, **kw: controls.Result("b", controls.UNVERIFIABLE, ""))
         monkeypatch.setattr(sys, "argv", ["check_controls.py"])
         assert controls.main() == 0
 
     def test_a_violation_exits_non_zero(self, controls, monkeypatch):
         monkeypatch.setattr(controls, "check_publisher_environment",
-                            lambda repo: controls.Result("p", controls.OK, ""))
+                            lambda repo, **kw: controls.Result("p", controls.OK, ""))
         monkeypatch.setattr(controls, "check_environment_reviewers",
-                            lambda repo, token: controls.Result("e", controls.VIOLATED, ""))
+                            lambda repo, token=None, **kw: controls.Result("e", controls.VIOLATED, ""))
         monkeypatch.setattr(controls, "check_branch_protection",
-                            lambda repo, token: controls.Result("b", controls.OK, ""))
+                            lambda repo, token=None, **kw: controls.Result("b", controls.OK, ""))
         monkeypatch.setattr(sys, "argv", ["check_controls.py"])
         assert controls.main() == 1
 
@@ -289,10 +290,64 @@ class TestTheReleasePathChecksThemToo:
         """A run that verified nothing must not read as a clean bill of health - the whole
         reason UNVERIFIABLE is a state rather than a shrug."""
         monkeypatch.setattr(controls, "check_publisher_environment",
-                            lambda repo: controls.Result("p", controls.UNVERIFIABLE, ""))
+                            lambda repo, **kw: controls.Result("p", controls.UNVERIFIABLE, ""))
         monkeypatch.setattr(controls, "check_environment_reviewers",
-                            lambda repo, token: controls.Result("e", controls.UNVERIFIABLE, ""))
+                            lambda repo, token=None, **kw: controls.Result("e", controls.UNVERIFIABLE, ""))
         monkeypatch.setattr(controls, "check_branch_protection",
-                            lambda repo, token: controls.Result("b", controls.UNVERIFIABLE, ""))
+                            lambda repo, token=None, **kw: controls.Result("b", controls.UNVERIFIABLE, ""))
         monkeypatch.setattr(sys, "argv", ["check_controls.py"])
         assert controls.main() == 1
+
+
+class TestItRunsAgainstAnotherRepositoryUnmodified:
+    """The three controls are not specific to this project: any repo publishing to PyPI over
+    Trusted Publishing rests on the same premises. A sibling repo should run this FILE, not a
+    fork of it — a forked copy is how a check quietly stops matching the thing it checks, which
+    is the exact failure this script exists to catch.
+    """
+
+    def test_the_repo_specific_values_are_all_overridable(self, controls):
+        import inspect
+        for fn, knob in ((controls.check_publisher_environment, "package"),
+                         (controls.check_publisher_environment, "environment"),
+                         (controls.check_environment_reviewers, "environment"),
+                         (controls.check_branch_protection, "branch")):
+            assert knob in inspect.signature(fn).parameters, (
+                f"{fn.__name__} hardcodes {knob}, so another repo would have to fork this file")
+
+    def test_the_new_knobs_are_keyword_only(self, controls):
+        """The bug this pins, which types do NOT catch and which shipped in the first draft.
+
+        Adding `environment` as the SECOND POSITIONAL parameter silently changed what every
+        existing `check_environment_reviewers(repo, token)` call meant — the token became the
+        environment. Both are `str | None`, so mypy was happy; only a test that passed a token
+        positionally noticed. Keyword-only means a positional call cannot be reinterpreted.
+        """
+        import inspect
+        for fn, knob in ((controls.check_publisher_environment, "package"),
+                         (controls.check_environment_reviewers, "environment"),
+                         (controls.check_branch_protection, "branch")):
+            kind = inspect.signature(fn).parameters[knob].kind
+            assert kind is inspect.Parameter.KEYWORD_ONLY, (
+                f"{fn.__name__}({knob}=) is positional, so adding it reordered the existing "
+                f"arguments rather than extending them")
+
+    def test_repo_still_comes_first_positionally(self, controls):
+        """Every caller passes it, and it is the one argument that is never optional."""
+        import inspect
+        for fn in (controls.check_publisher_environment, controls.check_environment_reviewers,
+                   controls.check_branch_protection):
+            first = list(inspect.signature(fn).parameters)[0]
+            assert first == "repo", f"{fn.__name__} takes {first!r} first, not 'repo'"
+
+    def test_a_failure_message_does_not_assert_facts_about_THIS_repo(self, controls):
+        """The branch-protection failure used to say "dependabot-auto-merge.yml holds
+        contents: write" — true here, and an unfounded claim about somebody else's repository
+        the moment the file is run with `--repo`. A portable check must not report a local
+        detail as though it had observed it."""
+        source = (controls.check_branch_protection.__doc__ or "")
+        message = inspect.getsource(controls.check_branch_protection)
+        assert "in another repo, check what can merge" in message.lower() or \
+               "dependabot-auto-merge.yml" not in message.split("VIOLATED", 1)[-1], (
+            "the VIOLATED message states a fact about this repo's workflows unconditionally")
+        assert source is not None
