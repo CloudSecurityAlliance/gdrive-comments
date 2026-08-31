@@ -1,6 +1,65 @@
 # MCP Server Landscape — Who Handles Google Comments (and How)
 
-> **Surveyed July 2026**, verified against each server's actual source (tool definitions), not just READMEs. This is the "prior art" the design doc's market section used to hand-wave. See [`mcp-server-design.md`](./mcp-server-design.md) for why this matters and [`../CHANGELOG.md`](../CHANGELOG.md) for history.
+> **First surveyed July 2026; re-verified 2026-08-31** — star counts and last-push dates from the
+> GitHub API, tool lists and comment support from each project's own tool reference or source, not
+> from its README's claims. This is the "prior art" the design doc's market section used to hand-wave. See [`mcp-server-design.md`](./mcp-server-design.md) for why this matters and [`../CHANGELOG.md`](../CHANGELOG.md) for history.
+
+## Re-verification, 2026-08-31
+
+Seven weeks on, three things moved enough to matter. Numbers below are from the GitHub API and
+each project's own tool reference.
+
+| server | ★ (Jul → Aug) | last push | change |
+|---|---|---|---|
+| taylorwilsdon/google_workspace_mcp | 2.8k → **3095** | 2026-08-30 | still the broadest and most adopted; comment gaps **unchanged** |
+| a-bonus/google-docs-mcp | 607 → **649** | 2026-08-10 | unchanged in substance |
+| piotr-agier/google-drive-mcp | 182 → **209** | 2026-08-21 | **grew enormously** — see below |
+| isaacphi/mcp-gdrive | — → 283 | **2025-05-07** | popular and **abandoned ~16 months** |
+| felores/gdrive-mcp-server | — → 72 | **2025-11-07** | **stale ~10 months** |
+| aaronsb/google-workspace-mcp | *(new to this survey)* 171 | 2026-08-31 | Gmail/Calendar/Drive; no comment tools |
+
+**piotr-agier is the significant change: v2.6.0 now ships 115 tools** (its README says 116; its
+own `docs/tools.md` lists 115) — Shared Drives, permissions, revisions, surgical Docs editing,
+Sheets formatting, Slides authoring, PDF ingestion, Calendar. It is now **larger than this
+project's 40**, and the July entry calling it a Docs-anchoring specialist understates it.
+
+**But its comment surface is unchanged and still Docs-only:** `listComments`, `getComment`,
+`addComment`, `replyToComment`, `deleteComment`. Read from `docs/tools.md` — **no resolve, no
+reopen, and no Sheets or Slides comments at all.** Its Docs read side remains the best of the
+field: character offsets plus a two-tier anchor (Docs API text matching, DOCX-export fallback).
+
+**taylorwilsdon's two gaps are both still open**, verified by issue state rather than inferred:
+[#487](https://github.com/taylorwilsdon/google_workspace_mcp/issues/487) (comment edit/delete) and
+[#788](https://github.com/taylorwilsdon/google_workspace_mcp/issues/788) (Sheets cell anchoring).
+`core/comments.py` still exposes create/reply/resolve only.
+
+**Google's official server is now remote and documented, and still has no comments.** It is a
+hosted endpoint at `https://drivemcp.googleapis.com/mcp/v1`, with a published MCP reference, and
+exposes **exactly eight tools** — `copy_file`, `create_file`, `download_file_content`,
+`get_file_metadata`, `get_file_permissions`, `list_recent_files`, `read_file_content`,
+`search_files`. That confirms the count this project's README compares against, and the *remote*
+part is a real architectural difference: theirs is a service, this is a local subprocess holding
+your own OAuth client.
+
+### Smaller entrants, listed so the survey is complete rather than flattering
+
+`dbuxton/google-docs-mcp` (7★, Python, Apr 2026, no licence) · `phact/mcp-google-docs` (11★,
+stale Feb 2025) · `stanislawherjan1/gdocs-comments-mcp` (3★, MIT) ·
+`us-all/google-drive-mcp-server` (0★) · `asadudin/mcp-server-gdrive` (1★, stale). Hosted
+platforms — Composio, Klavis AI, Pipedream, Zapier — wrap the same Drive API and expose
+**file-level** comments only.
+
+### What this survey does NOT claim
+
+This project is **not** the broadest. `taylorwilsdon` covers 12+ Google services; `piotr-agier`
+ships nearly three times the tools. Anyone wanting Gmail, Calendar, Slides authoring or Sheets
+formatting should take one of those.
+
+What remains only here, checked against each of the above rather than assumed: Sheets
+comment→cell mapping (via XLSX export — the API cannot anchor one, see
+`experiments/anchor-probe/`), the full comment lifecycle including **reopen**, `export_comments`
+as a review register, the capability/allowlist policy layer with a flavour switch, and a stated
+injection posture.
 
 ## The one fact that shapes everything
 
