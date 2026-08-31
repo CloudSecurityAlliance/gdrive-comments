@@ -186,3 +186,33 @@ smaller piece of work than the issue assumed, and a different one.
 The open question from the Docs section stands and gates only the Docs route: **does a Markdown
 whole-file update preserve an anchored comment?** The Sheets XLSX route has the same question, and
 it matters as much there.
+
+## Corroborated from the product, not just the API
+
+**Checked independently in the web UI by the CINO, 2026-08-31:** Google **Docs** offers *"paste as
+Markdown"*; **Sheets and Slides explicitly do not.**
+
+That matters as evidence rather than as a footnote. An API-only finding leaves open the reading
+*"maybe the product supports it and the API simply lags"* — a real possibility, since Google ships
+UI features ahead of API surface routinely. Two independent surfaces agreeing closes it: Markdown
+is a **Docs** feature at Google, not a Workspace one.
+
+So this is not a gap waiting to be filled by the next API release. It is the shape of the product.
+
+## Why a uniform Markdown interface would be worse than three honest ones
+
+The appeal of "make the text field Markdown everywhere" was one representation across all three.
+Having measured, that interface would be a **lie for two of them**:
+
+* A **cell** has no document structure. `# Heading`, `- bullet` and a pipe table have nothing to
+  mean there. Accepting Markdown and silently ignoring most of it is the failure mode this
+  project keeps finding elsewhere — a caller sends something plausible, gets no error, and half
+  their intent is discarded.
+* A **slide** is shape-addressed. Text lives inside a shape you must name; there is no linear
+  document for Markdown's block structure to describe.
+* Only *inline* marks — bold, italic, links — carry across all three. That is a small slice of
+  Markdown, and offering the whole syntax to get it would misrepresent what is supported.
+
+So the three-route answer is not a consolation prize for a failed idea. **The interface should
+match the model**: Markdown where the thing is a document, `textFormatRuns`/`userEnteredFormat`
+where it is a grid, shape-scoped style requests where it is a canvas.
