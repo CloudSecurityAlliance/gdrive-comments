@@ -71,6 +71,9 @@ GENERATED_REPR_IS_SAFE = {
     "_environment.py::Environment": "which client/token/paths are configured, never their contents",
     "access_proposals.py::RoleAndView": "two role strings from Drive's fixed vocabulary",
     "comments.py::Location":     "cell reference and row/col integers, not the cell's value",
+    # A bool and a tuple of PreviewedEntry, each of which redacts its own repr - so the
+    # generated one here recurses into redacted output rather than around it.
+    "allowlist.py::Preview":     "a bool plus already-redacting PreviewedEntry values",
     "demo/_plan.py::Step":       "the demo's own scripted steps, authored in this repository",
     "demo/_plan.py::Outcome":    "same",
     "demo/_plan.py::Report":     "same",

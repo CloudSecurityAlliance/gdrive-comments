@@ -84,6 +84,7 @@ ARGS: dict[str, dict] = {
     # last, and deliberately: it trashes the document every earlier tool needs.
     "trash_file":            {"fileId": DOC},
     "describe_configuration": {},
+    "preview_allowlist":     {},
     "read_server_resource":  {},
     "report_a_problem":      {},
     "demonstration_plan":    {},

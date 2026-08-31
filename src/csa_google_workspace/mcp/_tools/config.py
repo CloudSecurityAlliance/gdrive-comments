@@ -15,16 +15,23 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from ... import __version__
 from ..._environment import describe_environment
+from ...allowlist import Listing, preview
 from ...policy import ALL_CAPABILITIES, Policy
 from .. import _flavours
 from .._capabilities import reachable_capabilities
 from .._config import Settings
 from .._resources import CEILING_URI, CONFIG_URI, HELP_URI, render_ceiling, render_config, render_help
-from .._schemas import ConfigOut, ResourceOut
-from ._base import READ
+from .._schemas import (
+    AllowlistsPreviewOut,
+    ConfigOut,
+    ResourceOut,
+    allowlist_preview_out,
+)
+from ._base import READ, WorkspaceProviderT, _errors
 
 
-def register_config_tools(app: MCPServer, settings: Settings) -> None:
+def register_config_tools(app: MCPServer, settings: Settings,
+                          get_workspace: WorkspaceProviderT | None = None) -> None:
     @app.tool(annotations=READ)
     def describe_configuration() -> ConfigOut:
         """What this server is allowed to read and change, and why anything refused was refused.
@@ -101,3 +108,48 @@ def register_config_tools(app: MCPServer, settings: Settings) -> None:
             raise ToolError(f"no such resource: {uri!r}. This server publishes "
                             f"{', '.join(sorted(pages))}.")
         return {"uri": uri.strip(), "content": render()}
+
+
+    @app.tool(annotations=READ)
+    @_errors
+    def preview_allowlist() -> AllowlistsPreviewOut:
+        """What the configured file allowlists ACTUALLY point at, by name — and what has died.
+
+        `describe_configuration` reports the policy as file **ids**, which tell a human nothing.
+        This resolves each one against Drive and reports the real document name, its type, and
+        whether it is still there.
+
+        Read it before telling a user what this server can reach, and when a call is refused for
+        a file the operator believes they allowed.
+
+        `status` per entry:
+          `ok`          the file exists and is reachable
+          `trashed`     IT IS IN THE TRASH. The entry still parses and still matches, so nothing
+                        else complains - but it no longer covers a working document.
+          `unreachable` the id is real but these credentials cannot see it, or nothing has that
+                        id. `detail` says which; they need different fixes.
+
+        TWO NAME-ISH FIELDS, AND THEY ARE NOT THE SAME. `name` is what Drive calls the file -
+        evidence. `reason` is the operator's own `#` comment - a claim typed by a human, which
+        can be wrong. When they disagree, report the disagreement rather than picking one.
+
+        `unrestricted: true` means EVERY file the credentials can reach, and `entries` is then
+        empty **because there is no list** - not because nothing is allowed, which is the
+        opposite answer. Do not describe an unrestricted server as having no access.
+
+        Reads only, and changes nothing. The policy cannot be edited from here."""
+        if get_workspace is None:                                  # pragma: no cover
+            raise ToolError("this server was built without a workspace provider.")
+        policy = settings.policy or Policy.default()
+        backend = get_workspace()._backend
+
+        def fetch(file_id: str) -> dict:
+            return backend.get_file_metadata(file_id)
+
+        out = {}
+        for name in ("read", "modify"):
+            scope = getattr(policy, name)
+            listing = Listing(all_files=scope.all_files, entries=scope.entries)
+            out[name] = allowlist_preview_out(name, preview(listing, fetch))
+        return {"read": out["read"], "modify": out["modify"],
+                "dead_entries": out["read"]["dead"] + out["modify"]["dead"]}

@@ -442,3 +442,30 @@ def test_an_already_qualified_name_is_not_doubled():
     defs = _LabelDefsStub()
     ApiBackend(_ServicesForLabels(defs=defs)).get_label_definition("labels/L1")
     assert defs.calls[0]["name"] == "labels/L1"
+
+
+def test_get_file_metadata_asks_for_trashed():
+    """Dead-entry detection depends on it, and its absence fails SILENTLY.
+
+    A trashed file still resolves by id - `files.get` returns 200 - so without `trashed` in the
+    mask the response looks exactly like a live file, and an allowlist entry that has quietly
+    stopped covering anything reports as `ok`. `FakeBackend` cannot catch this: it never sees a
+    fields mask.
+    """
+    class _Files:
+        def __init__(self): self.calls = []
+        def get(self, **kw):
+            self.calls.append(kw)
+            return _Request({})
+
+    class _D:
+        def __init__(self, f): self._f = f
+        def files(self): return self._f
+
+    class _S:
+        def __init__(self, f): self.drive = _D(f)
+
+    files = _Files()
+    ApiBackend(_S(files)).get_file_metadata("f")
+    assert "trashed" in files.calls[0]["fields"], (
+        "without this, a trashed file is indistinguishable from a live one")

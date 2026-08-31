@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -368,3 +369,123 @@ def parse_setting(value: str, *, variable: str) -> Listing:
     """
     text = value if "#" in value else re.sub(r"[,;\s]+", "\n", value.strip())
     return parse_allowlist(text, source=variable)
+
+
+# --- preview: what does this configuration actually point at? -----------------------------
+#
+# **A4's two remaining #82 items, and they turned out to be one feature.** "Dry-run" and
+# "dead-entry detection" were tracked separately; resolving each entry against Drive answers
+# both, because a dead entry is what a dry-run finds. Two tools would each have walked the list
+# and called Drive to compute the same thing.
+#
+# Kept here, beside the parser, and given a `fetch` callable rather than a `Backend`: this
+# module has no backend dependency and should not grow one. Parsing a list and resolving it are
+# different jobs, and only one of them needs the network.
+#
+# NOT built, deliberately - see TODO.md, "Folders, drives and deny rules": folder membership is
+# a live property (a file can be moved), so a folder rule means walking parents on EVERY access,
+# at one `files.get` per level, uncacheable because caching authorization is how a revoked grant
+# keeps working. That is a latency tax on every call for a control Drive's ACLs already
+# back-stop, which is why it is post-1.0.0.
+
+OK, TRASHED, UNREACHABLE = "ok", "trashed", "unreachable"
+
+_MIME_TO_TYPE = {
+    "application/vnd.google-apps.document": "document",
+    "application/vnd.google-apps.spreadsheet": "spreadsheet",
+    "application/vnd.google-apps.presentation": "presentation",
+    "application/vnd.google-apps.folder": "folder",
+}
+
+
+@dataclass
+class PreviewedEntry:
+    """One allowlist entry, resolved against Drive.
+
+    `name` and `reason` are deliberately separate and never merged. `reason` is the operator's
+    own `#` comment - an *unverified claim sitting next to a permission*, since pasting the
+    wrong URL under the right label is a mistake nothing else catches. `name` is what Drive
+    actually calls the file. Collapsing them would hide precisely the mismatch worth seeing.
+    """
+    file_id: str
+    url: str
+    reason: str | None            # what the operator typed
+    line: int
+    status: str                   # ok | trashed | unreachable
+    name: str | None = None       # what Drive says, absent when nothing was fetched
+    type: str | None = None       # document | spreadsheet | presentation | folder | None
+    detail: str | None = None     # why unreachable
+
+    @property
+    def dead(self) -> bool:
+        return self.status != OK
+
+    def __repr__(self) -> str:
+        # Redacted for two reasons, not one. `reason` may name people or unannounced work -
+        # `Entry.__repr__` already withholds it and this must not undo that. And the document
+        # NAME is content: "Q3 layoffs planning" leaks exactly what the bare id concealed.
+        return (f"PreviewedEntry(file_id={self.file_id!r}, line={self.line}, "
+                f"status={self.status!r}, named={self.name is not None})")
+
+
+@dataclass
+class Preview:
+    """The resolved listing. `unrestricted` is not "every entry passed"."""
+    unrestricted: bool
+    entries: tuple[PreviewedEntry, ...] = ()
+
+    @property
+    def ok(self) -> int:
+        return sum(1 for e in self.entries if not e.dead)
+
+    @property
+    def dead(self) -> int:
+        return sum(1 for e in self.entries if e.dead)
+
+    @property
+    def has_dead_entries(self) -> bool:
+        return self.dead > 0
+
+
+def preview(listing: Listing, fetch: Callable[[str], dict]) -> Preview:
+    """Resolve every entry in `listing`, one fetch per distinct file id.
+
+    `fetch(file_id) -> metadata` is expected to raise `NotFoundError` (deleted, or never
+    existed) or `AccessError` (real, but not visible to these credentials). Both become
+    `unreachable`, with `detail` saying which - they need different fixes.
+
+    **Anything else propagates.** `unreachable` means Drive answered "no"; a network failure or
+    a rate limit is not a fact about the entry, and reporting it as one would turn an outage
+    into a report that the operator's list is broken.
+
+    **`*` enumerates nothing and makes no calls.** "Everything your account can reach" is not a
+    list; faking one would be slow, incomplete, and a different answer than the truth.
+    """
+    if listing.all_files:
+        return Preview(unrestricted=True)
+
+    resolved: dict[str, tuple[str, str | None, str | None, str | None]] = {}
+    out = []
+    for entry in listing.entries:
+        if entry.file_id not in resolved:
+            resolved[entry.file_id] = _resolve(entry.file_id, fetch)
+        status, name, type_, detail = resolved[entry.file_id]
+        out.append(PreviewedEntry(
+            file_id=entry.file_id, url=entry.url, reason=entry.reason, line=entry.line,
+            status=status, name=name, type=type_, detail=detail))
+    return Preview(unrestricted=False, entries=tuple(out))
+
+
+def _resolve(file_id: str, fetch: Callable[[str], dict]):
+    try:
+        meta = fetch(file_id)
+    except exc.NotFoundError as e:
+        return UNREACHABLE, None, None, f"not found: {e}"
+    except exc.AccessError as e:
+        return UNREACHABLE, None, None, f"no permission: {e}"
+    name = meta.get("name") or None
+    type_ = _MIME_TO_TYPE.get(meta.get("mimeType", ""))
+    # A trashed file still resolves by id, so nothing else in this system would ever notice.
+    # Still named: knowing WHICH entry died is the actionable part.
+    status = TRASHED if meta.get("trashed") else OK
+    return status, name, type_, None

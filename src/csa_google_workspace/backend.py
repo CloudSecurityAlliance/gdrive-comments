@@ -467,9 +467,13 @@ class ApiBackend:
         self._services = services
 
     def get_file_metadata(self, file_id: str) -> dict:
-        return _errors.call(self._services.drive.files()
-                            .get(fileId=file_id, fields="id,name,mimeType,webViewLink,size",
-                                 supportsAllDrives=True).execute)
+        # `trashed` is requested for the allowlist preview: a trashed file still RESOLVES by id,
+        # so without this field a dead allowlist entry is indistinguishable from a live one and
+        # nothing in the system ever notices the policy stopped covering anything.
+        return _errors.call(
+            self._services.drive.files()
+            .get(fileId=file_id, fields="id,name,mimeType,webViewLink,size,trashed",
+                 supportsAllDrives=True).execute)
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
         raise exc.UnsupportedOperation(
