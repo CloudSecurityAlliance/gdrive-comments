@@ -216,3 +216,96 @@ Having measured, that interface would be a **lie for two of them**:
 So the three-route answer is not a consolation prize for a failed idea. **The interface should
 match the model**: Markdown where the thing is a document, `textFormatRuns`/`userEnteredFormat`
 where it is a grid, shape-scoped style requests where it is a canvas.
+
+---
+
+# The anchored-comment question, answered for Sheets: the XLSX route is disqualified
+
+**Measured 2026-08-31** on a two-tab test spreadsheet the CINO created for the purpose, with three
+comments — one text-anchored (`quoted_text='some data'` on `Sheet1!A3`) and two cell-anchored on
+empty cells.
+
+The uploaded workbook deliberately **kept both tabs and kept `Sheet1!A3 = 'some data'`**, so the
+anchored comment's target text still existed afterwards. This is a test of the *anchor*, not of the
+text vanishing underneath it.
+
+```
+BEFORE: 3 comment(s)
+    AAACGObNU9M  quoted='some data'  cell='A3'
+    AAACGObNU9Q  quoted=None         cell='D9'
+    AAACGObNU9U  quoted=None         cell='B4'
+
+XLSX uploaded over the file (converted)
+
+AFTER: 3 comment(s)
+    AAACGObNU9M  quoted='some data'  cell='A1'
+    AAACGObNU9Q  quoted=None         cell='A1'
+    AAACGObNU9U  quoted=None         cell='A1'
+
+  comments kept : 3 of 3
+  anchors kept  : quoted_text yes — CELL MAPPING NO
+  tabs now      : ['Sheet1', 'Sheet2']
+```
+
+**Comments survive. `quoted_text` survives. Tabs survive. Every cell anchor is reset to `A1`.**
+
+## It is Google, not this library
+
+`_locate_comment` returns `None` for an id it cannot map, so `A1` could not be a fallback of ours.
+Reading the raw export confirms Google is the source:
+
+```
+threadedComments entries in the XLSX export:
+    {'ref': 'A1', 'text': 'another comment in sheet 2'}
+    {'ref': 'A1', 'text': 'comment'}
+    {'ref': 'A1', 'text': 'more comments'}
+```
+
+## Why this is worse than losing the comments outright
+
+Losing them would be visible. **This is plausible-looking data.** A review register built after such
+an upload shows every comment on `A1` — a value, not an error — and nothing anywhere says the
+anchors were reset. It is the same failure shape as the `list_labels` and boolean-`FALSE` cases:
+silently wrong in a direction somebody would act on.
+
+For a tool whose differentiator is *mapping a comment to the cell it is about*, resetting every
+mapping to `A1` removes the feature while appearing to keep it.
+
+## Consequence
+
+**The Sheets XLSX-upload route is disqualified for any file that carries comments.** The formatting
+it would buy (see above: `export_comments` already writes a bold header, fill, frozen row and
+column widths) is real, but not at the price of every comment anchor.
+
+That leaves, for Sheets formatting:
+
+* **`spreadsheets.batchUpdate`** — `userEnteredFormat`, `textFormatRuns`,
+  `updateSheetProperties`. A real API surface, incremental, and it touches nothing else.
+* **XLSX upload only for a NEW file** — `export_comments(destination="sheet")` creates the
+  spreadsheet it writes to, so *there* the upload route is safe: a brand-new file has no comments
+  to lose. That is a genuinely useful narrowing rather than a dead end.
+
+## Still open: the Docs Markdown route
+
+Untested, and **not inferable from this**. Docs and Sheets go through different converters, and the
+Docs anchor model is character offsets rather than a workbook range. It needs a Google **Doc** with
+a comment placed on selected text.
+
+Given the Sheets result, the prior should be low.
+
+## A second finding, from the same session
+
+**`files.copy` drops every comment** — a copy of a document carrying one anchored comment came back
+with none, and Drive v3's `files.copy` has no comments parameter at all (v2 had one). Recorded in
+`copy_file`'s description and `FileCollection.copy`'s docstring, because duplicating a reviewed
+document silently leaves the review behind.
+
+That is why this test had to run on a sheet the CINO made for it: **the anchored comment could not
+be copied to a throwaway.**
+
+## And one the test surfaced incidentally
+
+All three comments reported **`TAB=None`**. With two tabs, `B4` and `D9` are ambiguous — the
+`Location.tab` resolution deferred in `CLAUDE.md` is not a theoretical gap. One of these comments
+says *"another comment in sheet 2"* in its own text, and the library cannot tell which sheet it is
+on.
