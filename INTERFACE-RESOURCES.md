@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-31 (v0.36.1)
+**Last verified:** 2026-08-31 (v0.37.0)
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -30,9 +30,15 @@ it means installing it and importing it.
   credentials (BYO `google.oauth2` credentials, or the bundled OAuth helper)
 - **Code:** [`src/`](src/)
 - **Status:** production — feature-complete for its scoped roadmap and
-  live-verified end-to-end against real Google. Current release **v0.2.3**
-  (2026-08-25); the MCP server below arrived in v0.2.0. Classifier still reads
+  live-verified end-to-end against real Google. Current release **v0.37.0**;
+  the MCP server below arrived in v0.2.2. Classifier still reads
   `Development Status :: 4 - Beta`.
+
+  (This line read *"Current release v0.2.3"* until 2026-08-31 — roughly
+  thirty-five releases stale, under a "Last verified" date that kept being
+  refreshed. The drift test only asserted the current version appeared
+  *somewhere* in the file, which the header satisfied on its own. It now checks
+  the tool inventory too; see `tests/test_docs_do_not_drift.py`.)
 - **Health check:**
   ```bash
   pip install csa-google-workspace && python -c "from csa_google_workspace import Workspace; print(Workspace)"
@@ -53,18 +59,29 @@ it means installing it and importing it.
   claude mcp add csa-google-workspace -- csa-google-workspace-mcp
   ```
 - **Surface:** 50 tools, each with structured output (`outputSchema`) and
-  read-only/destructive annotations, across five groups — discovery and file
-  lifecycle (`search_files`, `list_recent_files`, `get_file_metadata`,
-  `get_file_permissions`, `create_file`, `copy_file`, `update_file`,
-  `share_file`, `trash_file`), content read (`read_file_content`,
-  `download_file_content`, `list_slides`, `list_suggestions`), **content write**
-  (`replace_text`, `append_text`, `insert_slide_text`, `update_cells`,
-  `append_rows`), comments (`list_comments`, `get_comment`, `comments_by_cell`,
+  read-only/destructive annotations, across five groups.
+
+  Discovery, file lifecycle and access — `search_files`, `list_recent_files`,
+  `get_file_metadata`, `create_file`, `copy_file`, `update_file`, `trash_file`,
+  `get_file_permissions`, `share_file`, `unshare_file`,
+  `update_file_permission`, `list_access_proposals`, `resolve_access_proposal`,
+  `list_labels`.
+
+  Content read — `read_file_content`, `download_file_content`, `read_range`,
+  `list_tabs`, `list_document_tabs`, `list_slides`, `list_suggestions`.
+
+  **Content write** — `replace_text`, `insert_text`, `append_text`,
+  `delete_range`, `update_cells`, `append_rows`, `clear_cells`,
+  `insert_slide_text`, `add_tab`, `delete_tab`, `add_document_tab`,
+  `delete_document_tab`.
+
+  Comments — `list_comments`, `get_comment`, `comments_by_cell`,
   `create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`,
-  `edit_comment`, `delete_comment`, `export_comments`,
-  `apply_comment_actions`), and the server describing itself
-  (`describe_configuration`, `read_server_resource`, `report_a_problem`,
-  `demonstration_plan`, `authenticate`).
+  `edit_comment`, `delete_comment`, `export_comments`, `apply_comment_actions`.
+
+  The server describing itself — `describe_configuration`,
+  `read_server_resource`, `preview_allowlist`, `report_a_problem`,
+  `demonstration_plan`, `authenticate`.
 
   Content writes shipped in **v0.13.0** and Docs suggestions in **v0.20.0**, so
   the server now reaches everything the library does. An earlier version of this

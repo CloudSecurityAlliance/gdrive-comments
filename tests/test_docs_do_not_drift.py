@@ -123,6 +123,55 @@ class TestNoDocumentClaimsTheWrongVersionOfItself:
             f"worse than no date at all.")
 
 
+    def test_it_names_every_tool_the_server_actually_exposes(self):
+        """The version assertion above was satisfiable by the HEADER alone.
+
+        That is how "Current release **v0.2.3**" survived in the body for roughly thirty-five
+        releases while the "Last verified" line kept being refreshed: bumping the header made
+        the test pass, and nothing looked at what the file claimed. Fifteen tools from
+        v0.33.0-v0.36.0 were missing from the inventory when this was written.
+
+        A count would not have caught it either - the count said 50 and was right. Only naming
+        them is checkable, so that is what is checked.
+        """
+        import asyncio
+
+        from csa_google_workspace import Workspace
+        from csa_google_workspace.backend import FakeBackend
+        from csa_google_workspace.mcp import settings_from_env
+        from csa_google_workspace.mcp.server import create_server
+
+        path = ROOT / "INTERFACE-RESOURCES.md"
+        if not path.exists():
+            pytest.skip("INTERFACE-RESOURCES.md is not in this tree")
+        text = path.read_text(encoding="utf-8")
+        app = create_server(lambda: Workspace(FakeBackend({})),
+                            settings=settings_from_env({"CSA_GW_ALLOWLIST_READ": "*"}))
+        tools = sorted(tool.name for tool in asyncio.run(app.list_tools()))
+        missing = [name for name in tools if f"`{name}`" not in text]
+        assert missing == [], (
+            f"INTERFACE-RESOURCES.md is the interface inventory and does not name "
+            f"{len(missing)} tool(s) the server exposes: {missing}. Add them to the Surface "
+            f"list - an inventory that silently omits a capability understates the server to "
+            f"whoever is reviewing what it can do.")
+
+    def test_it_does_not_state_a_stale_current_release(self):
+        """The specific rot: a hard-coded release number in prose. Any `Current release
+        **vX.Y.Z**` must be THIS version, so the claim cannot drift while the header is
+        refreshed."""
+        import re
+        path = ROOT / "INTERFACE-RESOURCES.md"
+        if not path.exists():
+            pytest.skip("INTERFACE-RESOURCES.md is not in this tree")
+        text = path.read_text(encoding="utf-8")
+        # Skip the parenthetical that RECORDS the old value as history.
+        claimed = re.findall(r"Current release \*\*v([0-9]+\.[0-9]+\.[0-9]+)\*\*", text)
+        assert claimed, "expected a 'Current release **vX.Y.Z**' claim to check"
+        assert set(claimed) == {__version__}, (
+            f"INTERFACE-RESOURCES.md claims current release {claimed}, but this is "
+            f"{__version__}")
+
+
 class TestNoDocumentSaysContentWritesAreMissing:
     """A specific false claim worth its own assertion, because it survived fifteen releases and
     understates the server by an entire capability axis. It appeared in two files and was fixed
