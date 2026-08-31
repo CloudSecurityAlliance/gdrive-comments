@@ -10,6 +10,84 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-31 — v0.36.0 (the write surface goes both ways now) — not released
+
+Closes **#278** and **#279**. **50 tools**, up from 40, and an **11th capability**.
+
+### The pattern that motivated it
+
+Five things the library already did had no tool, and the shape was not random: **you could add
+content but not remove it, and write cells but not clear them.** `update_cells` and `append_rows`
+were exposed with no way to empty a range; `replace_text` and `append_text` with no way to insert
+at a position or delete a span.
+
+### `content.delete` — the 11th capability
+
+Deleting a tab or a content range gets its **own** capability, separate from `content.write`, for
+the same reason `file.trash` is separate from `file.update`: **an operator may reasonably permit
+editing and refuse destruction.**
+
+And the asymmetry is real rather than tidy. `trash_file` is recoverable for 30 days; a deleted tab
+has **no trash and no undo through this API**. A person can restore from Drive revision history —
+nothing this library exposes can, and the tool must not imply otherwise. It sits at
+**`fileOrganizer`**, the rung whose purpose is *"may destroy content, may never share"*, so a
+`writer` edits freely and is refused all four deletes.
+
+That last point is asserted directly: `tests/test_demo.py` now expects an `editor` profile to be
+refused `clear_cells`, `delete_range`, `delete_tab` **and** `delete_document_tab`.
+
+### New tools
+
+| tool | notes |
+|---|---|
+| `list_tabs` · `add_tab` · `delete_tab` | Sheets. `hidden` is reported, because **a hidden tab still occupies its name** |
+| `list_document_tabs` · `add_document_tab` · `delete_document_tab` | Docs. Tabs **nest**; addressed by id, since Docs permits duplicate titles |
+| `read_range` | One range, instead of `read_file_content` rendering every tab |
+| `clear_cells` | Genuinely empties — not `update_cells` with `""`, which leaves a value |
+| `insert_text` | At a character index. Distinct from append and from replace |
+| `delete_range` | A span, with an optional `tabId` |
+
+**`add_tab` refuses a duplicate name** rather than letting Google silently create `Name 2`: a
+caller re-running a register build needs *already there* told apart from *created*, and a
+silently-renamed tab means the next write lands somewhere nobody meant. Case-insensitive, since
+Sheets treats tab names that way in A1 references. New `ConflictError` for it.
+
+### Two naming decisions, and one of them was forced by a crash
+
+The two tab resources get **deliberately different tool names** rather than one `list_tabs` that
+dispatches — a Sheets tab and a Docs tab are different things sharing a word.
+
+Then the same collision bit **inside the library**: `_export.py` duck-types on
+`getattr(document, "tabs")` and uses each value as a **dict key**. That worked while only
+`Sheet.tabs` existed, returning strings. Adding `Doc.tabs` returning dicts made `export_comments`
+raise `unhashable type: 'dict'`. So the property is **`Doc.document_tabs`**, matching its tool, and
+`_export` now filters to `str` so a same-named property elsewhere cannot crash an export again.
+
+**Found by the demo, not by a unit test** — nothing else in the suite crossed both types.
+
+### The demo now does the whole lifecycle
+
+Per the CINO's request, it exercises what somebody would actually do: append, **insert at a
+position**, replace, **delete a span**, list tabs, **add a tab**, write into it by name, **clear
+cells**, **delete the tab** — for both Docs and Sheets.
+
+Two of its narrations were **false** and are corrected in place: *"there is no separate delete
+tool, because there is no separate Google API"* (there is, `deleteContentRange`) and *"clearing is
+writing empty values, same tool, no separate delete"* (writing `""` leaves a value).
+
+It also now **regression-tests #280 against real Google**: add a second Doc tab, then
+`read_file_content` and require both tabs.
+
+### Dedicated `Backend` methods, and why
+
+`sheets_add_tab`, `sheets_delete_tab`, `docs_add_tab`, `docs_delete_tab`, `docs_delete_range` —
+rather than raw `batch_update` calls, because `policy._GATES` gates at **that seam** and the
+generic batch method cannot tell a delete from an edit. `Doc.delete_range` moved onto its own
+method for exactly this; the shape assertion moved to the `ApiBackend` contract suite and
+`tests/test_doc_write.py` now asserts the *seam*, with the reversal explained.
+
+Full suite: 1560 passed, 12 skipped.
+
 ## 2026-08-31 — v0.35.2 (a multi-tab Doc read back as a one-tab Doc) — not released
 
 **A bug, measured against live Google.** Closes **#280**.

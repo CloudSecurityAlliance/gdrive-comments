@@ -118,12 +118,46 @@ def per_type(kind: str) -> list[Step]:
                  "Document-wide find and replace, and it reports how many occurrences it "
                  "changed - which is how you notice a find that matched more than you meant.",
                  group=kind),
-            Step("replace_text", lambda s: {"fileId": s["document_id"],
-                                            "find": "Edited by the demonstration.",
-                                            "replace": ""},
-                 "Remove it again",
-                 "Deleting text is replacing it with nothing. There is no separate delete "
-                 "tool, because there is no separate Google API.", group=kind),
+            Step("insert_text", lambda s: {"fileId": s["document_id"],
+                                           "text": "Inserted at the top. ", "index": 1},
+                 "Insert text at a POSITION",
+                 "Not the same as appending: `index` is a Docs character offset, and 1 is the "
+                 "start of the body because 0 is the document itself. Position matters when "
+                 "you are building a document rather than adding to one.", group=kind),
+            Step("delete_range", lambda s: {"fileId": s["document_id"],
+                                            "startIndex": 1, "endIndex": 22},
+                 "Delete a span of text outright",
+                 "This narration used to say 'there is no separate delete tool, because there "
+                 "is no separate Google API'. Both halves were wrong: `deleteContentRange` is "
+                 "its own request, and this is its own tool - gated by `content.delete` rather "
+                 "than `content.write`, because destroying content is not editing it and an "
+                 "operator may permit one and refuse the other.", group=kind),
+            Step("list_document_tabs", lambda s: {"fileId": s["document_id"]},
+                 "List the Doc's TABS",
+                 "Google Docs have tabs, and they nest. Expect one here. Reading only the "
+                 "first tab was a real bug (#280): a two-tab document reported as a one-tab "
+                 "document, silently.", group=kind),
+            Step("add_document_tab", lambda s: {"fileId": s["document_id"], "title": "Appendix"},
+                 "Add a second tab",
+                 "Google auto-titles a tab if you do not. Note tabs are addressed by ID, never "
+                 "by title - a Doc may legitimately have two tabs with the same name, unlike a "
+                 "spreadsheet.",
+                 captures=lambda s, out: s.__setitem__(
+                     "doc_tab_id",
+                     next((tab["tab_id"] for tab in out["tabs"]
+                           if tab["title"] == "Appendix"), None)),
+                 group=kind),
+            Step("read_file_content", lambda s: {"fileId": s["document_id"]},
+                 "Read the Doc again, now that it has two tabs",
+                 "THIS IS THE REGRESSION TEST FOR #280, run against real Google. Both tabs "
+                 "must appear, each headed `# <tab>`. Before the fix this returned tab 1 only "
+                 "and said nothing about the rest.", group=kind),
+            Step("delete_document_tab", lambda s: {"fileId": s["document_id"],
+                                                   "tabId": s.get("doc_tab_id")},
+                 "Delete that tab again",
+                 "By id, because titles are not unique. Everything in the tab goes with it - "
+                 "no trash, no undo through the API - which is why this is `content.delete`.",
+                 group=kind),
             Step("list_suggestions", lambda s: {"fileId": s["document_id"]},
                  "Look for tracked-change suggestions",
                  "Empty here, because a suggestion can only be MADE in the editor - which is "
@@ -143,11 +177,42 @@ def per_type(kind: str) -> list[Step]:
                  "Append a row",
                  "Appending finds the end of the data for itself, so it does not overwrite "
                  "the row you forgot about.", group=kind),
-            Step("update_cells", lambda s: {"fileId": s["spreadsheet_id"], "a1Range": "A2:B2",
-                                            "values": [["", ""]]},
-                 "Clear a row",
-                 "Clearing is writing empty values. Same tool, no separate delete.",
+            Step("read_range", lambda s: {"fileId": s["spreadsheet_id"], "a1Range": "A1:B3"},
+                 "Read ONE range back",
+                 "Cheaper and more precise than `read_file_content`, which renders every tab "
+                 "of the workbook as text. Use it when you know where you are looking.",
                  group=kind),
+            Step("list_tabs", lambda s: {"fileId": s["spreadsheet_id"]},
+                 "List the Sheet's tabs",
+                 "Watch `hidden`: a hidden tab still exists, still holds data, and still "
+                 "occupies its name - so `add_tab` can be refused by a tab nobody can see.",
+                 group=kind),
+            Step("add_tab", lambda s: {"fileId": s["spreadsheet_id"], "name": "Title",
+                                       "index": 0},
+                 "Add a tab, first in the order",
+                 "`index=0` because a spreadsheet opens on its first tab, which is the whole "
+                 "reason a register wants a title tab. Adding a name that already exists is "
+                 "REFUSED rather than silently renamed to 'Title 2' - a caller re-running a "
+                 "build needs 'already there' told apart from 'created'.", group=kind),
+            Step("update_cells", lambda s: {"fileId": s["spreadsheet_id"],
+                                            "a1Range": "Title!A1:A2",
+                                            "values": [["Review register"],
+                                                       ["Generated by the demonstration"]]},
+                 "Write into the tab by name",
+                 "This is what needed `add_tab` to exist: writing to `Title!A1` fails with "
+                 "'Unable to parse range' if no such tab is there, and the error does not say "
+                 "that is why.", group=kind),
+            Step("clear_cells", lambda s: {"fileId": s["spreadsheet_id"],
+                                           "a1Range": "Title!A1:A2"},
+                 "CLEAR those cells - not overwrite them",
+                 "This narration used to say 'clearing is writing empty values, same tool, no "
+                 "separate delete'. It was wrong: writing `\"\"` leaves cells CONTAINING an "
+                 "empty string, which anything reading the sheet can tell apart from an empty "
+                 "cell. `content.delete`, for the same reason as the Doc delete.", group=kind),
+            Step("delete_tab", lambda s: {"fileId": s["spreadsheet_id"], "name": "Title"},
+                 "Delete the tab",
+                 "Every cell in it goes too. Google refuses to delete the only tab in a "
+                 "spreadsheet, and so does this.", group=kind),
         ]
     else:
         steps += [

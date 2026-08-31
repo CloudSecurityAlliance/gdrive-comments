@@ -352,7 +352,7 @@ class TestDiscoverableFromMcp:
         out = self.plan("editor")
         blocked = [s for s in out["steps"] if not s["available"]]
         assert blocked
-        # The default refuses exactly the three that cannot be undone. Named, rather than
+        # The default refuses exactly what cannot be undone. Named, rather than
         # checked with `<=`, because the previous version of this test would have passed on a
         # plan that predicted NOTHING - and that is what it was doing: before v0.21.0 most
         # gated steps carried no `requires` at all, so they were reported "available" and the
@@ -363,15 +363,22 @@ class TestDiscoverableFromMcp:
             # granting: a profile that cannot share cannot un-share either. That is the right
             # pairing - a configuration able to revoke but not grant would be odd, and one able
             # to grant but not revoke is the state this library was in until #235.
-            "share_file", "update_file_permission", "unshare_file"}
+            "share_file", "update_file_permission", "unshare_file",
+            # And every DELETE, added in v0.36.0 with `content.delete`. This row is the clearest
+            # statement of why that capability exists: an `editor` writes cells, appends rows,
+            # inserts text and adds tabs, and is refused all four ways of destroying content.
+            "clear_cells", "delete_range", "delete_tab", "delete_document_tab"}
 
     @pytest.mark.parametrize("profile,expected", [
+        # `content.delete` joins each set in v0.36.0. The interesting row is `editor` (=writer):
+        # it may edit content all day and is refused every DELETE, which is the whole reason the
+        # capability was split out rather than folded into `content.write`.
         ("reader", {"comment.create", "comment.reply", "comment.resolve", "comment.edit",
-                    "comment.delete", "content.write", "file.create", "file.update",
-                    "file.trash", "file.share"}),
-        ("commenter", {"comment.edit", "comment.delete", "content.write", "file.create",
-                       "file.update", "file.trash", "file.share"}),
-        ("editor", {"comment.edit", "comment.delete", "file.share"}),
+                    "comment.delete", "content.write", "content.delete", "file.create",
+                    "file.update", "file.trash", "file.share"}),
+        ("commenter", {"comment.edit", "comment.delete", "content.write", "content.delete",
+                       "file.create", "file.update", "file.trash", "file.share"}),
+        ("editor", {"comment.edit", "comment.delete", "content.delete", "file.share"}),
         ("full", set()),
     ])
     def test_the_plan_predicts_every_refusal_for_every_profile(self, profile, expected):

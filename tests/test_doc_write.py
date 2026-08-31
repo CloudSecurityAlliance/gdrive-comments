@@ -40,10 +40,29 @@ def test_append_text_inserts_before_final_newline():
     assert b._writes == [("d", "docs", [{"insertText": {"location": {"index": 41}, "text": "tail"}}])]
 
 
-def test_delete_range_builds_deleteContentRange():
+def test_delete_range_goes_through_its_own_backend_method_not_the_batch():
+    """**Rewritten in v0.36.0, and the reversal is the point.**
+
+    This used to assert `delete_range` built a `deleteContentRange` request through
+    `docs_batch_update`. It no longer does, deliberately: `policy._GATES` gates at the `Backend`
+    seam, and the generic batch method **cannot tell a delete from an edit**. A delete riding on
+    it was therefore ungatable apart from editing, so `content.delete` could not exist.
+
+    So the shape assertion moved to `tests/test_apibackend_contract.py`, where the actual request
+    body is checked against a stub service; what belongs here is that the *right seam* is used.
+    """
     d, b = doc()
     d.delete_range(3, 7)
-    assert b._writes == [("d", "docs", [{"deleteContentRange": {"range": {"startIndex": 3, "endIndex": 7}}}])]
+    assert b._writes == [("docs_delete_range", "d", 3, 7, None)]
+
+
+def test_delete_range_can_target_a_tab():
+    """Index-addressed Docs requests apply to the FIRST tab unless given a `tabId` - measured in
+    experiments/docs-tabs/. Without this argument, deleting a range in tab 2 silently edits
+    tab 1, which is the worst available outcome for a delete."""
+    d, b = doc()
+    d.delete_range(3, 7, tab_id="t.abc")
+    assert b._writes == [("docs_delete_range", "d", 3, 7, "t.abc")]
 
 
 def test_writes_blocked_when_read_only():

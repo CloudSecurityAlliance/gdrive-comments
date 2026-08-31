@@ -61,7 +61,7 @@ def test_the_default_permits_everything_that_can_be_undone():
         assert p.allows(capability), capability
 
 
-def test_the_default_now_permits_everything_and_the_irreversible_three_are_still_named():
+def test_the_default_now_permits_everything_and_the_irreversible_set_is_still_named():
     """**REVERSED in v0.31.0**, and the reversal is the point of the test.
 
     v0.21.0 drew the default on "can this be undone?", which was a better line than the
@@ -73,19 +73,23 @@ def test_the_default_now_permits_everything_and_the_irreversible_three_are_still
     never an expansion. "Everything on" means *subtract nothing; let Drive decide.*
 
     The recoverability ordering did not go away - it still orders the profiles and still tells
-    an operator what they are switching off. `IRREVERSIBLE` is where it lives now, and only
-    `organizer` includes those three.
+    an operator what they are switching off. `IRREVERSIBLE` is where it lives now, and `writer`
+    includes none of it. (`content.delete` sits at `fileOrganizer` rather than `organizer` - the
+    rung whose whole purpose is "may destroy content, may never share".)
     """
     p = Policy.default()
     for capability in policy.ALL_CAPABILITIES:
         assert p.allows(capability), f"{capability} is off by default; nothing should be"
 
+    # FOUR since v0.36.0: `content.delete` joined on the same recoverability test. Deleting a
+    # tab takes every cell in it, with no 30-day bin - a person can recover from revision
+    # history, nothing this library exposes can.
     assert policy.IRREVERSIBLE == {policy.COMMENT_EDIT, policy.COMMENT_DELETE,
-                                   policy.FILE_SHARE}
+                                   policy.CONTENT_DELETE, policy.FILE_SHARE}
     assert policy.IRREVERSIBLE <= policy.PROFILES["organizer"]
     assert not policy.IRREVERSIBLE & policy.PROFILES["writer"], (
-        "the three that cannot be undone must still be absent from `writer` - the default "
-        "changed, the ladder did not")
+        "what cannot be undone must still be absent from `writer` - the default changed, the "
+        "ladder did not")
 
 
 def test_no_capability_can_destroy_something_beyond_recovery():

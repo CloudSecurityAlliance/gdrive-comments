@@ -47,14 +47,21 @@ COMMENT_RESOLVE = "comment.resolve"
 COMMENT_EDIT = "comment.edit"
 COMMENT_DELETE = "comment.delete"
 CONTENT_WRITE = "content.write"
+# Destroying content, as against editing it. Separate from CONTENT_WRITE for the same reason
+# FILE_TRASH is separate from FILE_UPDATE: an operator can reasonably permit editing and refuse
+# destruction. And the asymmetry is real rather than tidy - deleting a spreadsheet tab or a
+# paragraph range removes work with NO trash and NO undo through the API, unlike `trash_file`,
+# which is recoverable for 30 days. Google keeps revision history, so a human can recover; an
+# agent cannot, and the tool cannot offer to.
+CONTENT_DELETE = "content.delete"
 FILE_CREATE = "file.create"
 FILE_UPDATE = "file.update"
 FILE_TRASH = "file.trash"
 FILE_SHARE = "file.share"
 
 ALL_CAPABILITIES = (COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, COMMENT_EDIT,
-                    COMMENT_DELETE, CONTENT_WRITE, FILE_CREATE, FILE_UPDATE, FILE_TRASH,
-                    FILE_SHARE)
+                    COMMENT_DELETE, CONTENT_WRITE, CONTENT_DELETE, FILE_CREATE, FILE_UPDATE,
+                    FILE_TRASH, FILE_SHARE)
 
 # --- the default: EVERYTHING ON, and the documentation's job is how to narrow it ----------
 #
@@ -96,7 +103,10 @@ DEFAULT_ENABLED = frozenset(ALL_CAPABILITIES)
 # Kept as a name because the docs, the config resource and the profile ladder all refer to "the
 # three you cannot take back". They are no longer off by default; they are the three an operator
 # most often wants to remove, and `organizer` is the only profile that includes them.
-IRREVERSIBLE = frozenset({COMMENT_EDIT, COMMENT_DELETE, FILE_SHARE})
+# `CONTENT_DELETE` joins these: deleting a tab takes every cell or paragraph in it, and unlike
+# `FILE_TRASH` there is no 30-day bin. Revision history means a *person* can recover; nothing this
+# library exposes can, which is the sense in which it is irreversible HERE.
+IRREVERSIBLE = frozenset({COMMENT_EDIT, COMMENT_DELETE, CONTENT_DELETE, FILE_SHARE})
 
 # Nothing is off by default any more (see above). Kept as an empty set rather than deleted,
 # because it is part of the public surface and something may still ask "what is disabled?" - the
@@ -126,6 +136,9 @@ CAPABILITY_NOTES: dict[str, tuple[str, str]] = {
     FILE_TRASH:      ("put a file in the trash", "yes, 30 days - the owner can restore it"),
     COMMENT_EDIT:    ("edit an existing comment", "NO - Google keeps no visible edit history"),
     COMMENT_DELETE:  ("delete a comment", "NO - the soft delete strips content and author"),
+    CONTENT_DELETE:  ("delete a tab, or a range of document content",
+                      "NO through this API - Drive keeps revision history a HUMAN can restore "
+                      "from, but there is no trash and no undo an agent can reach"),
     FILE_SHARE:      ("share a file with someone else", "NO, in effect - a copy taken is not revocable"),
 }
 
@@ -176,9 +189,12 @@ PROFILES: dict[str, frozenset[str]] = {
     # it, `full` bundled R1 destruction with R0 disclosure and that posture had no name.
     # `comment.edit` and `comment.delete` sit here on recoverability: Drive has NO comment-level
     # restore (verified), and the soft delete strips content AND author.
+    # `content.delete` joins this rung, not `writer`, on the same recoverability test that put
+    # `comment.delete` here: deleting a tab or a paragraph range has no trash and no API undo.
+    # A `writer` may therefore edit a document all day and never destroy part of one.
     "fileOrganizer": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
                                 FILE_CREATE, FILE_UPDATE, FILE_TRASH,
-                                COMMENT_EDIT, COMMENT_DELETE}),
+                                COMMENT_EDIT, COMMENT_DELETE, CONTENT_DELETE}),
     # organizer - Drive's "Manager": files, folders, PEOPLE and settings. Adds the one action
     # whose effect leaves the organisation and cannot be recalled once a copy is taken.
     "organizer": frozenset(ALL_CAPABILITIES),
@@ -380,6 +396,16 @@ _GATES: dict[str, Gate] = {
     # server does not decide who gets access, which is a statement about the workflow and not
     # only about the grant. Refusing both keeps that promise legible.
     "resolve_access_proposal": Gate(FILE_SHARE, MODIFY),
+    # Tabs. Adding one is a content write; DELETING one is `content.delete`, because it takes
+    # every cell or paragraph in that tab with it and there is no trash and no API undo.
+    "sheets_add_tab": Gate(CONTENT_WRITE, MODIFY),
+    "docs_add_tab": Gate(CONTENT_WRITE, MODIFY),
+    "sheets_delete_tab": Gate(CONTENT_DELETE, MODIFY),
+    "docs_delete_tab": Gate(CONTENT_DELETE, MODIFY),
+    # Deleting a paragraph range. Its own Backend method exists precisely so this gate can
+    # differ from `docs_batch_update`'s - the generic batch method cannot tell a delete from an
+    # edit, so a delete riding on it would have been ungatable apart from editing.
+    "docs_delete_range": Gate(CONTENT_DELETE, MODIFY),
     # comment writes
     "create_comment": Gate(COMMENT_CREATE, MODIFY),
     "create_reply": Gate(_reply_gate, MODIFY),   # reply vs resolve/reopen — see above

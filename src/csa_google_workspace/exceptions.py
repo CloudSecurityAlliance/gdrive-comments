@@ -29,6 +29,18 @@ class NotFoundError(CsaWorkspaceError):
     """A file, comment, or reply id does not exist (404)."""
 
 
+class ConflictError(CsaWorkspaceError):
+    """The request is well-formed but the current state refuses it.
+
+    Its own type so a caller can tell "already there" from "went wrong", which matters most for
+    the operation that motivated it: adding a spreadsheet tab whose name is taken. Google would
+    quietly create `Title 2`; a caller re-running a register build needs the difference between
+    *created* and *already present*, and a generic error makes both look like failure.
+
+    Also raised for deleting the only tab in a file, which Google refuses too.
+    """
+
+
 class AccessError(CsaWorkspaceError):
     """Insufficient permission (403) — not shared, wrong scope, or editing another's comment."""
 

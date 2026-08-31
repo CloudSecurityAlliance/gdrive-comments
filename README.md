@@ -445,15 +445,17 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 40, each with structured output and read-only/destructive annotations
+**Tools** — 50, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
 |---|---|
 | **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
-| **Read** | `read_file_content` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
+| **Read** | `read_file_content` · `read_range` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
 | **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` · `apply_comment_actions` |
-| **Write content** | `replace_text` · `append_text` · `insert_slide_text` · `update_cells` · `append_rows` |
+| **Write content** | `replace_text` · `append_text` · `insert_text` · `insert_slide_text` · `update_cells` · `append_rows` |
+| **Tabs** | `list_tabs` · `add_tab` (Sheets) · `list_document_tabs` · `add_document_tab` (Docs) — different resources, deliberately different names |
+| **Destroy content** 🔒 | `clear_cells` · `delete_range` · `delete_tab` · `delete_document_tab` — `content.delete`, separate from `content.write` so editing can be allowed and destruction refused |
 | **Create** | `create_file` · `copy_file` |
 | **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each OFF unless an operator names its capability |
 | **Access requests** | `list_access_proposals` · `resolve_access_proposal` 🔒 — answering "can I have access?"; approving is sharing, so it costs `file.share` |
@@ -614,9 +616,9 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **40** |
+| MCP tools | 8 | 11 | **50** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **29** |
+| Tools they do not have | — | — | **39** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
 The twenty-three they do not have: **eleven** comment tools, five content-write tools,
@@ -761,6 +763,10 @@ accepting a share URL, which neither of theirs does.
 | `resolve_access_proposal` | Approve or refuse a request. Approving **is** sharing | ✗ | ✗ | ✅ ⁷ |
 | `list_labels` | **Classification** — Drive labels, resolved to names | ✗ | ✗ | ✅ |
 | `preview_allowlist` | What the configured allowlists point at, **by name**, and what has died | ✗ | ✗ | ✅ |
+| `list_tabs` · `add_tab` · `delete_tab` | Spreadsheet tabs — enumerate, create, destroy | ✗ | ✗ | ✅ |
+| `list_document_tabs` · `add_document_tab` · `delete_document_tab` | **Google Docs tabs**, which nest | ✗ | ✗ | ✅ |
+| `read_range` · `clear_cells` | One range in, one range emptied — without pulling the workbook | ✗ | ✗ | ✅ |
+| `insert_text` · `delete_range` | Insert at a position; delete a span. Not the same as replace | ✗ | ✗ | ✅ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
@@ -818,6 +824,10 @@ any of the three servers touches, and how much of one capability lives in a sing
 | `list_access_proposals` | `drive.accessproposals.list` |
 | `list_labels` | `drive.files.listLabels` + `drivelabels.labels.get` (a **second API**) |
 | `preview_allowlist` | `drive.files.get` per allowlist entry (no Google call when unrestricted) |
+| `list_tabs` · `add_tab` · `delete_tab` | `sheets.spreadsheets.get` · `batchUpdate` (`addSheet` / `deleteSheet`) |
+| `list_document_tabs` · `add_document_tab` · `delete_document_tab` | `docs.documents.get(includeTabsContent)` · `batchUpdate` (`addDocumentTab` / `deleteTab`) |
+| `read_range` · `clear_cells` | `sheets.spreadsheets.values.get` · `.clear` |
+| `insert_text` · `delete_range` | `docs.documents.batchUpdate` (`insertText` / `deleteContentRange`) |
 | `resolve_access_proposal` | `drive.accessproposals.resolve` |
 | `trash_file` | `drive.files.update` (`trashed=true`) |
 | `list_comments`, `get_comment` | `drive.comments.list` / `.get` |

@@ -46,6 +46,16 @@ class Backend(Protocol):
     def update_permission(self, file_id: str, permission_id: str, *, role: str) -> JsonDict: ...
     def delete_permission(self, file_id: str, permission_id: str) -> None: ...
     def list_access_proposals(self, file_id: str) -> list[JsonDict]: ...
+    # Tabs. Dedicated methods rather than raw batch_update calls, because policy._GATES gates
+    # at THIS seam: `sheets_batch_update` is one capability, and a delete that rode on it could
+    # not be gated apart from an edit.
+    def sheets_add_tab(self, file_id: str, title: str,
+                       index: int | None = None) -> JsonDict: ...
+    def sheets_delete_tab(self, file_id: str, sheet_id: int) -> None: ...
+    def docs_add_tab(self, file_id: str, title: str | None = None) -> JsonDict: ...
+    def docs_delete_tab(self, file_id: str, tab_id: str) -> None: ...
+    def docs_delete_range(self, file_id: str, start: int, end: int,
+                          tab_id: str | None = None) -> None: ...
     def list_file_labels(self, file_id: str) -> list[JsonDict]: ...
     # Not file-scoped: a label DEFINITION belongs to the organisation, not to any one file.
     def get_label_definition(self, label_id: str) -> JsonDict: ...
@@ -319,6 +329,67 @@ class FakeBackend:
     def list_access_proposals(self, file_id):
         self.get_file_metadata(file_id)              # raises NotFoundError
         return [copy.deepcopy(p) for p in self._proposals.get(file_id, [])]
+
+    def sheets_add_tab(self, file_id, title, index=None):
+        ss = self._spreadsheets.setdefault(file_id, {"sheets": []})
+        sheets = ss.setdefault("sheets", [])
+        if any(s.get("properties", {}).get("title") == title for s in sheets):
+            # Loud rather than silent: Google would name it "Title 2", and a caller re-running a
+            # register build needs "already there" told apart from "created".
+            raise exc.ConflictError(f"a tab named {title!r} already exists in {file_id!r}")
+        self._seq += 1
+        props = {"sheetId": self._seq, "title": title,
+                 "index": len(sheets) if index is None else index}
+        sheets.insert(len(sheets) if index is None else index, {"properties": props})
+        for position, sheet in enumerate(sheets):    # keep index consistent after an insert
+            sheet["properties"]["index"] = position
+        return copy.deepcopy(props)
+
+    def sheets_delete_tab(self, file_id, sheet_id):
+        ss = self._spreadsheets.get(file_id) or {}
+        sheets = ss.get("sheets", [])
+        for sheet in sheets:
+            if sheet.get("properties", {}).get("sheetId") == sheet_id:
+                break
+        else:
+            raise exc.NotFoundError(f"no tab with sheetId {sheet_id} in {file_id!r}")
+        if len(sheets) == 1:
+            # Google refuses this too: a spreadsheet must keep at least one sheet.
+            raise exc.ConflictError(
+                "cannot delete the only tab in a spreadsheet - Google requires at least one")
+        sheets.remove(sheet)
+        for position, remaining in enumerate(sheets):
+            remaining["properties"]["index"] = position
+
+    def docs_add_tab(self, file_id, title=None):
+        doc = self._documents.setdefault(file_id, {})
+        tabs = doc.setdefault("tabs", [])
+        if not tabs and doc.get("body"):
+            # Promote a legacy single-body fixture into the tabs shape so the fake mirrors what
+            # Google returns once a document has more than one tab.
+            tabs.append({"tabProperties": {"title": "Tab 1", "tabId": "t.fake1", "index": 0},
+                         "documentTab": {"body": doc["body"]}})
+        self._seq += 1
+        props = {"title": title or f"Tab {len(tabs) + 1}",
+                 "tabId": f"t.fake{self._seq}", "index": len(tabs)}
+        tabs.append({"tabProperties": props, "documentTab": {"body": {"content": []}}})
+        return copy.deepcopy(props)
+
+    def docs_delete_tab(self, file_id, tab_id):
+        doc = self._documents.get(file_id) or {}
+        tabs = doc.get("tabs") or []
+        for tab in tabs:
+            if tab.get("tabProperties", {}).get("tabId") == tab_id:
+                break
+        else:
+            raise exc.NotFoundError(f"no tab {tab_id!r} in {file_id!r}")
+        if len(tabs) == 1:
+            raise exc.ConflictError(
+                "cannot delete the only tab in a document - Google requires at least one")
+        tabs.remove(tab)
+
+    def docs_delete_range(self, file_id, start, end, tab_id=None):
+        self._writes.append(("docs_delete_range", file_id, start, end, tab_id))
 
     def list_file_labels(self, file_id):
         self.get_file_metadata(file_id)              # raises NotFoundError
@@ -702,6 +773,66 @@ class ApiBackend:
             if not page:
                 return out
 
+    def sheets_add_tab(self, file_id, title, index=None):
+        # AddSheetRequest. Google would happily create a second "Title" as "Title 2"; the
+        # duplicate check lives in `Sheet.add_tab` so the refusal names the existing tab.
+        props = {"title": title}
+        if index is not None:
+            props["index"] = index
+        resp = _errors.call(
+            self._services.sheets.spreadsheets().batchUpdate(
+                spreadsheetId=file_id,
+                body={"requests": [{"addSheet": {"properties": props}}]}).execute,
+            idempotent=False)
+        replies = resp.get("replies") or [{}]
+        return (replies[0].get("addSheet") or {}).get("properties", {})
+
+    def sheets_delete_tab(self, file_id, sheet_id):
+        # DeleteSheetRequest takes a NUMERIC sheetId, never a title - so a caller holding only a
+        # name must resolve it first, which `Sheet.delete_tab` does.
+        _errors.call(
+            self._services.sheets.spreadsheets().batchUpdate(
+                spreadsheetId=file_id,
+                body={"requests": [{"deleteSheet": {"sheetId": sheet_id}}]}).execute,
+            idempotent=False)
+
+    def docs_add_tab(self, file_id, title=None):
+        # addDocumentTab. Google auto-titles ("Tab 2") and assigns the index when neither is
+        # given - measured in experiments/docs-tabs/.
+        req: JsonDict = {}
+        if title:
+            req["tabProperties"] = {"title": title}
+        resp = _errors.call(
+            self._services.docs.documents().batchUpdate(
+                documentId=file_id, body={"requests": [{"addDocumentTab": req}]}).execute,
+            idempotent=False)
+        replies = resp.get("replies") or [{}]
+        return (replies[0].get("addDocumentTab") or {}).get("tabProperties", {})
+
+    def docs_delete_tab(self, file_id, tab_id):
+        _errors.call(
+            self._services.docs.documents().batchUpdate(
+                documentId=file_id,
+                body={"requests": [{"deleteTab": {"tabId": tab_id}}]}).execute,
+            idempotent=False)
+
+    def docs_delete_range(self, file_id, start, end, tab_id=None):
+        # Its own method rather than a `docs_batch_update` call, because the GATE lives here:
+        # deleting content is `content.delete`, editing it is `content.write`, and a delete that
+        # rode on the generic batch method could not be told apart from an edit.
+        #
+        # `tabId` inside `range` is what addresses a specific tab; without it the request applies
+        # to the first tab. Index-addressed requests need it - `replaceAllText` does not, which
+        # is why that one already worked across tabs.
+        rng: JsonDict = {"startIndex": start, "endIndex": end}
+        if tab_id:
+            rng["tabId"] = tab_id
+        _errors.call(
+            self._services.docs.documents().batchUpdate(
+                documentId=file_id,
+                body={"requests": [{"deleteContentRange": {"range": rng}}]}).execute,
+            idempotent=False)
+
     def list_file_labels(self, file_id):
         # Which labels are applied to this file - as OPAQUE IDS. Drive v3 will not tell you what
         # a label is called; `get_label_definition` is the other half. Note `maxResults`, not
@@ -787,7 +918,11 @@ class ApiBackend:
     def get_spreadsheet(self, file_id):
         return _errors.call(self._services.sheets.spreadsheets()
                             .get(spreadsheetId=file_id,
-                                 fields="sheets(properties(sheetId,title))").execute)
+                                 # index/hidden/sheetType are what make `list_tabs` honest: a
+                                 # HIDDEN tab nobody knows about is exactly what a register
+                                 # build trips over, and `index` is why `Title` can be first.
+                                 fields="sheets(properties(sheetId,title,index,hidden,"
+                                        "sheetType))").execute)
 
     def get_values(self, file_id, a1_range):
         resp = _errors.call(self._services.sheets.spreadsheets().values()

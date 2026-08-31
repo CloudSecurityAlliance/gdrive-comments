@@ -85,6 +85,18 @@ ARGS: dict[str, dict] = {
     "trash_file":            {"fileId": DOC},
     "describe_configuration": {},
     "preview_allowlist":     {},
+    # Tabs and ranges. ORDER IS LOAD-BEARING within each file, as with the permission trio
+    # above: add before delete, and never delete the tab a later entry reads.
+    "list_tabs":             {"fileId": SHEET},
+    "add_tab":               {"fileId": SHEET, "name": "Smoke", "index": 1},
+    "delete_tab":            {"fileId": SHEET, "name": "Smoke"},
+    "read_range":            {"fileId": SHEET, "a1Range": "Tab1"},
+    "clear_cells":           {"fileId": SHEET, "a1Range": "Tab1"},
+    "list_document_tabs":    {"fileId": DOC},
+    "add_document_tab":      {"fileId": DOC, "title": "Smoke"},
+    "delete_document_tab":   {"fileId": DOC, "tabId": "t.fake1"},
+    "insert_text":           {"fileId": DOC, "text": "x", "index": 1},
+    "delete_range":          {"fileId": DOC, "startIndex": 1, "endIndex": 2},
     "read_server_resource":  {},
     "report_a_problem":      {},
     "demonstration_plan":    {},

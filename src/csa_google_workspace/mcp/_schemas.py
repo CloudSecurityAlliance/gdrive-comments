@@ -128,6 +128,42 @@ class AccessProposalOut(TypedDict):
     request_message: str | None
 
 
+class TabOut(TypedDict):
+    """A spreadsheet tab. `hidden` is the one that matters — a hidden tab still exists, still
+    holds data, and still occupies its name."""
+    title: str
+    sheet_id: int | None
+    index: int | None
+    hidden: bool
+    type: str | None
+
+
+class TabsOut(TypedDict):
+    tabs: list[TabOut]
+    count: int
+    # Stated rather than left to be counted, because a hidden tab is the one a caller misses.
+    hidden_count: int
+
+
+class DocumentTabOut(TypedDict):
+    """A Doc tab. Addressed by `tab_id`, never by title — Docs permits duplicate titles."""
+    title: str
+    tab_id: str
+    index: int | None
+    nesting_level: int
+
+
+class DocumentTabsOut(TypedDict):
+    tabs: list[DocumentTabOut]
+    count: int
+
+
+class RangeOut(TypedDict):
+    a1_range: str
+    values: list[list[str]]
+    rows: int
+
+
 class AllowlistEntryOut(TypedDict):
     file_id: str
     line: int
@@ -438,6 +474,19 @@ def access_proposal_out(p: Any) -> AccessProposalOut:
 def access_proposals_out(proposals: list) -> AccessProposalsOut:
     return {"proposals": [access_proposal_out(p) for p in proposals],
             "pending": len(proposals)}
+
+
+def tabs_out(details: list) -> TabsOut:
+    return {"tabs": [{"title": d["title"], "sheet_id": d["sheet_id"], "index": d["index"],
+                      "hidden": d["hidden"], "type": d["type"]} for d in details],
+            "count": len(details),
+            "hidden_count": sum(1 for d in details if d["hidden"])}
+
+
+def document_tabs_out(tabs: list) -> DocumentTabsOut:
+    return {"tabs": [{"title": t["title"], "tab_id": t["tab_id"], "index": t["index"],
+                      "nesting_level": t["nesting_level"]} for t in tabs],
+            "count": len(tabs)}
 
 
 def allowlist_preview_out(scope_name: str, p: Any) -> AllowlistPreviewOut:
