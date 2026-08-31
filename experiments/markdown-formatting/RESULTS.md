@@ -112,3 +112,77 @@ parallel structures over the same cell, not one thing.
 So the Markdown idea **removes most of the Docs half of #277** and **leaves the Sheets half exactly
 where it was**. That is worth knowing before scoping, and it is the opposite of the intuition that
 one representation would cover both.
+
+---
+
+# Slides, and the authoritative answer for all three
+
+The CINO then asked about Slides. Rather than probe format by format, ask Drive: `about.get`
+returns **`importFormats`**, its own declaration of what converts into what.
+
+```
+Doc:    23 source formats — markdown/plain among them: text/markdown, text/plain, text/x-markdown
+Sheet:  10 source formats — markdown/plain among them: NONE
+Slides:  9 source formats — markdown/plain among them: NONE
+```
+
+**Slides cannot take Markdown at all**, and neither can Sheets. Drive will not convert it. Their
+only structured imports are PowerPoint/ODP and Excel/ODS/CSV/TSV respectively.
+
+That is definitive and cheap — it replaces a probe per format with one call.
+
+## But asking the question this way found the better answer
+
+`importFormats` says what *does* convert, and two of those entries carry formatting:
+
+| target | Markdown? | structured import that carries formatting |
+|---|---|---|
+| Doc | ✅ | DOCX, ODT, **HTML**, RTF |
+| Sheet | ❌ | **XLSX**, ODS |
+| Slides | ❌ | **PPTX**, ODP |
+
+### Sheets: the tooling is already here, and already formatting
+
+**`export_comments(destination="xlsx")` already writes a fully formatted workbook.** From
+`_export.py`:
+
+```python
+fill = PatternFill("solid", fgColor=HEADER_FILL)
+cell.font = Font(name=font, bold=True, color="FFFFFF")
+cell.alignment = Alignment(vertical="center", wrap_text=True)
+ws.freeze_panes = "A2"
+ws.column_dimensions[letter].width = …
+```
+
+Bold white header on a fill, frozen top row, column widths — **that is #277's wish list, already
+implemented and tested**, in `openpyxl`, which is already in the `mcp` extra rather than optional.
+
+So the cheap route for Sheets formatting is **not** a formatting API and **not** Markdown: build
+the XLSX that already gets built, and **upload it with conversion** instead of writing values.
+`export_comments(destination="sheet")` currently goes through `values.update`, which by measurement
+cannot carry formatting at all.
+
+### Slides: no Markdown, but no PPTX needed either
+
+Slides `batchUpdate` has **44 request types**, 29 of them text/shape/style:
+`updateTextStyle`, `updateParagraphStyle`, `createParagraphBullets`, `createTable`, `createShape`,
+`replaceAllText` and the rest. So Slides formatting is a native API surface — reachable today
+through the existing `batch_update`, and needing no new dependency. PPTX import would only matter
+for whole-deck authoring, and would add `python-pptx`.
+
+## The complete answer
+
+| | Markdown import | best formatting route | new tooling needed |
+|---|---|---|---|
+| **Doc** | ✅ works, high fidelity | **Markdown whole-file** — `as_markdown` out, `files.update` in | **none** |
+| **Sheet** | ❌ never | **XLSX upload** — reuse the formatted workbook `_export` already writes | **none** — `openpyxl` is already a dependency |
+| **Slides** | ❌ never | **native `batchUpdate`** — 29 style requests | none (PPTX only for whole-deck authoring) |
+
+**So #277 needs no new formatting API for any of the three.** Docs gets it from Markdown, Sheets
+from an XLSX upload path that is 90% written, Slides from an API that already exists behind
+`batch_update`. What is left is exposure and wiring, not a new surface — which is a materially
+smaller piece of work than the issue assumed, and a different one.
+
+The open question from the Docs section stands and gates only the Docs route: **does a Markdown
+whole-file update preserve an anchored comment?** The Sheets XLSX route has the same question, and
+it matters as much there.
