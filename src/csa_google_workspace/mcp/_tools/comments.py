@@ -416,20 +416,32 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         nothing, and asking for A1 finds it. That surprises people, so say which you
         searched."""
         doc = get_workspace().open(fileId)
-        found = _require(doc, "comments_by_cell", "cell-mapped comments")(cell, tab)
+        # Fetched UNFILTERED, once, and narrowed here. Passing `tab` down instead would drop the
+        # comments whose sheet could not be resolved *before* they could be counted - so
+        # narrowing by a perfectly valid tab reported `unplaced: 0` and an empty list about a
+        # cell that does have comments on it. Excluded is not the same as nonexistent, and that
+        # distinction is the whole point of this tool's uncertainty reporting.
+        at_cell = _require(doc, "comments_by_cell", "cell-mapped comments")(cell)
         tabs = list(getattr(doc, "tabs", []) or [])
-        # `unplaced` counts results whose sheet could not be resolved. Since #290 that is the
-        # exception rather than the rule, so `tab_ambiguous` keys off the actual shortfall
-        # instead of "this workbook has more than one tab" - which used to flag every
-        # multi-tab file, including the ones now answered exactly.
-        unplaced = sum(1 for c in found if getattr(c.location, "tab", None) is None)
+        # Refuses an unknown name rather than answering emptily about a tab that is not there;
+        # see `Sheet.resolve_tab`. Resolved through the library so both layers compare alike.
+        wanted = _require(doc, "resolve_tab", "narrowing by tab")(tab) if tab else None
+        unplaced = sum(1 for c in at_cell if getattr(c.location, "tab", None) is None)
+        found = [c for c in at_cell
+                 if wanted is None or getattr(c.location, "tab", None) == wanted]
         ambiguous = unplaced > 0
-        where = f" on {tab}" if tab else ""
-        if ambiguous:
-            detail = (f"{len(found)} comment(s) anchored at {cell}{where}, but {unplaced} of "
-                      f"them could not be placed on a tab - the export did not say which sheet "
-                      f"they are on. Say so for those rather than naming a tab; the rest are "
-                      f"exact.")
+        # Two shapes, because the arithmetic differs: with a tab named, `found` EXCLUDES the
+        # unplaced ones, so "N of them" would be counted against a number they are not in -
+        # which read as "0 comment(s) ... but 1 of them". Without a tab they are included.
+        if ambiguous and wanted is not None:
+            detail = (f"{len(found)} comment(s) placed at {cell} on {wanted}. A further "
+                      f"{unplaced} comment(s) at {cell} could NOT be placed on a tab - the "
+                      f"export did not say which sheet they are on - so one of them may also "
+                      f"be on {wanted}. Do not treat this cell as clear; report the shortfall.")
+        elif ambiguous:
+            detail = (f"{len(found)} comment(s) anchored at {cell}, of which {unplaced} could "
+                      f"not be placed on a tab - the export did not say which sheet they are "
+                      f"on. Report that for those rather than naming a tab; the rest are exact.")
         elif tab:
             detail = f"{len(found)} comment(s) anchored at {cell} on {tab}."
         else:

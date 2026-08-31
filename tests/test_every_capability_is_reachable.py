@@ -55,6 +55,9 @@ NO_TOOL_NEEDED: dict[str, str] = {
     "Doc.export_formats":     "NOT A TOOL: a static format table; download_file_content "
                               "converts, and the list itself is documentation",
     "Sheet.export_formats":   "NOT A TOOL: as Doc.export_formats",
+    "Sheet.resolve_tab":      "NOT A TOOL: name -> real tab title, used BY comments_by_cell "
+                              "(and public only so the MCP layer resolves identically rather "
+                              "than drifting). list_tabs already exposes the titles",
     "Slides.export_formats":  "NOT A TOOL: as Doc.export_formats",
     "Doc.share":              "SERVED: share_file",
     "Sheet.share":            "SERVED: share_file",
