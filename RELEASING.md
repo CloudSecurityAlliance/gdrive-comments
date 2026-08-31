@@ -48,7 +48,8 @@ GITHUB_TOKEN=$(gh auth token) python scripts/check_controls.py
 It runs weekly (`.github/workflows/controls.yml`) and in the release build, so a removed
 reviewer stops the release that would otherwise publish unattended. Two of the three need no
 credential at all; branch protection needs admin rights, so in CI it reports `????` unless an
-optional read-only `CONTROLS_TOKEN` secret is configured. Run it locally before a release and
+read-only `CONTROLS_TOKEN` secret is configured — **it is, since 2026-08-31, expiring
+2027-09-01** (see the rotation notice at the top of `TODO.md`). Run it locally before a release and
 you get all three.
 
 The check reports **OK / VIOLATED / UNVERIFIABLE** and never collapses the third into the
