@@ -128,6 +128,31 @@ class AccessProposalOut(TypedDict):
     request_message: str | None
 
 
+class LabelFieldOut(TypedDict):
+    id: str
+    name: str | None          # None when the definition could not be read
+    value_type: str
+    values: list[str]
+
+
+class LabelOut(TypedDict):
+    id: str
+    name: str | None
+    fields: list[LabelFieldOut]
+    # Present ONLY when the name could not be read, and it says which of two causes and how to
+    # fix it. A model that sees `name: null` with no reason cannot tell "unnamed" from "we could
+    # not look", and those are different answers to "is this document classified?".
+    unresolved_reason: str | None
+
+
+class LabelsOut(TypedDict):
+    labels: list[LabelOut]
+    # Explicit, because the dangerous misreading is "no names shown" -> "not classified".
+    # `labelled` is true whenever the file carries any label, resolved or not.
+    labelled: bool
+    names_unavailable: bool
+
+
 class AccessProposalsOut(TypedDict):
     proposals: list[AccessProposalOut]
     # A count, so "is anyone waiting?" is answerable without the model counting a list and
@@ -384,6 +409,19 @@ def access_proposal_out(p: Any) -> AccessProposalOut:
 def access_proposals_out(proposals: list) -> AccessProposalsOut:
     return {"proposals": [access_proposal_out(p) for p in proposals],
             "pending": len(proposals)}
+
+
+def label_out(label: Any) -> LabelOut:
+    return {"id": label.id, "name": label.name,
+            "fields": [{"id": f.id, "name": f.name, "value_type": f.value_type,
+                        "values": f.values} for f in label.fields],
+            "unresolved_reason": label.unresolved_reason}
+
+
+def labels_out(labels: list) -> LabelsOut:
+    return {"labels": [label_out(one) for one in labels],
+            "labelled": bool(labels),
+            "names_unavailable": any(not one.resolved for one in labels)}
 
 
 def file_ref_out(ref: Any) -> FileRefOut:

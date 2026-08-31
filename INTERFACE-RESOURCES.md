@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-30 (v0.33.0)
+**Last verified:** 2026-08-30 (v0.34.0)
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -52,7 +52,7 @@ it means installing it and importing it.
   csa-google-workspace-mcp login          # once, interactive: browser consent
   claude mcp add csa-google-workspace -- csa-google-workspace-mcp
   ```
-- **Surface:** 38 tools, each with structured output (`outputSchema`) and
+- **Surface:** 39 tools, each with structured output (`outputSchema`) and
   read-only/destructive annotations, across five groups — discovery and file
   lifecycle (`search_files`, `list_recent_files`, `get_file_metadata`,
   `get_file_permissions`, `create_file`, `copy_file`, `update_file`,
@@ -72,7 +72,9 @@ it means installing it and importing it.
   for roughly fifteen releases after.
 - **Auth:** per-user Google OAuth, inheriting the library's BYO-credentials
   model. Requires an **installed/desktop-app** OAuth client and the Drive, Docs,
-  Sheets, and Slides APIs enabled. Each user authorizes as themselves; there is
+  Sheets, and Slides APIs enabled — plus **Drive Labels**
+  (`drivelabels.googleapis.com`) for `list_labels`, which degrades to ids-without-names
+  rather than failing when it is off. Each user authorizes as themselves; there is
   no shared token. `login` is a separate subcommand because it is the only code
   path that may open a browser — under stdio, stdout is the JSON-RPC channel.
 - **Config:** `CSA_GW_TOKEN` (token cache, default
@@ -82,7 +84,7 @@ it means installing it and importing it.
   persists that stream for you), `CSA_GW_FLAVOUR=google|claude` (publish only that
   vendor's Drive tool surface). Full reference: `csa-gw://help/configuration`.
 - **Protocol:** MCP revision `2026-07-28`; requires SDK `mcp>=2.1`.
-- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.33.0.
+- **Status:** **shipped**, v0.2.0 onward (2026-08-24); current release v0.34.0.
 - **Design:** [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](./docs/superpowers/specs/2026-07-23-mcp-server-design.md)
 - **Health check** — no credentials needed; lists the tool surface over real stdio.
   The request must be on **one line**: stdio framing is newline-delimited, so a
@@ -90,7 +92,7 @@ it means installing it and importing it.
   ```bash
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"healthcheck","version":"0"}}}}' | csa-google-workspace-mcp
   ```
-  Expect a JSON-RPC result listing 38 tools — or 14 / 11 under
+  Expect a JSON-RPC result listing 39 tools — or 14 / 11 under
   `CSA_GW_FLAVOUR=claude` / `google`, which is the point of that variable: it changes
   what the server *advertises*, not only what it permits.
 - **Owner:** Kurt Seifried

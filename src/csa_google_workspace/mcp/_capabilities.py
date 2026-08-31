@@ -91,6 +91,9 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "resolve_access_proposal": FILE_SHARE,
     # "Who is waiting?" has no write in it.
     "list_access_proposals": None,
+    # A read, and one this server can ONLY do: it never requests the write scope
+    # for labels, so there is no capability that would enable relabelling.
+    "list_labels": None,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.

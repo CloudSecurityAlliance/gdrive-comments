@@ -50,7 +50,7 @@ looked for, which is the reason this table exists.
 <!-- BEGIN GENERATED COVERAGE -->
 | group | first covered by |
 |---|---|
-| `src/csa_google_workspace/` — top level | **partial** — 20/21 at 2026-08-27 |
+| `src/csa_google_workspace/` — top level | **partial** — 20/22 at 2026-08-27 |
 | `documents/` — per-type content | 2026-07-22 · claude-code |
 | `mcp/` — server, auth flow, config, resources | **partial** — 13/15 at 2026-08-27 |
 | `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
