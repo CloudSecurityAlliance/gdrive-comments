@@ -158,8 +158,14 @@ around it quietly.
   weekly via `.github/workflows/controls.yml` and in the release build): the PyPI Trusted
   Publisher constrained to the `pypi` environment, that environment's required reviewers, and
   branch protection on `main`. Reports OK / VIOLATED / **UNVERIFIABLE**, and the third never
-  counts as the first — two of the three need no credential; branch protection needs admin, so
-  CI reports it unverifiable unless an optional read-only `CONTROLS_TOKEN` is set.
+  counts as the first. Two of the three need no credential at all; branch protection needs admin
+  rights, which a workflow's `GITHUB_TOKEN` cannot be granted — there is no `administration`
+  permission — so it needs a PAT. **Since 2026-08-31 that PAT is configured** (`CONTROLS_TOKEN`,
+  fine-grained, `Administration: Read-only`, this repo only) and CI verifies all three
+  unattended. **It expires 2027-09-01**, and on expiry branch protection silently reverts to
+  *unverifiable* — `TODO.md` opens with the rotation notice and the permissions to grant.
+  The script takes `--repo` / `--package` / `--environment` / `--branch`, so a sibling repo runs
+  it rather than forking it.
 - **CI** (`.github/workflows/tests.yml`, runs on every PR): a `lint` job (ruff + mypy), a `test` matrix (pytest + coverage, Python 3.10–3.14, `fail_under=85`), and a `security` job (`pip-audit` + `bandit`). GitHub **CodeQL** default-setup also runs. Two gotchas seen: CodeQL flags `"host" in url`-style substring checks (`py/incomplete-url-substring-sanitization`) even in test assertions; and an OAuth **scope grant ≠ API enablement** — a scoped token still 403s `SERVICE_DISABLED` until each API (Docs/Sheets/Slides) is enabled in the Cloud project.
 - **New work follows the plan-then-execute rhythm:** write a spec/plan under `docs/superpowers/`, then implement TDD (unit tests via `FakeBackend`). Keep `README.md`'s manifest and `CHANGELOG.md` in sync. (Phase 1 — the library — and phase 2 — the MCP server — are both complete and on PyPI.)
 - **Style:** ruff (`E,F,W,I,B,UP`, line-length 120) and mypy both gate CI. `E702` is **deliberately ignored** — one-line `a = …; b = …` is a pervasive house style here, not a defect; match it rather than splitting lines. The google-api/auth stack ships no stubs, so those imports are `ignore_missing_imports`.

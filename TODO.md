@@ -1,5 +1,27 @@
 # TODO / backlog
 
+> ## ⏰ ROTATE `CONTROLS_TOKEN` ON OR BEFORE **2027-09-01**
+>
+> The fine-grained PAT behind the weekly external-controls check
+> (`.github/workflows/controls.yml`) **expires 2027-09-01 04:12:36 UTC** — 366 days from
+> 2026-08-31, which is GitHub's maximum. Nothing in this repository knows that date, and
+> nothing will warn you: when it lapses the branch-protection control silently reverts to
+> **UNVERIFIABLE**, which is the honest state and an invisible one.
+>
+> **Replace it with:** a fine-grained PAT, resource owner `CloudSecurityAlliance`, **only**
+> the `csa-google-workspace` repository, **Repository permissions → Administration:
+> Read-only** and *nothing else* (metadata read comes along automatically). Then
+> `gh secret set CONTROLS_TOKEN`.
+>
+> **Verify the replacement before trusting it**, because the first attempt was
+> over-permissioned and it was not obvious: `GET /repos/{owner}/{repo}`'s `permissions`
+> object is **not** evidence — it reports the *user's* org role, not the token's grants, and
+> reads `admin: true` for a correctly-scoped token. The real test is a write that must fail:
+> `PATCH /issues/{n}` with the state it already has should return **403 "Resource not
+> accessible by personal access token"**, while
+> `GET /branches/main/protection` returns **200**.
+
+
 The feature roadmap (comments · content read/write · Sheets cell-mapping · Docs
 suggestions read) is **complete and live-verified** — see `CHANGELOG.md`. This file
 is the post-roadmap backlog: the phase-2 delivery layer (below), plus enhancements and
@@ -63,7 +85,7 @@ below; this is the index.
 | **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
 | **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
 | **Dead-entry detection** | An allowlisted file that has been trashed |
-| **`CONTROLS_TOKEN`** | A decision, not code: store a read-only PAT so CI can verify branch protection, or leave it verified locally |
+| ~~`CONTROLS_TOKEN`~~ | **Done 2026-08-31** — PAT configured; all three controls now verify in CI. **Rotate by 2027-09-01**, see the banner at the top |
 | ~~Drive labels~~ | **Shipped** v0.34.0 — read-only by construction; needs a 2nd API and a new scope |
 | ~~`accessproposals`~~ | **Shipped** v0.33.0 — `resolve` gated as `file.share`, confirmed by Google's own scope table |
 | ~~C2 flavour switch~~ | **Shipped** v0.32.0 — allowed *and* advertised; `claude` 14 tools, `google` 11 |
@@ -625,9 +647,25 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       designs A and B are *identical*, because the model is the attack surface and process
       isolation does not stop the model being persuaded — stands regardless of when it ships.
 
-- [ ] **Cover branch protection in CI, via an optional read-only `CONTROLS_TOKEN`** — **deferred
-      to 1.0.0, 2026-08-28, at the CINO's direction** (*"don't worry about branch protection yet,
-      lets make that a 1.0.0 thing"*).
+- [x] ~~**Cover branch protection in CI, via an optional read-only `CONTROLS_TOKEN`**~~ —
+      **done 2026-08-31.** Deferred to 1.0.0 on 2026-08-28 at the CINO's direction, then taken
+      up: the PAT is configured and the weekly workflow now verifies **all three** controls
+      unattended. Its first run reported `All externally-enforced controls verified.`; before
+      it, branch protection read `[????]` in CI.
+
+      **Rotate on or before 2027-09-01** — see the banner at the top of this file for the exact
+      expiry and the permissions to grant. Two things learned installing it, both worth having
+      written down:
+
+      - **The first token was over-permissioned and it did not look it.** It could create
+        issues (a probe accidentally opened, then closed, #268). Fixed by narrowing to
+        `Administration: Read-only`.
+      - **`GET /repos/{owner}/{repo}`'s `permissions` object is not evidence of a token's
+        grants.** It reports the *user's* role in the org and reads `admin: true` even for a
+        correctly-scoped token. The reliable test is a write that must be refused.
+
+      The reasoning that deferred it is kept below, because the trade it describes is still the
+      one to re-make at rotation time rather than renew by reflex.
 
       Two of the three controls above verify with **no credential at all**. Branch protection
       needs admin rights, and a workflow's `GITHUB_TOKEN` cannot be granted them — there is no
@@ -646,6 +684,10 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       the weekly workflow already reads `secrets.CONTROLS_TOKEN` if present — no code change,
       just the secret. Worth pairing with a decision on rotation, since an unrotated PAT is how
       this kind of thing ages badly.
+
+      *(That last sentence proved to be the whole of the remaining work. The secret took one
+      command; the rotation date is the part that needed somewhere to live, and is now the
+      banner at the top of this file.)*
 
 - [ ] **C6 List the server in the official MCP Registry** —
       [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/). Added as a
