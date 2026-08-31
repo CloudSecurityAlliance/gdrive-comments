@@ -10,6 +10,71 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-31 — v0.35.2 (a multi-tab Doc read back as a one-tab Doc) — not released
+
+**A bug, measured against live Google.** Closes **#280**.
+
+A Google Doc can have **tabs** — and they nest. A two-tab document read back as though it had one:
+
+```
+  get() default           : ONE ---   | has 'tabs': False
+  get(includeTabsContent) : ONE TWO   | has 'tabs': True
+  Doc.as_text()           : 'MARKER_TAB_ONE\n\n'
+```
+
+Tab 2's text was real, retrievable with one parameter, and dropped without a word — the same
+direction as the `list_labels` hazard: **reporting less than exists, silently.**
+
+**Sharper here than for a general Drive tool.** A comment's `quoted_text` comes from *Drive*, not
+from the Docs body, so `list_comments` would report a comment anchored in tab 2 **with its
+passage**, while `read_file_content` returned a document not containing it. Triage would proceed
+on partial context and look complete.
+
+### Why the flag alone was not the fix
+
+With `includeTabsContent=True` the top-level `body` comes back **EMPTY** and content moves to
+`tabs[].documentTab.body` — *even for a single-tab document*. Measured, and it is the trap:
+
+```
+  includeTabsContent=False -> body populated: 1     tabs: absent
+  includeTabsContent=True  -> body populated: 0     tabs: 1
+```
+
+Three consumers read `body` (`doc_text`, `doc_paragraphs`, `extract_suggestions`). Adding the flag
+while any of them still did would have turned a silent truncation into a **silent blank**. They now
+share `_content.doc_tab_bodies`, which is also what stops the next one being fixed in two places
+out of three.
+
+### Behaviour
+
+* Every tab is read, **depth-first through nesting** — document order is the only ordering a
+  reader would predict.
+* `as_text()` heads each tab with `# <tab>` **when there is more than one**, following the
+  precedent `Sheet.as_text()` already set rather than inventing a second convention. A single-tab
+  document reads **byte-identically to before**; verified live.
+* `paragraphs` spans tabs but does **not** gain pseudo-entries for tab names — it is a list of
+  paragraphs, and injecting headings would corrupt any index derived from it.
+* An untitled tab renders `# (untitled tab)` rather than going unlabelled, which would make its
+  text look like a continuation of the tab above.
+* The **legacy `body` shape is still read**, and not only for old responses: every `FakeBackend`
+  fixture uses it.
+
+### An overstatement corrected in the same breath
+
+An earlier note claimed *"every Docs write is implicitly tab 1 only"*, inferred from
+`Location.tabId` existing. **Wrong for `replace_text`** — measured at
+`occurrences_changed = 2` across both tabs, because `ReplaceAllTextRequest.tabsCriteria` is
+optional and omitting it means all tabs. `append_text` does land in tab 1, which is defensible but
+undocumented.
+
+### Tests
+
+`tests/test_doc_tabs.py` (16) plus two `ApiBackend` contract tests — `FakeBackend` never sees a
+request, so the flag itself can only be asserted there. Probe and full write-up:
+`experiments/docs-tabs/`.
+
+Full suite: 1558 passed, 12 skipped.
+
 ## 2026-08-31 — v0.35.1 (a token one scope short is not "no token")
 
 **Found live on the first install to upgrade across v0.34.0**, which is the release that made this

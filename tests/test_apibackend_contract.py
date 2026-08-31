@@ -469,3 +469,47 @@ def test_get_file_metadata_asks_for_trashed():
     ApiBackend(_S(files)).get_file_metadata("f")
     assert "trashed" in files.calls[0]["fields"], (
         "without this, a trashed file is indistinguishable from a live one")
+
+
+def test_get_document_asks_for_tabs_content():
+    """Without `includeTabsContent`, `documents.get` returns THE FIRST TAB ONLY.
+
+    Measured against live Google (`experiments/docs-tabs/`): a two-tab document came back with no
+    `tabs` key and only tab 1's text in `body`. `FakeBackend` cannot catch this - it never sees a
+    request - so the assertion belongs here.
+
+    Note this parameter and `_content.doc_tab_bodies` are ONE change: with the flag, top-level
+    `body` arrives EMPTY and content moves under `tabs[]`. Adding the flag alone would turn a
+    truncation into a blank; removing it alone brings the truncation back.
+    """
+    class _Docs:
+        def __init__(self): self.calls = []
+        def get(self, **kw):
+            self.calls.append(kw)
+            return _Request({})
+
+    class _S:
+        def __init__(self, d): self.docs = type("D", (), {"documents": lambda s: d})()
+
+    docs = _Docs()
+    ApiBackend(_S(docs)).get_document("f")
+    assert docs.calls[0].get("includeTabsContent") is True, (
+        "without this, a multi-tab document silently reads back as a one-tab document")
+
+
+def test_get_document_still_passes_the_suggestions_view_mode():
+    """The tabs flag must not have displaced the existing parameter - `list_suggestions` depends
+    on it, and the two are independent."""
+    class _Docs:
+        def __init__(self): self.calls = []
+        def get(self, **kw):
+            self.calls.append(kw)
+            return _Request({})
+
+    class _S:
+        def __init__(self, d): self.docs = type("D", (), {"documents": lambda s: d})()
+
+    docs = _Docs()
+    ApiBackend(_S(docs)).get_document("f", "SUGGESTIONS_INLINE")
+    assert docs.calls[0]["suggestionsViewMode"] == "SUGGESTIONS_INLINE"
+    assert docs.calls[0]["includeTabsContent"] is True

@@ -6,6 +6,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Literal
 
+from . import _content
+
 
 @dataclass
 class Suggestion:
@@ -47,8 +49,16 @@ def _collect(el: dict, groups) -> None:
 
 
 def extract_suggestions(document: dict) -> list[Suggestion]:
+    """Suggestions across **every tab**, grouped by suggestion id.
+
+    Uses `_content.doc_tab_bodies` rather than reading `body` directly: a Doc's tabs each carry
+    their own body, and reading only the top-level one returned tab 1's suggestions and silently
+    dropped the rest. Sharing the walker is what stops that being fixed in one consumer and not
+    the others - it was the third of three here, and the easiest to forget.
+    """
     groups: OrderedDict[tuple[str, str], dict] = OrderedDict()
-    for el in document.get("body", {}).get("content", []):
-        _collect(el, groups)
+    for _title, content in _content.doc_tab_bodies(document):
+        for el in content:
+            _collect(el, groups)
     return [Suggestion(suggestion_id=g["suggestion_id"], kind=g["kind"], text="".join(g["text"]))
             for g in groups.values()]
