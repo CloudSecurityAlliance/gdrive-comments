@@ -2,6 +2,14 @@
 
 **Status:** spec, for review. Not implemented.
 **Date:** 2026-08-27
+**Claims re-verified against the code:** 2026-08-31, at v0.37.0 — this spec sat open for 88
+commits, so every existing mechanism it argues from was re-checked rather than assumed. All six
+config names it relies on (`CSA_GW_READ_ONLY`, `CSA_GW_PROFILE`, `CSA_GW_TOKEN`,
+`CSA_GW_CLIENT_SECRETS`, `CSA_GW_ALLOWLIST_READ`, `CSA_GW_ALLOWLIST_MODIFY`) still exist;
+`editor` is still a valid profile alias (→ `writer`); `read_only` still refuses before the
+backend call and still narrows the OAuth request to `.readonly`. **One claim was wrong and is
+corrected below** (the "empty modify allowlist"). The suffixed names (`CSA_GW_ACCOUNTS`,
+`CSA_GW_*_CSA`) are *proposed* by this document and do not exist yet.
 **Decision owner:** CINO
 **Related:** [`API-STABILITY.md`](../../../API-STABILITY.md) · [`SECURITY.md`](../../../SECURITY.md) ·
 [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82) (allowlisting)
@@ -113,10 +121,21 @@ access to `~/.csa_google_workspace/`, so a malicious dependency or a code-execut
 *either* process reads *both* tokens. The boundary is a process, not a privilege domain.
 
 **What actually defends here is capability gating and the allowlists** — already built, already
-fail-closed. A personal account that is `read_only` with an empty modify allowlist cannot be made
-to write by any injection, whichever tool the model is talked into calling. Per-account policy
-(§2) is that control extended to several identities, and it is the real security argument for this
-work.
+fail-closed. A personal account that is `read_only` cannot be made to write by any injection,
+whichever tool the model is talked into calling: `Document._require_writable()` and
+`CommentsMixin.create_comment` refuse *before* the backend call, and `read_only` also narrows the
+OAuth request to `.readonly` scopes, so the token itself cannot carry the authority.
+
+**Not "an empty modify allowlist"** — an earlier draft of this section said that, and it is not a
+configurable state. `allowlist.py` **refuses to start** on one: *"Refusing to run with an empty
+allowlist, because that is indistinguishable from a typo."* That is deliberate, and it makes the
+point above stronger rather than weaker — the config cannot silently degrade to permitting
+nothing, so "this account may not write" has to be said out loud (`read_only`, or a profile that
+excludes writes) rather than achieved by leaving something blank. A control you can enable by
+accident is one you can disable by accident.
+
+Per-account policy (§2) is that control extended to several identities, and it is the real
+security argument for this work.
 
 Two ways **B is better** against the primary risk:
 
