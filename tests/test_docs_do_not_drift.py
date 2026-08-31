@@ -314,3 +314,134 @@ class TestTheProfileTableMatchesThePolicy:
         assert not set(IRREVERSIBLE) & PROFILES["writer"], (
             "an irreversible capability reachable from `writer` would make the ladder's whole "
             "ordering meaningless")
+
+
+# This repository deliberately RECORDS what a document used to get wrong, next to the correction
+# — it is how the reasoning survives, and this file is full of the practice. That collides with
+# any guard that greps for the wrong sentence, because a quotation of it looks identical to an
+# assertion of it.
+#
+# The convention that resolves it: a historical aside is wrapped in `*( ... )*`. Guards strip
+# those spans before asserting, so "here is what this used to say" stays free to write while
+# "here is what is true" stays checked. `scripts/check_doc_claims.py` states the same rule in
+# prose — if a claim is deliberately historical, say so in the text.
+_HISTORICAL_ASIDE = re.compile(r"\*\(.*?\)\*", re.DOTALL)
+
+
+def without_historical_notes(text: str) -> str:
+    """`text` with `*( ... )*` asides removed, so a quoted mistake is not read as a live claim."""
+    return _HISTORICAL_ASIDE.sub(" ", text)
+
+
+class TestSecurityMdDescribesTheACTUALDefaults:
+    """The three claims `SECURITY.md` had backwards until 2026-08-31, all in the same direction.
+
+    v0.31.0 reversed the defaults — everything on, both allowlists `*` — and the security document
+    went on saying the opposite for several releases:
+
+    * *"The default refuses rename/move, trash and share"* — all three are enabled.
+    * *"Both fail closed in the MCP server: unset means nothing is permitted"* — unset means every
+      file. What fails closed is a **malformed** list, which is a different statement.
+    * a section headed *"Read-only by default"* — `CSA_GW_READ_ONLY` is off unless set.
+
+    **Every one understated the reach**, which is the dangerous direction: a reader who believes
+    the default is narrow does not narrow it. This is the same failure the `describe` resource had
+    at the same time, so it is not a coincidence of one file — it is what happens when a default
+    changes and the prose describing it lives somewhere else.
+
+    Pinned against the constants rather than against a form of words, so a rewrite is free and a
+    reversal is not.
+    """
+
+    def _security(self) -> str:
+        path = ROOT / "SECURITY.md"
+        if not path.exists():
+            pytest.skip("SECURITY.md is not in this tree")
+        return without_historical_notes(path.read_text(encoding="utf-8"))
+
+    def test_it_does_not_claim_the_default_refuses_what_the_default_allows(self):
+        from csa_google_workspace.policy import DEFAULT_ENABLED
+
+        text = self._security()
+        for capability, phrase in (("file.update", "rename/move"),
+                                   ("file.trash", "trash"),
+                                   ("file.share", "share")):
+            if capability in DEFAULT_ENABLED:
+                assert f"default\n  refuses {phrase}" not in text, (
+                    f"{capability} is enabled by default and SECURITY.md says it is refused")
+        assert "The default\n  refuses rename/move, trash and share" not in text
+
+    def test_it_states_the_capability_default_correctly(self):
+        """Asserted positively as well, because deleting the false sentence and saying nothing
+        would also pass the test above while leaving a reader with no answer."""
+        from csa_google_workspace.policy import DEFAULT_DISABLED
+
+        text = self._security().lower()
+        if not DEFAULT_DISABLED:
+            assert "enabled by default" in text, (
+                "everything is on by default and SECURITY.md does not say so anywhere")
+
+    def test_it_does_not_claim_an_unset_allowlist_permits_nothing(self):
+        """`unset` and `malformed` are different, and only one of them fails closed. Conflating
+        them is how the sentence came to claim a bound that is not there."""
+        from csa_google_workspace.mcp._config import settings_from_env
+
+        unset = settings_from_env({})
+        if unset.policy.modify.all_files:
+            text = self._security()
+            assert "unset means nothing is\n  permitted" not in text
+            assert "unset means nothing is permitted" not in text
+
+    def test_no_heading_claims_read_only_is_the_default(self):
+        from csa_google_workspace.mcp._config import settings_from_env
+
+        if settings_from_env({}).read_only:
+            pytest.skip("read-only really is the default now; the heading would be correct")
+        text = self._security()
+        assert "## Read-only by default" not in text, (
+            "read_only is OFF unless set; a heading saying otherwise is the most inviting "
+            "sentence in the file to get backwards")
+
+
+class TestTheReadmeDoesNotContradictTheProfileLadder:
+    """README footnote 7 said the file-lifecycle tools were *"off in every profile but `full`"*
+    and that *"the default `editor` profile cannot rename, share or trash anything"*.
+
+    Three things wrong by v0.31.0, and the document disagreed with itself: `writer` **may** rename
+    and trash (both reversible), nothing is off by default, and there is no default profile at all.
+    The profile table a few hundred lines above it said the right thing the whole time.
+
+    Pinned against `PROFILES` rather than against wording, so the prose can be rewritten freely and
+    only a false claim fails.
+    """
+
+    def _readme(self) -> str:
+        return without_historical_notes((ROOT / "README.md").read_text(encoding="utf-8"))
+
+    def test_it_does_not_claim_writer_cannot_rename_or_trash(self):
+        from csa_google_workspace.policy import PROFILES
+
+        writer = PROFILES["writer"]
+        text = self._readme()
+        if "file.update" in writer and "file.trash" in writer:
+            assert "cannot rename, share or trash anything" not in text, (
+                "`writer` holds file.update and file.trash; the README says it holds neither")
+
+    def test_it_does_not_call_any_profile_the_default(self):
+        """Nothing is a default profile — an unset `CSA_GW_PROFILE` means every capability, not a
+        named rung. Calling one "the default" invites an operator to assume a bound exists."""
+        text = self._readme()
+        for profile in ("editor", "writer", "commenter", "reader", "organizer", "full"):
+            assert f"default `{profile}` profile" not in text, (
+                f"README calls `{profile}` the default profile; there is no default profile")
+
+    def test_capabilities_the_readme_calls_organizer_only_really_are(self):
+        """The claim worth keeping true, since it is the one an operator leans on: `file.share`
+        is the capability that moves data out of the organisation, and it must not become
+        reachable from a lower rung without this sentence changing."""
+        from csa_google_workspace.policy import PROFILES
+
+        if "`file.share` is not, in effect" in self._readme():
+            reachable = {p for p, caps in PROFILES.items() if "file.share" in caps}
+            assert reachable == {"organizer"}, (
+                f"README says file.share is organizer-only; it is reachable from {reachable}")

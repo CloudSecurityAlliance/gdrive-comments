@@ -8,10 +8,10 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 It is meant to be **embedded in AI tooling** — MCP servers, agent/LLM plugins, review bots, automation services — that read, triage, and write back Google Workspace comments/content. The `Workspace(backend=…)` seam + `Backend` protocol (run-as-a-service / DI) exist for exactly that.
 
-- **Shipped (all live-verified; the six phase plans are in `docs/superpowers/plans/`):** comment management (list/filter/create/reply/resolve/reopen/edit/soft-delete); content read (`as_text`/`export`, `Doc.paragraphs`, `Sheet.values`/`tabs`, `Slides.slides`/notes); content write (Docs `replace_text`/`insert_text`/`append_text`/`delete_range`; Sheets `update`/`append_rows`/`clear`; Slides `replace_text`/`insert_text` + `Slide.shape_ids`; `batch_update` on each; all `read_only`-gated); Sheets comment→cell mapping (`Comment.location`, `sheet.comments_by_cell`, `create_comment(cell=)` deep-link); Docs suggestions read (`Doc.suggestions`, `as_text(suggestions="accepted"|"rejected"|"inline")`).
+- **Shipped (all live-verified; the six phase plans are in `docs/superpowers/plans/`):** comment management (list/filter/create/reply/resolve/reopen/edit/soft-delete); content read (`as_text`/`export`, `Doc.paragraphs`, `Sheet.values`/`tabs`, `Slides.slides`/notes); content write (Docs `replace_text`/`insert_text`/`append_text`/`delete_range`; Sheets `update`/`append_rows`/`clear`; Slides `replace_text`/`insert_text` + `Slide.shape_ids`; `batch_update` on each; all `read_only`-gated); Sheets comment→cell mapping (`Comment.location`, `sheet.comments_by_cell(cell, tab=)`, `create_comment(cell=)` deep-link) **including which tab** (v0.37.0, #290); tab management on both axes (`Sheet.add_tab`/`delete_tab`/`tab_details`, `Doc.add_tab`/`delete_tab`/`document_tabs`, v0.36.0); Docs suggestions read (`Doc.suggestions`, `as_text(suggestions="accepted"|"rejected"|"inline")`).
 - **Deferred (tracked, not bugs):** accept/reject of suggestions & true cell-anchored comment creation — API-impossible, reserved for a future `PlaywrightBackend`. (`Location.tab` resolution **shipped 2026-08-31**, #290.)
 
-**Phase 2 — the built-in MCP server (`csa_google_workspace.mcp`) — shipped in v0.2.2.** A local stdio server: **40 tools** as of v0.35.0 (it shipped with nine), each with structured output and read-only/destructive annotations, per-user OAuth, an `[mcp]` optional extra, and the `csa-google-workspace-mcp` console script. Spec: [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md) — read it before touching the module; its architecture deliberately **mirrors the library's own composition** (`create_server(get_workspace)` parallels `Workspace`; per-axis `register_*` tool producers parallel `CommentsMixin` / `documents/`).
+**Phase 2 — the built-in MCP server (`csa_google_workspace.mcp`) — shipped in v0.2.2.** A local stdio server: **50 tools** as of v0.37.0 (it shipped with nine), each with structured output and read-only/destructive annotations, per-user OAuth, an `[mcp]` optional extra, and the `csa-google-workspace-mcp` console script. Spec: [`docs/superpowers/specs/2026-07-23-mcp-server-design.md`](docs/superpowers/specs/2026-07-23-mcp-server-design.md) — read it before touching the module; its architecture deliberately **mirrors the library's own composition** (`create_server(get_workspace)` parallels `Workspace`; per-axis `register_*` tool producers parallel `CommentsMixin` / `documents/`).
 
 Five SDK facts that cost time to find, all verified against `mcp` 2.1.0 rather than docs: **`mcp.server.fastmcp` no longer exists** (`FastMCP` became `MCPServer` in SDK 2.0); **sync tool handlers run on worker threads** (`anyio.to_thread.run_sync`), which is why the `Workspace` provider is thread-local — a shared one would put a non-thread-safe `googleapiclient` client on several threads; **a plain exception becomes `UnexpectedToolError` with the message suppressed**, so user-facing text must be raised as the SDK's `ToolError`; and **a bare `dict` return is not serializable for structured output**, hence the `TypedDict`s in `_schemas.py` (which must come from `typing_extensions` below Python 3.12, or pydantic silently emits no schema); and **a pydantic `Field(alias=…)` on a tool parameter is a trap** — the published schema shows the alias and then every call fails, because the SDK dumps the validated model *by alias* and calls `fn(**kwargs)`, so the handler receives `fileId=`, raises `TypeError`, and surfaces as a message-suppressed `UnexpectedToolError`. A camelCase wire name must be the **literal** Python parameter name. (Also: `Tool.input_schema`, not `inputSchema` — renamed in 2.x.)
 
@@ -58,6 +58,9 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
 - `labels.py` — **v0.34.0**: `Label` + `LabelsMixin`. What a document is *classified* as, and **read-only by construction** — the `drive.labels` write scope is never requested, so no configuration permits relabelling. Takes **two APIs**: Drive v3 says *which* labels, only `drivelabels` says what they are *called*. When the second is unreachable, labels come back named `None` with a reason — **never dropped**, because reporting a classified document as unclassified is the dangerous direction.
 - `files.py` — **the account axis**: `FileCollection` (`workspace.files`) + `FileRef`. The one place that is *not* reached through `open(file_id)`, because you cannot open a file you are searching for.
 - `suggestions.py` — `Suggestion` + read-only suggestion extraction (grouped by suggestion id).
+- `_export.py` / `_apply.py` — **the register round trip**, and the two audiences named in `_export`'s own docstring are *neither of them an AI*: somebody who would rather work in a spreadsheet, and another tool (a notebook, a BI query, `grep`). `_export` writes flat rows — one per comment *and* per reply, `reply_to` naming the thread — as CSV, a formatted `.xlsx`, or a new Google Sheet (**v0.37.0**: the sheet is now built by uploading that same formatted workbook, which is safe *only* because the file is created in the same call — see `to_xlsx_bytes`). `_apply` reads a filled-in register back and posts the replies and resolutions, with **two layers of idempotency** because one is not enough: a `*_completed` tick is the fast path, and the live thread is checked too, since the interesting failure is posting a reply and dying before the tick is written.
+- `_formats.py` — which export conversions Drive actually offers, **per document type** (a Doc exports Markdown; a deck does not). Probed from `drive.about.get(exportFormats)`, not remembered.
+- `_environment.py` — the facts a bug report needs and nothing that identifies a document. Written to be pasted into a *public* tracker, so no file ids, titles, emails or paths; `Policy` scopes are reported by **shape** ("unrestricted", "3 files"). The opposite choice from `describe_configuration`, which does list ids — same facts, different destination.
 - `_cellmap.py` — Sheets comment→cell mapping: XLSX-export → parse `threadedComments` (defusedxml) → A1, **plus the tab** (#290): a three-hop walk of `workbook.xml` → `_rels/workbook.xml.rels` → each sheet's rels → its `threadedComments` part. **Walk it, never guess it** — a real Google export numbers the first sheet `rId5`, and relationship `Target`s are relative. Degrades **asymmetrically on purpose**: a damaged graph costs the *tab* and never the *cell*, and an unresolved tab stays `None` rather than defaulting to the first sheet. Sheet identity cannot break `match_locations` ties — the lookup side is a Drive comment, which carries no sheet at all.
 - `_content.py` — plain-text extraction walkers for Docs/Slides.
 - `exceptions.py` — typed error hierarchy.
@@ -97,10 +100,12 @@ pip install -e ".[dev]"        # install (src/ layout, Python >=3.10)
                                 # add a dependency to pyproject.toml, run scripts/lock.sh, or
                                 # tests/test_lockfiles.py fails on your PR.
 pytest -q                       # unit suite — no network, no credentials (uses FakeBackend).
-                                # Currently ~730 passed, 12 skipped, a few seconds. The 12 skips
-                                # are the two gated suites below (9 integration + 3 oauth) —
-                                # `-rs` shows why. A skip count of 0 means a gate leaked and they
-                                # RAN for real, against somebody's actual Drive.
+                                # Currently ~1620 passed, 14 skipped, ~25s. The skips are the two
+                                # gated suites below (integration + oauth) plus two that skip on a
+                                # policy state — `-rs` shows why. A LOW count means a gate leaked
+                                # and the live suites RAN, against somebody's actual Drive.
+python scripts/check_doc_claims.py   # what the docs claim vs what the code does. Advisory;
+                                # --strict exits non-zero. Weekly in CI, opens ONE issue.
 ruff check src tests && mypy    # lint + type-check (the CI `lint` job). mypy needs no args —
                                 # pyproject pins files = ["src"].
 
@@ -163,6 +168,23 @@ around it quietly.
 - **Branch + PR for every change** (never commit to `main`); merge when CI is green. Branch names use conventional prefixes (`feat/`, `fix/`, `docs/`, `chore/`).
 - **Commits** use conventional prefixes with short imperative subjects — the set actually in use is `docs:` · `feat:` · `fix:` · `test:` · `ci:` · `chore:` · `security:` · `enh:` · `release:` (e.g. `fix: preserve deleted comment metadata`). A PR body should say what behavior changed, which tests were run, link the related plan/spec, and call out any Google API or credential implications.
 - **Public API is the package root.** Anything users are meant to touch is re-exported from `csa_google_workspace/__init__.py` and listed in `__all__` — including the types embedders need for custom backends (`Backend`, `Document`, `CommentCollection`, `DetachedError`). Adding a user-facing type means adding it there. Note that `tests/test_public_api.py` only asserts a required **subset** of `__all__` — it will not catch a new type you forgot to export, so that step is on you.
+- **The docs drift, and that is planned for rather than denied** (adopted 2026-08-31). The prose
+  here IS the design record, so a stale sentence is what the next change gets built on — and with a
+  release most weeks, claims rot faster than anyone notices. Three layers:
+  `scripts/check_doc_claims.py` **enumerates reality and compares** (tool names, capability names,
+  env vars, counts, the `INTERFACE-RESOURCES.md` inventory, modules missing from the layout section
+  above); `.github/workflows/doc-claims.yml` runs it weekly and opens **one** issue;
+  `tests/test_docs_do_not_drift.py` gates the specific claims that have already gone wrong. It is
+  advisory rather than a required check on purpose — failing a PR because a paragraph has not caught
+  up trains people to write a hollow sentence to get green.
+  **Two rules it exists to enforce.** Never ask *"is the right string present"* — that is how
+  `INTERFACE-RESOURCES.md` kept a `v0.2.3` claim through thirty-five releases under a repeatedly
+  refreshed "Last verified" date. And **a test whose assertions live inside `for x in COLLECTION`
+  is not a check when the collection is empty**: two guards passed vacuously when `DEFAULT_DISABLED`
+  became empty in v0.31.0, while the text they guarded said the default excluded capabilities it
+  included. Empty is the case to test, not the case to skip.
+  **Historical notes are wrapped in `*( … )*`** and the guards strip those spans, so recording what
+  a document used to get wrong stays compatible with asserting what is true now.
 - **Externally-enforced controls are asserted, not assumed** (`scripts/check_controls.py`,
   weekly via `.github/workflows/controls.yml` and in the release build): the PyPI Trusted
   Publisher constrained to the `pypi` environment, that environment's required reviewers, and

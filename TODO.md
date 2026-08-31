@@ -1474,10 +1474,11 @@ This was the honest ceiling of the Python client — but several items are close
   irreversible delete.
 - [ ] ~~`files.generateCseToken`~~ — client-side encryption tokens; no reviewer workflow needs it.
 
-### Docs v1 — we use 3 of 40 `batchUpdate` request types
+### Docs v1 — we use 5 of 40 `batchUpdate` request types
 
 `documents.get` / `create` / `batchUpdate` are the only three methods; everything lives in the
-request types. We use `replaceAllText`, `insertText`, `deleteContentRange`. Unused, grouped:
+request types. We use `replaceAllText`, `insertText`, `deleteContentRange`, `addDocumentTab` and
+`deleteTab` — the last two since v0.36.0. Unused, grouped:
 
 - [ ] **Tables** — `insertTable`, `insertTableRow`/`Column`, `deleteTableRow`/`Column`,
   `mergeTableCells`, `unmergeTableCells`, `pinTableHeaderRows`, `updateTableCellStyle`,
@@ -1489,8 +1490,13 @@ request types. We use `replaceAllText`, `insertText`, `deleteContentRange`. Unus
 - [ ] **Images** — `insertInlineImage`, `replaceImage`, `deletePositionedObject`.
 - [ ] **Named ranges** — `createNamedRange`, `deleteNamedRange`, `replaceNamedRangeContent`.
   A stable anchor for repeated edits, which is a better primitive than raw indices.
-- [ ] **Tabs** — `addDocumentTab`, `deleteTab`, `updateDocumentTabProperties`. Relevant to the
-  deferred `Location.tab` work.
+- [x] ~~**Tabs** — `addDocumentTab`, `deleteTab`~~ — **done 2026-08-31** (v0.36.0):
+  `Doc.add_tab`/`delete_tab`/`document_tabs` and the Sheets pair, with six MCP tools. What
+  remains here is **`updateDocumentTabProperties`** — renaming or reordering a tab, which nothing
+  in this library can do on either axis (there is no `updateSheetProperties` call either, so a
+  Sheets tab cannot be renamed or moved). Add/delete/list is a complete enough set that renaming
+  is a convenience rather than a gap, but "rename this tab" is a request a user will make.
+  *(The `Location.tab` work this entry called deferred shipped in v0.37.0, #290.)*
 - [ ] **Rich inserts** — `insertPerson` (smart chips), `insertRichLink`, `insertDate`.
 
 ### Sheets v4 — we use 6 of 17 methods

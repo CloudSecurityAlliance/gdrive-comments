@@ -95,9 +95,20 @@ What it does about it, and what it does not:
 - **`CSA_GW_CAPABILITIES` — capability gating**, the first of
   [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)'s two
   dimensions, shipped in v0.7.0. Each mutation is separately on or off: comment create, reply,
-  resolve, edit, delete; content write; file create, rename/move, trash, share. **The default
-  refuses rename/move, trash and share** — every operation that alters or exposes a file that
-  already exists.
+  resolve, edit, delete; content write and delete; file create, rename/move, trash, share.
+  **Everything is enabled by default** — all eleven — and narrowing is what an operator
+  configures. *(This reversed in v0.31.0. Until then the default refused rename/move, trash and
+  share, and this document said so for several releases after it stopped being true.)*
+  The reversal is coherent because **a capability enabled here is not a permission granted**:
+  every call still runs as the authorizing user against Drive's own ACLs, so this is a ceiling
+  *below* Drive's, never an expansion. `organizer` on a file where you are a Commenter still
+  cannot edit it.
+  **What that costs is worth stating plainly, in this document above all.** Against the primary
+  risk named above, "you could have done it anyway" is not a defence — prompt injection is
+  precisely the case where the model does what you *could* do and did not intend, and Drive's
+  ACLs cannot tell the two apart. So a default install carries no capability-level mitigation
+  against it, and the narrowing below is not optional hardening for anyone pointing this at
+  documents they care about.
   Enforced as a **`Backend` wrapper** (`PolicyBackend`), not a check in the tool layer, so an
   embedder using the library directly gets the same guarantee, and there is one place to audit.
   It **fails closed**: a `Backend` method with no declared gate is refused rather than
@@ -106,8 +117,13 @@ What it does about it, and what it does not:
   starts the server does. Session scoping that the guest can broaden is not scoping.
 - **`CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY` — file allowlists**, #82's second
   dimension, split by access kind in v0.9.0. One Google document URL per line, `#` for comments,
-  a line of `*` for everything. **Both fail closed in the MCP server**: unset means nothing is
-  permitted, and every tool says which variable to set.
+  a line of `*` for everything. **Unset means every file** — the same reversal as above, and the
+  same date. What *does* fail closed is a list somebody **tried** to write: a malformed entry, or
+  one containing no usable entries, is refused and the server does not start, because widening
+  that to everything would hand an operator the opposite of what they wrote.
+  The distinction is the useful one: **unset is somebody who has not narrowed anything; malformed
+  is somebody who tried and failed.** Only the second can be detected, so only the second fails
+  closed.
   Reads and mutations are separated because they are different risks. The intended posture is
   `READ=*` — which is what Google's and Anthropic's Drive servers effectively do, and defensible
   because the agent already sees whatever the credentials see — with `MODIFY` a short, reviewed
@@ -366,9 +382,13 @@ gap named above, from the other side. An audit trail that recorded provenance an
 answer the question people actually ask after an incident, which is not "what happened" but "who
 decided this should happen".
 
-## Read-only by default
+## Read-only — the strongest bound, and NOT the default
 
-The single most effective bound on both risks. Instantiate a `read_only=True` `Workspace` and
+`CSA_GW_READ_ONLY` is off unless you set it. The heading here read *"Read-only by default"* until
+2026-08-31, which was never true of the MCP server and stopped being true of the library's posture
+at v0.31.0 — an inviting thing for a security document to get backwards.
+
+It is still the single most effective bound on both risks, and the first thing to reach for. Instantiate a `read_only=True` `Workspace` and
 escalate to a write-capable one **deliberately, per operation** — a read-only review tool
 cannot be talked into deleting anything, and a stolen read-only token cannot mutate. `read_only`
 maps to read-only OAuth *scopes* on a fresh `from_oauth` consent; on `from_credentials` the

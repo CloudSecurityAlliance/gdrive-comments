@@ -12,7 +12,7 @@
 >
 > **Threat text is as the audit wrote it. The `status` column is current** — see §0.
 
-## 0. Status since the audit (v0.28.0 → v0.31.0)
+## 0. Status since the audit (v0.28.0 → v0.37.0)
 
 **Thirteen rows have moved status.** Three more — T1, T13 and T19 — had real work done or a
 changed basis that did *not* move their status, and are listed anyway so the work is visible and
@@ -35,7 +35,7 @@ rather than here, so the flaw trail and the fix trail stay independently reviewa
 | T15 | unmitigated | **partially_mitigated** | `update_cells` and `append_rows` default to `RAW`, so untrusted text is stored verbatim. **`USER_ENTERED` is still reachable** — see the residual below | 0.30.1 |
 | T17 | unmitigated | **mitigated** | `setuptools>=83` floor, plus the dependency pass around it | 0.30.5 |
 | T18 | unmitigated | **mitigated** | Hash-pinned lockfiles for CI and release, including the build backend inside `python -m build`'s isolated env via `PIP_CONSTRAINT` | 0.30.8 |
-| T19 | partially_mitigated | partially_mitigated | `scripts/check_controls.py` asserts the publisher's environment binding and the `pypi` environment's reviewers, weekly and in the release build. **Branch protection stays unverifiable in CI** — no `administration` permission exists for `GITHUB_TOKEN` — and covering it with a stored read-only token is deferred to 1.0.0 | 0.30.9 |
+| T19 | partially_mitigated | partially_mitigated | `scripts/check_controls.py` asserts the publisher's environment binding and the `pypi` environment's reviewers, weekly and in the release build (0.30.9). **Branch protection is now asserted too** — the fine-grained `CONTROLS_TOKEN` (`Administration: Read-only`, this repo only) was configured 2026-08-31, and the weekly run reports all three `[ok]` unattended. It **expires 2027-09-01**, on which branch protection silently reverts to *unverifiable*; `TODO.md` opens with the rotation notice. Still partial, for a smaller residual: T19 names five controls, and the two outside GitHub — the **Google Cloud consent screen and approved scopes**, and the **user's own grant** — remain unverifiable from anywhere in this repository. The §4 text and the recommendation table below still describe branch protection as unverifiable; they are the audit's frozen words, and this row is what supersedes them | 0.30.9; token 2026-08-31 |
 | T23 | unmitigated | **mitigated** | Register reads and write-backs are bounded from the zip central directory, so a declared-huge member is refused without expanding anything | 0.30.6 |
 | T27 | partially_mitigated | **mitigated** | The `pypi` environment's required reviewers are now asserted, not assumed | 0.30.9 |
 | T28 | unmitigated | **mitigated** | PKCE is requested explicitly rather than inherited from the dependency's default | 0.30.6 |

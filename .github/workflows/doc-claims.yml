@@ -1,0 +1,87 @@
+name: documentation claims are current
+
+# The prose in this repository IS the design record - specs, docstrings and README sections carry
+# reasoning nothing else records - so a stale sentence is what the next change gets built on. With
+# a release most weeks, claims go stale faster than anyone notices.
+#
+# WHY THIS IS PERIODIC RATHER THAN A REQUIRED CHECK. Some drift between releases is accepted
+# deliberately: a PR that adds a tool should not be blocked because a README paragraph has not
+# caught up yet, and forcing that trains people to write a hollow sentence to get green. The
+# specific claims that have gone wrong before ARE gated, as tests, in
+# tests/test_docs_do_not_drift.py - a named regression test is a promise about one fact. This
+# workflow is the other half: a weekly survey that enumerates reality and asks the documents about
+# all of it, so a claim nobody thought to pin still gets checked.
+#
+# It opens an ISSUE rather than a pull request, for the same reason relock.yml does: a PR created
+# with the repository's GITHUB_TOKEN does not trigger other workflows, so it would arrive with zero
+# checks and could never merge past branch protection - while LOOKING reviewed.
+#
+# Longer term the goal is to reduce drift at the source rather than detect it after the fact. Even
+# then this should keep running: the value is noticing something new and strange, not confirming
+# the shapes we already know about.
+
+on:
+  schedule:
+    - cron: "41 6 * * 3"     # Wednesdays, 06:41 UTC - a day after the lockfile check, so two
+                             # maintenance issues do not arrive together and get triaged as one.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  claims:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      # The hash-pinned closure, like every other job here - the checker imports the package to
+      # enumerate the real tool surface, so it needs the dependencies installed.
+      - name: Install the pinned closure
+        run: |
+          pip install --require-hashes -r requirements/dev.txt
+          pip install --no-deps -e .
+      - name: Check what the documentation claims
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python scripts/check_doc_claims.py --strict > report.txt 2>&1; then
+            echo "Documentation claims agree with the code."
+            cat report.txt >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cat report.txt >> "$GITHUB_STEP_SUMMARY"
+
+          # One open issue at a time. A weekly duplicate would train people to close it unread,
+          # which is how a maintenance signal stops being one.
+          existing=$(gh issue list --state open --label documentation --limit 1 --json number \
+                       --jq '.[0].number // empty')
+          {
+            echo "\`scripts/check_doc_claims.py\` found claims in the documentation that the"
+            echo "code no longer supports."
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+            echo
+            echo "Each line is either a stale document or a code change nobody wrote down."
+            echo "**Fix whichever is stale** - and if a claim is deliberately historical, say so"
+            echo "in the text so it reads as a quotation rather than an assertion about now."
+            echo
+            echo "Note what this does NOT check: whether a paragraph's *reasoning* is still true."
+            echo "That is the more valuable half and it is not mechanically checkable, so a clean"
+            echo "run means \"no contradiction found\", never \"the documentation is correct\"."
+            echo
+            echo "_Opened automatically by \`.github/workflows/doc-claims.yml\`._"
+          } > body.md
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+          else
+            gh issue create --title "Documentation claims disagree with the code" \
+              --label documentation --body-file body.md
+          fi
