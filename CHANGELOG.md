@@ -10,6 +10,40 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-31 — v0.36.1 (the version a client sees) — not released
+
+**RR-002**, found by an external audit and true since the MCP server first shipped.
+
+`MCPServer` defaults `version` to `""`, and this project never passed it — so **every MCP client
+showed this server as version-less on the wire**, while `describe_configuration` correctly
+reported the real one:
+
+```
+before:  serverInfo: {"name": "csa-google-workspace", "version": ""}
+after:   serverInfo: {"name": "csa-google-workspace", "version": "0.36.0"}
+```
+
+Two sources of truth for one fact, and the blank one is the one clients display. So *"which
+version are you running?"* — the first question on any bug report — had no answer a user could read
+off their client.
+
+### Why it survived so long, and why it gets six tests
+
+One keyword argument, invisible in review, with a default that is **falsy rather than absent**.
+Nothing raised, nothing warned, and the wire response stayed perfectly well-formed. That is the
+shape that regresses during a refactor of the constructor call — which sits right beside the
+per-flavour `instructions` composition, so a future edit there could plausibly drop one while
+adjusting the other.
+
+`tests/test_server_version_on_the_wire.py` therefore checks it is non-empty, *looks like a
+version* (so a hardcoded literal drifting from `__version__` is caught too), **agrees with
+`describe_configuration`** — the equality that was the actual defect — and survives every flavour
+and the no-`Settings` embedder path.
+
+Verified by falsification: dropping the argument again fails all six.
+
+Full suite: 1570 passed, 12 skipped.
+
 ## 2026-08-31 — v0.36.0 (the write surface goes both ways now)
 
 Closes **#278** and **#279**. **50 tools**, up from 40, and an **11th capability**.

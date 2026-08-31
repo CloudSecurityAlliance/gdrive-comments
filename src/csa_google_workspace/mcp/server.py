@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from mcp.server import MCPServer
 
+from .. import __version__
 from . import _flavours
 from ._config import Settings
 from ._resources import register_resources
@@ -96,7 +97,11 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     # The flavour note is appended at construction because `instructions` is read-only
     # afterwards. It carries the rule, not the counts; `describe_configuration` has those.
     flavour = settings.flavour if settings else _flavours.DEFAULT_FLAVOUR
-    app = MCPServer(name=name,
+    # `version` is NOT optional in practice, though the SDK defaults it to "". Without it every
+    # MCP client shows this server as version-less on the wire, while `describe_configuration`
+    # reports the real one - two sources of truth for the same fact, one of them blank. Found by
+    # an external audit (RR-002), and it had been that way since the server shipped.
+    app = MCPServer(name=name, version=__version__,
                     instructions=INSTRUCTIONS + _flavours.instruction_note(flavour))
     register_content_tools(app, get_workspace)
     register_file_tools(app, get_workspace)
