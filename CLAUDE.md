@@ -104,6 +104,8 @@ pytest -q                       # unit suite — no network, no credentials (use
                                 # gated suites below (integration + oauth) plus two that skip on a
                                 # policy state — `-rs` shows why. A LOW count means a gate leaked
                                 # and the live suites RAN, against somebody's actual Drive.
+python scripts/check_doc_claims.py   # what the docs claim vs what the code does. Advisory;
+                                # --strict exits non-zero. Weekly in CI, opens ONE issue.
 ruff check src tests && mypy    # lint + type-check (the CI `lint` job). mypy needs no args —
                                 # pyproject pins files = ["src"].
 
@@ -166,6 +168,23 @@ around it quietly.
 - **Branch + PR for every change** (never commit to `main`); merge when CI is green. Branch names use conventional prefixes (`feat/`, `fix/`, `docs/`, `chore/`).
 - **Commits** use conventional prefixes with short imperative subjects — the set actually in use is `docs:` · `feat:` · `fix:` · `test:` · `ci:` · `chore:` · `security:` · `enh:` · `release:` (e.g. `fix: preserve deleted comment metadata`). A PR body should say what behavior changed, which tests were run, link the related plan/spec, and call out any Google API or credential implications.
 - **Public API is the package root.** Anything users are meant to touch is re-exported from `csa_google_workspace/__init__.py` and listed in `__all__` — including the types embedders need for custom backends (`Backend`, `Document`, `CommentCollection`, `DetachedError`). Adding a user-facing type means adding it there. Note that `tests/test_public_api.py` only asserts a required **subset** of `__all__` — it will not catch a new type you forgot to export, so that step is on you.
+- **The docs drift, and that is planned for rather than denied** (adopted 2026-08-31). The prose
+  here IS the design record, so a stale sentence is what the next change gets built on — and with a
+  release most weeks, claims rot faster than anyone notices. Three layers:
+  `scripts/check_doc_claims.py` **enumerates reality and compares** (tool names, capability names,
+  env vars, counts, the `INTERFACE-RESOURCES.md` inventory, modules missing from the layout section
+  above); `.github/workflows/doc-claims.yml` runs it weekly and opens **one** issue;
+  `tests/test_docs_do_not_drift.py` gates the specific claims that have already gone wrong. It is
+  advisory rather than a required check on purpose — failing a PR because a paragraph has not caught
+  up trains people to write a hollow sentence to get green.
+  **Two rules it exists to enforce.** Never ask *"is the right string present"* — that is how
+  `INTERFACE-RESOURCES.md` kept a `v0.2.3` claim through thirty-five releases under a repeatedly
+  refreshed "Last verified" date. And **a test whose assertions live inside `for x in COLLECTION`
+  is not a check when the collection is empty**: two guards passed vacuously when `DEFAULT_DISABLED`
+  became empty in v0.31.0, while the text they guarded said the default excluded capabilities it
+  included. Empty is the case to test, not the case to skip.
+  **Historical notes are wrapped in `*( … )*`** and the guards strip those spans, so recording what
+  a document used to get wrong stays compatible with asserting what is true now.
 - **Externally-enforced controls are asserted, not assumed** (`scripts/check_controls.py`,
   weekly via `.github/workflows/controls.yml` and in the release build): the PyPI Trusted
   Publisher constrained to the `pypi` environment, that environment's required reviewers, and
