@@ -72,9 +72,39 @@ def needs_reconsent(granted: list[str], required: list[str]) -> bool:
     return False
 
 
+class ScopesMissingError(AuthError):
+    """A cached token exists and is loadable, but is short of scopes.
+
+    Its own type, not a message, because the CALLER needs to word things differently: "your
+    login is fine but one scope short" is a different instruction from "you have not logged in",
+    and the fix is the same command while the explanation is not. `scopes` is the difference,
+    shortened to leaf names for reading - the full URLs are noise in a terminal.
+    """
+
+    def __init__(self, missing: list[str]) -> None:
+        self.scopes = list(missing)
+        leaves = ", ".join(s.rsplit("/", 1)[-1] for s in self.scopes)
+        super().__init__(
+            f"cached credentials lack {len(self.scopes)} required scope(s): {leaves}. The token "
+            f"itself is present and valid - it was issued before this version needed that "
+            f"scope - so this is a re-consent, not a lost login.")
+
+
 def _read_cached(token_path: str, required: list[str], *,
-                 read_only: bool = False) -> Credentials | None:
-    """The token cache, or None if absent / scope-stale — both meaning 'consent is needed'."""
+                 read_only: bool = False,
+                 explain_missing_scopes: bool = False) -> Credentials | None:
+    """The token cache, or None if absent / scope-stale — both meaning 'consent is needed'.
+
+    `explain_missing_scopes` picks which of two callers is asking, and they genuinely want
+    opposite things:
+
+    * the **interactive** path (`load_credentials`) treats a scope-short token as "go and get
+      consent" and falls through to the browser flow, so it wants a bare `None`. Raising here
+      broke that fallback, which is why this is a flag rather than a change of behaviour;
+    * the **non-interactive** path (`load_cached_credentials`, the stdio MCP server) cannot
+      prompt, so `None` becomes a message a human reads — and it must say the token is present
+      and one scope short rather than absent.
+    """
     if not os.path.exists(token_path):
         return None
     try:
@@ -104,8 +134,17 @@ def _read_cached(token_path: str, required: list[str], *,
             "full-Drive one with writes blocked in software. Run the login again with "
             "CSA_GW_READ_ONLY=1 set to consent to read-only scopes; it is written to a separate "
             "cache file, so the read-write token you already have is left untouched.")
-    if needs_reconsent(granted, required):
-        return None
+    missing = [s for s in required if s not in set(granted)]
+    if missing and explain_missing_scopes:
+        # NAME THE MISSING SCOPES. Returning a bare None here was the whole of the defect: a
+        # token that is present, valid, and one scope short is indistinguishable from no token
+        # at all, and the caller's message then said "no usable token" about a file sitting
+        # right there. v0.34.0 is the first release that can produce this state - adding
+        # `drive.labels.readonly` made every existing working token insufficient - and every
+        # future scope addition does it again.
+        raise ScopesMissingError(missing)
+    if missing:
+        return None                     # interactive caller: fall through to consent
     return creds
 
 
@@ -173,9 +212,12 @@ def load_cached_credentials(token_path: str, read_only: bool) -> Credentials:
                 " for a read-only posture. CSA_GW_READ_ONLY=1 uses its own cache file, so a "
                 "read-write token elsewhere does not satisfy it - run the login again with "
                 "CSA_GW_READ_ONLY=1 set." if read_only else ""))
-    creds = _read_cached(token_path, scopes_for(read_only), read_only=read_only)
+    # `_read_cached` now raises `ScopesMissingError` (naming the scopes) rather than returning
+    # None for a scope-short token, so a None here means only "nothing loadable".
+    creds = _read_cached(token_path, scopes_for(read_only), read_only=read_only,
+                         explain_missing_scopes=True)
     if creds is None:
-        raise AuthError("cached credentials lack the required scopes")
+        raise AuthError("no usable cached credentials")
     if creds.valid:
         return creds
     if creds.expired and creds.refresh_token:

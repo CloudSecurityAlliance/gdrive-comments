@@ -57,16 +57,32 @@ def unauthorized_message(token_path: str, reason: str) -> str:
     (d) tell the model to ask the user rather than trying to fix it itself — a capable model
     given only "no credentials" will otherwise start hunting the filesystem, which is
     exactly what happened before this message said so.
+
+    (c) is the one that had a bug: it *asserted* where it looked instead of checking. A token
+    that exists and is one scope short is a different situation from no token, needs a
+    different sentence, and needs `login --force` rather than `login` — because a plain `login`
+    can see a loadable token and decline to do anything.
     """
+    # LOOK, rather than assume. This used to say "No usable token at <path>" unconditionally,
+    # including when the token was sitting right there and merely short of a scope - so the
+    # sentence contradicted the `reason` beside it and sent people hunting for a missing file.
+    # v0.34.0 was the first release that could produce that state, by adding a scope every
+    # existing token predated.
+    exists = os.path.exists(os.path.expanduser(token_path))
+    # Deliberately terse: `reason` already explains WHY (and, for a scope shortfall, that it is
+    # a re-consent). This clause only has to be honest about the path, and saying the same thing
+    # twice in one paragraph reads like a template rather than an answer.
+    where = (f"The token at {token_path} is present but not sufficient."
+             if exists else f"No token at {token_path}.")
     return (
         f"Not authorized to reach Google yet ({reason}). "
-        f"No usable token at {token_path}.\n"
+        f"{where}\n"
         f"\nTwo ways to fix this, easiest first:\n"
         f"  1. Call the `authenticate` tool. It sends the user a Google sign-in link right "
         f"here — no terminal needed. (Requires a client that supports URL elicitation; "
         f"Claude Code does, Claude Desktop does not yet.)\n"
         f"  2. Or have the user run this in a terminal, once:\n"
-        f"       {_launcher()} login\n"
+        f"       {_launcher()} login{' --force' if exists else ''}\n"
         f"\nAsk the user to do one of these and wait for them. Do not retry other tools "
         f"until authorization completes, and do not try to locate or read credential files "
         f"yourself."
