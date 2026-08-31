@@ -41,6 +41,15 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = ["README.md", "CLAUDE.md", "INTERFACE-RESOURCES.md"]
 
 # "34 tools", "nine tools", "34-tool server"
+# Matches "40 tools" / "40-tools" and nothing else. NOTE, measured 2026-08-31: after the
+# competitor survey landed, this pattern finds NO self-counts in README.md at all - it phrases
+# its own totals as "**Tools** - 40," and "| MCP tools | 8 | 11 | **40** |", neither of which is
+# `<n> tools`. So this test's README coverage is currently VACUOUS, not merely redundant.
+#
+# That is tolerable only because README's count is genuinely guarded elsewhere:
+# `test_readme_tools.py::test_the_stated_count_matches` and
+# `test_the_stated_tool_counts_are_arithmetic_that_holds` both fail on a wrong total (verified by
+# changing it). If those ever go, widen this pattern rather than trusting the green tick here.
 COUNT = re.compile(r"\b(\d+|nine|ten|eleven|twelve)[\s-]tools?\b", re.I)
 WORDS = {"nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
 
@@ -57,8 +66,15 @@ def tool_count():
 # party, which this test explicitly does not police - they cannot be computed from here, and
 # they are covered instead by the verification date on the comparison table. Without this, the
 # first version of this test flagged README's "8 tools" for Google's Drive server as our drift.
+#
+# The second group is the COMMUNITY servers surveyed in README's "wider field" table. Added
+# 2026-08-31 when that table landed: `piotr-agier ships 115 tools` was read as this project
+# claiming 115, because the line names a competitor rather than Google. Their counts are no more
+# computable from here than Google's are, and the survey's own verification date covers them.
 ABOUT_SOMEONE_ELSE = re.compile(
-    r"google|claude\.ai|claude's|drivemcp|docsmcp|sheetsmcp|slidesmcp|connector|theirs", re.I)
+    r"google|claude\.ai|claude's|drivemcp|docsmcp|sheetsmcp|slidesmcp|connector|theirs"
+    r"|piotr-agier|taylorwilsdon|a-bonus|aaronsb|isaacphi|felores|dbuxton|phact"
+    r"|stanislawherjan|us-all|composio|klavis|pipedream|zapier", re.I)
 
 
 def stated_counts(text: str) -> list[int]:

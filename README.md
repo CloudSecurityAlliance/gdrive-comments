@@ -590,9 +590,14 @@ those get read first.
 
 ## How this compares to the other Drive MCP servers
 
-There are two other ways to reach Google Drive from an AI client, and **for many people they
-are the better choice.** This table exists so you can tell which one fits, not to argue for
-this one.
+There are **many** other ways to reach Google Drive from an AI client, and **for many people
+they are the better choice.** These tables exist so you can tell which one fits, not to argue
+for this one.
+
+The first comparison is against the two servers whose *tool names this project deliberately
+matches* — Google's own and the claude.ai connector — because those are the ones a person
+might swap this in for. [The wider field](#the-wider-field--every-drivedocs-mcp-server-we-could-find)
+follows, and two of those community servers are **larger than this one**.
 
 ### Environment
 
@@ -640,6 +645,59 @@ server as well as the library, since v0.13.0.
 
 That last claim is about **these three servers**, and Google ships more than one. See the next
 section, which bounds it properly.
+
+### The wider field — every Drive/Docs MCP server we could find
+
+**Surveyed 2026-08-31**, star counts and last-push dates read from the GitHub API, tool lists and
+comment support read from each project's own tool reference or source — not from its README's
+claims. `research/server-landscape.md` has the longer write-up.
+
+| server | ★ | lang | last push | tools | comments |
+|---|---|---|---|---|---|
+| [taylorwilsdon/google_workspace_mcp](https://github.com/taylorwilsdon/google_workspace_mcp) | 3095 | Python | 2026-08-30 | 12+ services | create · reply · resolve |
+| [piotr-agier/google-drive-mcp](https://github.com/piotr-agier/google-drive-mcp) | 209 | TS | 2026-08-21 | **115** | Docs only: list · get · add · reply · delete |
+| [a-bonus/google-docs-mcp](https://github.com/a-bonus/google-docs-mcp) | 649 | TS | 2026-08-10 | Docs·Sheets·Drive·Gmail·Cal | full CRUD, Docs **and** Sheets |
+| [aaronsb/google-workspace-mcp](https://github.com/aaronsb/google-workspace-mcp) | 171 | TS | 2026-08-31 | Gmail·Cal·Drive | — |
+| [isaacphi/mcp-gdrive](https://github.com/isaacphi/mcp-gdrive) | 283 | TS | **2025-05-07** | read + Sheets write | — |
+| [felores/gdrive-mcp-server](https://github.com/felores/gdrive-mcp-server) | 72 | JS | **2025-11-07** | search · list · read | — |
+| **csa-google-workspace** | — | Python | — | **40** | **full lifecycle + Sheets cell mapping** |
+
+Smaller or single-purpose, listed so the survey is complete rather than flattering:
+[dbuxton/google-docs-mcp](https://github.com/dbuxton/google-docs-mcp) (7★, Python, Apr 2026),
+[phact/mcp-google-docs](https://github.com/phact/mcp-google-docs) (11★, stale Feb 2025),
+[stanislawherjan1/gdocs-comments-mcp](https://github.com/stanislawherjan1/gdocs-comments-mcp)
+(3★), [us-all/google-drive-mcp-server](https://github.com/us-all/google-drive-mcp-server) (0★).
+Hosted platforms — **Composio, Klavis AI, Pipedream, Zapier** — wrap the same Drive API and expose
+**file-level** comments only.
+
+**Two of these are bigger than this project, and it is worth saying which.**
+`taylorwilsdon` covers 12+ Google services with 3095★ and enterprise auth (service accounts,
+Streamable HTTP). `piotr-agier` ships **115 tools** against this project's 40 — Shared Drives,
+revisions, Sheets formatting, Slides authoring, PDF ingestion, Calendar. If you want breadth,
+those are the answer and this is not.
+
+**What is actually only here**, checked against each of the above rather than assumed:
+
+- **A Sheets comment mapped to the cell it is about.** No MCP server can *create* a cell-anchored
+  comment — the ceiling is Google's Drive API, not the servers, and `experiments/anchor-probe/`
+  proved the anchor is an opaque `workbook-range` id. This project maps it anyway on the read
+  side, by exporting XLSX and parsing `threadedComments`. `a-bonus` is the only other project
+  that seriously engineers around the gap (deep-links plus native cell *notes*), and its
+  read-side anchor parser does not match what real UI comments return.
+- **The full comment lifecycle.** `resolve` **and** `reopen`, plus edit and soft-delete.
+  `piotr-agier` has no resolve; `taylorwilsdon` has resolve but not edit, delete or reopen —
+  its issues [#487](https://github.com/taylorwilsdon/google_workspace_mcp/issues/487) and
+  [#788](https://github.com/taylorwilsdon/google_workspace_mcp/issues/788) are both still open.
+- **`export_comments`** — a review register as a Google Sheet or CSV, with the passage or *cell
+  contents* each comment is about. Nobody else has an equivalent.
+- **A policy layer.** Ten named capabilities, two file allowlists, `preview_allowlist`, and a
+  **flavour switch** that publishes another vendor's exact tool surface. No other server here
+  has anything comparable — most are all-or-nothing on your whole Drive.
+- **A stated injection posture** — redacting `__repr__`s, untrusted-content rules in every tool
+  description, and `THREAT_MODEL.md`.
+
+None of that makes this the right pick for someone who wants Gmail and Calendar. It makes it the
+right pick for **comment triage on documents**, which is what it was built for.
 
 ### Google ships eight of these now, not one
 
