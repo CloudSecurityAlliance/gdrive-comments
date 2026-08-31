@@ -202,7 +202,16 @@ class FileCollection:
 
     def copy(self, file_id_or_url: str, *, name: str | None = None,
              parent_id: str | None = None) -> FileRef:
-        """Duplicate a file. The copy is a new file with a new id."""
+        """Duplicate a file. The copy is a new file with a new id — **and no comments.**
+
+        Drive does not copy comments and offers no way to ask it to: `files.copy` has no
+        comments parameter (Drive v2 had one; v3 does not). Measured 2026-08-31 — a copy of a
+        document carrying one anchored comment came back with none.
+
+        That matters more here than in a general Drive library: duplicating a reviewed document
+        leaves the whole review behind, and the copy looks complete. Export first if the comments
+        are the point.
+        """
         from .workspace import parse_file_id
         return self._wrap(self._backend.copy_file(
             parse_file_id(file_id_or_url), name=name, parent_id=parent_id))

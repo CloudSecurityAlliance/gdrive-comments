@@ -115,6 +115,14 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
                   parentId: str | None = None) -> FileRefOut:
         """Duplicate a file. `fileId` is an id or a share URL.
 
+        **THE COPY HAS NO COMMENTS.** Drive does not copy them, and there is no option to ask
+        it to — `files.copy` has no comments parameter at all. Measured, not assumed.
+
+        Say this before copying a document somebody has reviewed. Duplicating a reviewed
+        document to make a "v2" silently leaves the entire review behind, and the copy looks
+        complete: same text, same title, no warning. If the comments matter, export them first
+        with `export_comments`.
+
         The copy is a **new file with a new id**, so it is not covered by the modify allowlist
         even if the original was — writing to it will be refused unless an operator lists it.
         Defaults to Drive's own "Copy of …" name."""
