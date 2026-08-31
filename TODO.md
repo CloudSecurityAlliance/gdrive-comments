@@ -1474,10 +1474,11 @@ This was the honest ceiling of the Python client — but several items are close
   irreversible delete.
 - [ ] ~~`files.generateCseToken`~~ — client-side encryption tokens; no reviewer workflow needs it.
 
-### Docs v1 — we use 3 of 40 `batchUpdate` request types
+### Docs v1 — we use 5 of 40 `batchUpdate` request types
 
 `documents.get` / `create` / `batchUpdate` are the only three methods; everything lives in the
-request types. We use `replaceAllText`, `insertText`, `deleteContentRange`. Unused, grouped:
+request types. We use `replaceAllText`, `insertText`, `deleteContentRange`, `addDocumentTab` and
+`deleteTab` — the last two since v0.36.0. Unused, grouped:
 
 - [ ] **Tables** — `insertTable`, `insertTableRow`/`Column`, `deleteTableRow`/`Column`,
   `mergeTableCells`, `unmergeTableCells`, `pinTableHeaderRows`, `updateTableCellStyle`,
