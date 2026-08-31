@@ -128,6 +128,35 @@ class AccessProposalOut(TypedDict):
     request_message: str | None
 
 
+class AllowlistEntryOut(TypedDict):
+    file_id: str
+    line: int
+    status: str               # ok | trashed | unreachable
+    # What DRIVE calls the file, absent when nothing could be fetched. Never merged with
+    # `reason`: one is evidence, the other is what the operator typed, and the mismatch
+    # between them is the thing worth seeing.
+    name: str | None
+    type: str | None
+    reason: str | None        # the operator's own `#` comment
+    detail: str | None        # why unreachable
+
+
+class AllowlistPreviewOut(TypedDict):
+    scope: str                # "read" or "modify"
+    # True means EVERY file the credentials can reach. `entries` is then empty because there is
+    # no list - not because nothing is permitted, which is the opposite answer.
+    unrestricted: bool
+    entries: list[AllowlistEntryOut]
+    ok: int
+    dead: int
+
+
+class AllowlistsPreviewOut(TypedDict):
+    read: AllowlistPreviewOut
+    modify: AllowlistPreviewOut
+    dead_entries: int         # across both, so "is anything wrong?" is one field
+
+
 class LabelFieldOut(TypedDict):
     id: str
     name: str | None          # None when the definition could not be read
@@ -409,6 +438,14 @@ def access_proposal_out(p: Any) -> AccessProposalOut:
 def access_proposals_out(proposals: list) -> AccessProposalsOut:
     return {"proposals": [access_proposal_out(p) for p in proposals],
             "pending": len(proposals)}
+
+
+def allowlist_preview_out(scope_name: str, p: Any) -> AllowlistPreviewOut:
+    return {"scope": scope_name, "unrestricted": p.unrestricted,
+            "entries": [{"file_id": e.file_id, "line": e.line, "status": e.status,
+                         "name": e.name, "type": e.type, "reason": e.reason,
+                         "detail": e.detail} for e in p.entries],
+            "ok": p.ok, "dead": p.dead}
 
 
 def label_out(label: Any) -> LabelOut:

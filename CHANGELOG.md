@@ -10,6 +10,75 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-31 — v0.35.0 (what your allowlist actually points at) — not released
+
+Closes the last two open **#82 / A4** items — and they were **one feature**. "Allowlist dry-run"
+and "dead-entry detection" were tracked separately; resolving each entry against Drive answers
+both, because *a dead entry is what a dry-run finds*. Built apart, they would have been two tools
+each walking the list and calling Drive. **40 tools**, up from 39.
+
+### `preview_allowlist`
+
+For each entry in `CSA_GW_ALLOWLIST_READ` / `_MODIFY`: the real document **name** from Drive, its
+type, the operator's own `#` comment, and a status —
+
+* `ok` — exists and reachable
+* `trashed` — **in the trash.** The entry still parses and still matches, so nothing else in the
+  system complains; it just stops covering a working document.
+* `unreachable` — the id is real but invisible to these credentials, or nothing has that id.
+  `detail` says which, because they need different fixes.
+
+### The two name-ish fields are deliberately not merged
+
+`name` is what Drive calls the file — **evidence**. `reason` is the operator's `#` comment — a
+**claim typed by a human**, and an unverified one sitting next to a permission. Paste the wrong
+URL under the right label and it actively misleads. Reporting both is what makes the mismatch
+visible; merging them would hide exactly what this exists to surface.
+
+This was the sharpest complaint about the feature as shipped: a bare `1oW1BM…` is opaque, and the
+comment beside it is decoration rather than proof.
+
+### `*` answers honestly instead of enumerating
+
+`unrestricted: true` with an **empty** `entries`, **and no Google calls at all**. "Everything your
+account can reach" is not a list; faking one would be slow, incomplete, and a different answer
+than the truth. The tool description says plainly that empty-because-unrestricted is the opposite
+of empty-because-nothing-is-allowed.
+
+### Also
+
+* `ApiBackend.get_file_metadata` now requests **`trashed`**. Its absence failed *silently*: a
+  trashed file still resolves by id, so the response looked exactly like a live file and a dead
+  entry reported `ok`. `FakeBackend` cannot catch that — it never sees a fields mask — so the
+  assertion lives in the `ApiBackend` contract suite.
+* `preview()` lives in `allowlist.py` beside the parser but takes a **`fetch` callable**, not a
+  `Backend`: that module has no backend dependency and should not grow one.
+* One fetch per **distinct** id, so a document listed twice costs one call.
+* An unexpected exception **propagates**. `unreachable` means Drive answered "no"; a network
+  failure is not a fact about the entry, and reporting it as one would turn an outage into a
+  report that the operator's list is broken.
+
+### The structured allow/deny model was designed, then deferred
+
+The bigger idea — an enable switch plus a config file, with `default < drive < folder < file`
+precedence and Drive's role names — is written up in `TODO.md` and **deferred post-1.0.0 on cost,
+not doubt**. A Drive file has exactly one parent, so the tree walk terminates; but folder
+membership is *live*, so a folder rule must be evaluated on **every access**, at one `files.get`
+per level, and **cannot be cached** because caching authorization is how a revoked grant keeps
+working. That is a permanent 2–5× latency tax per call for a control Drive's ACLs already
+back-stop.
+
+Also recorded there: it would invert the id-based property that a *copy* of an allowlisted
+document is not allowlisted, and folder membership is mutable **by other people**.
+
+### Tests
+
+`tests/test_allowlist_preview.py` (21) plus one `ApiBackend` contract test. Verified by
+falsification: treating `trashed` as `ok` fails 2, enumerating on `*` fails 1, dropping `trashed`
+from the fields mask fails 1. Exercised end-to-end over the real tool with a narrowed list.
+
+Full suite: 1526 passed, 12 skipped.
+
 ## 2026-08-30 — v0.34.0 (what a document is classified as)
 
 Ships **Drive labels**, read-only, as `list_labels` — the last security-adjacent item on the

@@ -111,7 +111,7 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
         # Both need Settings, and both are about the server rather than about Google — so a
         # server constructed without Settings (a library embedder wiring its own Workspace)
         # gets the document tools and none of this.
-        register_config_tools(app, settings)
+        register_config_tools(app, settings, get_workspace)
         register_demo_tools(app, settings)
         register_feedback_tools(app, settings)
         register_resources(app, settings)

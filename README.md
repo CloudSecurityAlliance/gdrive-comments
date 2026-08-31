@@ -445,7 +445,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 39, each with structured output and read-only/destructive annotations
+**Tools** — 40, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
@@ -458,7 +458,7 @@ reviews the configuration and may name people or unannounced work.
 | **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each OFF unless an operator names its capability |
 | **Access requests** | `list_access_proposals` · `resolve_access_proposal` 🔒 — answering "can I have access?"; approving is sharing, so it costs `file.share` |
 | **Classification** | `list_labels` — Drive labels resolved to names. **Read-only by construction**: the write scope is never requested |
-| **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
+| **The server itself** | `describe_configuration` · `preview_allowlist` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
 connector, so habits transfer; `fileId` also accepts a share URL, which neither of theirs does.
@@ -609,9 +609,9 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **39** |
+| MCP tools | 8 | 11 | **40** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **28** |
+| Tools they do not have | — | — | **29** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
 The twenty-three they do not have: **eleven** comment tools, five content-write tools,
@@ -702,6 +702,7 @@ accepting a share URL, which neither of theirs does.
 | `list_access_proposals` | Who has **asked** for access and is still waiting | ✗ | ✗ | ✅ |
 | `resolve_access_proposal` | Approve or refuse a request. Approving **is** sharing | ✗ | ✗ | ✅ ⁷ |
 | `list_labels` | **Classification** — Drive labels, resolved to names | ✗ | ✗ | ✅ |
+| `preview_allowlist` | What the configured allowlists point at, **by name**, and what has died | ✗ | ✗ | ✅ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
@@ -758,6 +759,7 @@ any of the three servers touches, and how much of one capability lives in a sing
 | `share_file` | `drive.permissions.create` |
 | `list_access_proposals` | `drive.accessproposals.list` |
 | `list_labels` | `drive.files.listLabels` + `drivelabels.labels.get` (a **second API**) |
+| `preview_allowlist` | `drive.files.get` per allowlist entry (no Google call when unrestricted) |
 | `resolve_access_proposal` | `drive.accessproposals.resolve` |
 | `trash_file` | `drive.files.update` (`trashed=true`) |
 | `list_comments`, `get_comment` | `drive.comments.list` / `.get` |

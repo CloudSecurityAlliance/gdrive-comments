@@ -83,8 +83,7 @@ below; this is the index.
 | item | note |
 |---|---|
 | **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
-| **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
-| **Dead-entry detection** | An allowlisted file that has been trashed |
+| ~~Allowlist dry-run + dead-entry detection~~ | **Shipped** — one feature, `preview_allowlist`: a dead entry is what a dry-run finds |
 | ~~`CONTROLS_TOKEN`~~ | **Done 2026-08-31** — PAT configured; all three controls now verify in CI. **Rotate by 2027-09-01**, see the banner at the top |
 | ~~Drive labels~~ | **Shipped** v0.34.0 — read-only by construction; needs a 2nd API and a new scope |
 | ~~`accessproposals`~~ | **Shipped** v0.33.0 — `resolve` gated as `file.share`, confirmed by Google's own scope table |
@@ -100,7 +99,7 @@ below; this is the index.
 | **C5 uploaded formats** | **Blocked on** provenance trust — a dependency, not a queue position |
 | **`.docx` comments** | Separate from C5's text extraction, and more interesting for a comments-first tool |
 | **Traversal · corpus · revisions · vector search** | Contains the **probe** worth running early: does Google prune Docs revisions? |
-| **Folders in the allowlist** | Distinct from folder-as-corpus-scope, which is a different and easier question |
+| **Structured allow/deny (files·folders·drives)** | **Designed 2026-08-31, deferred**: folder membership is live, so it costs one `files.get` per level on EVERY access and cannot be cached |
 | **Per-capability scope · allowlist expiry** | Both weakened by the defaults reversal |
 | **Document-text Resource · comment-triage Prompt** | Conveniences over tools that already exist |
 | **Docs `batchUpdate` breadth · MCPB bundle · `PlaywrightBackend`** | Unchanged |
@@ -248,6 +247,72 @@ survive into it, because they are what make it worth relying on at all: enforcem
 **`Backend` wrapper**, so library embedders and MCP clients get the same guarantee from one
 auditable place; and the policy **cannot be widened in-band**, because no tool changes it. Any
 richer model that gives those up is a step backwards regardless of what else it adds.
+
+### The structured allow/deny model — designed 2026-08-31, deferred post-1.0.0
+
+**Decided with the CINO on 2026-08-31, and deferred on cost rather than on doubt.** The design
+below is what we would build; the reason it is not 1.0.0 is the last section.
+
+**Shape.** Two environment variables, not one:
+
+* a **switch** — is the extra allow/deny layer on at all;
+* a **path** to a config file, settable *whether or not it is enabled*.
+
+Splitting them is what makes `disabled` unambiguous. With one variable, "empty file", "no file"
+and "file I cannot parse" all have to mean something and one of them will mean the wrong thing.
+Split, there is exactly one rule: **enabled + unreadable or unparseable = refuse everything,
+loudly** — the same shape as today's "three outcomes, and the third is the point".
+
+It also allows the reviewable workflow: ship a config, have somebody read it, turn it on
+separately.
+
+**Rules, most specific wins:** `default < drive < folder < file`, with **deepest folder wins**
+for nesting, so `/Projects` deny plus `/Projects/CCM` allow behaves the way anyone would read it.
+Two shapes cover almost all real use: *"block X, Y, Z"* over an open default, and *"for this
+project, default deny, then allow these drives/folders/files"*.
+
+**Roles, not booleans, and they are Drive's own words.** Each rule carries
+`deny | reader | commenter | writer` rather than allow/deny. Barely more complex, much more
+expressive, and it **subsumes the deferred per-capability-scope item**. Use `reader`/`commenter`/
+`writer` and **not** viewer/editor: this project already decided that for profiles (Google's UI
+labels are refused by naming the API word), and two vocabularies for one concept is how a config
+becomes guesswork.
+
+**A config file, and NOT because of size.** Measured 2026-08-31: an env var holds ~512KB on macOS
+(`ARG_MAX` 1MB, shared with args), and a URL plus a name is ~130 bytes — **~500 entries inside a
+conservative 64KB budget**. Size was never the constraint. The file is justified only by
+structure, and it costs the thing `allowlist.py`'s docstring argues for: a path is an indirection
+whose target changes without the config changing. The enable+path split partly answers that, since
+the path itself stays visible in the client config.
+
+#### Why it is post-1.0.0: the cost is per-access and cannot be cached
+
+A Drive file has **exactly one parent** — verified in the discovery document, "specifying multiple
+parents isn't supported" — so the hierarchy is a tree and walking to the root terminates. That is
+the good news, and it is not enough.
+
+**Folder membership is a live property.** A file can be moved, so a folder rule has to be
+evaluated *at every access*, not once. There is no ancestors endpoint, so that is one
+`files.get` per level: a document four folders deep costs **four extra API calls on every
+operation**.
+
+**And the result cannot be cached, by this project's own rule:** caching authorization is how a
+revoked grant keeps working. So it is a permanent 2–5× latency tax on every call, to enforce a
+control that **Drive's ACLs already back-stop** — if the config says a file is editable and Drive
+says otherwise, Drive wins. That ratio is what makes it a nice-to-have.
+
+#### Two properties it would change, worth stating before anyone builds it
+
+* **Today's list is id-based, so a *copy* of an allowlisted document is not allowlisted.** A
+  folder rule inverts that: a copy made *into* an allowed folder is allowed.
+* **Folder membership is mutable by other people.** "Allow folder P" means anyone who can move a
+  file into P has granted the agent access to it; under default-deny that is an escalation path.
+  Shortcuts sharpen it — a shortcut inside P targets a file anywhere. Changing the default does
+  not remove this, only its direction.
+
+A third option was considered and not chosen: **resolve folders at load time** into concrete file
+ids. It keeps the authoring convenience and the id-based property and has no per-call cost, at
+the price of needing a restart to see new files. Worth revisiting first if this is picked up.
 
 ### Folders in the allowlist — the design questions, unanswered
 

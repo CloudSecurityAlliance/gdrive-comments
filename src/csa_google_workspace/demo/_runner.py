@@ -33,6 +33,10 @@ NOT_EXERCISED = {
     # `create`: a proposal exists only because a DIFFERENT person, who does NOT have access,
     # clicked "Request access" in Drive. Nothing this process can do produces one, so there is
     # never anything to resolve. `list_access_proposals` IS exercised, and returns zero.
+    # The demo runs with CSA_GW_ALLOWLIST_* unset, i.e. unrestricted, so a preview has
+    # nothing to resolve and would only print "everything" - which the startup line
+    # already says. It is exercised against a real list in tests instead.
+    "preview_allowlist": "needs a narrowed allowlist; the demo runs unrestricted",
     "resolve_access_proposal": (
         "needs a pending request, which only another human without access can create"),
 }
