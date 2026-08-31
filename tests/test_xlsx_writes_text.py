@@ -34,8 +34,8 @@ import zipfile
 import openpyxl
 import pytest
 
-from csa_google_workspace import Workspace
-from csa_google_workspace._export import to_xlsx
+from csa_google_workspace import Workspace, _export
+from csa_google_workspace._export import _build_xlsx, to_xlsx
 from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
@@ -123,9 +123,35 @@ class TestThroughTheActualExportTool:
 
 
 class TestTheDocstringNoLongerReadsAsAnAssurance:
+    """The reasoning must stay attached to the code that does the typing.
+
+    Pointed at `_build_xlsx` rather than `to_xlsx` since the builder was extracted so the same
+    formatted workbook could also be produced as bytes for upload. That refactor moved this
+    rationale off the function this test used to watch, and the test caught it - which is the
+    only reason the guard is worth having.
+    """
+
     def test_it_says_why_there_are_no_formulas_and_that_it_is_enforced(self):
-        text = to_xlsx.__doc__ or ""
+        text = _build_xlsx.__doc__ or ""
         assert "infer" in text.lower(), (
             "the docstring must say openpyxl INFERS type from value - the old text said 'no "
             "formulas, deliberately' about the register's own columns and read as an assurance "
             "that the path was formula-free")
+
+    def test_every_public_entry_point_reaches_that_builder(self):
+        """So neither writer can drift into building its own workbook without the typing. The
+        guarantee is a property of the BUILDER; a second construction path would silently not
+        have it."""
+        import inspect
+
+        from csa_google_workspace import _export
+        for fn in (_export.to_xlsx, _export.to_xlsx_bytes):
+            assert "_build_xlsx" in inspect.getsource(fn), (
+                f"{fn.__name__} must go through _build_xlsx, which is what forces text typing")
+
+    def test_the_bytes_path_warns_it_is_for_new_files_only(self):
+        """Uploading a workbook over an EXISTING spreadsheet resets every comment anchor to A1
+        (measured 2026-08-31). The one function that produces upload-ready bytes is where
+        somebody looking for that route will land."""
+        text = (_export.to_xlsx_bytes.__doc__ or "").lower()
+        assert "new" in text and "anchor" in text

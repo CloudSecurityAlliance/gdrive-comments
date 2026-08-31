@@ -162,10 +162,20 @@ def test_create_file_with_markdown_uploads_it_for_conversion():
 
 
 def test_create_file_refuses_content_for_a_spreadsheet():
+    """Still refused, but for a changed reason worth keeping straight.
+
+    The LIBRARY now accepts XLSX bytes for a spreadsheet (#277), so "spreadsheets cannot have
+    content" became false. This parameter is a JSON string, though, so a binary workbook cannot
+    travel through it - a transport limit rather than a missing capability. The message therefore
+    has to point at what does work, or a model reads the refusal as "not supported" and gives up
+    on a formatted register that is one tool call away.
+    """
     app, _ = _app()
     with pytest.raises(ToolError) as e:
         _out(app, "create_file", {"name": "n", "kind": "spreadsheet", "content": "a,b"})
-    assert "only supported for documents" in str(e.value)
+    message = str(e.value)
+    assert "cannot be sent as a string" in message
+    assert "update_cells" in message and "export_comments" in message
 
 
 def test_create_file_accepts_a_parent():
