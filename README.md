@@ -89,18 +89,73 @@ sheet.comments_by_cell("B11")                       # comments mapped back to a 
 
 ## Use as an MCP server
 
+**1. Install it.** Either of these puts the CLI in its own environment — use whichever you have:
+
 ```bash
-pipx install "csa-google-workspace[mcp]"      # pip works too — see the note below
-
-# Once, in a terminal: authorize as yourself (opens a browser).
-# Put your Desktop-app OAuth client at ~/.csa_google_workspace/client_secret.json
-# (or point CSA_GW_CLIENT_SECRETS somewhere else), then:
-csa-google-workspace-mcp login
-csa-google-workspace-mcp login --force        # ...or re-authorize deliberately
-
-# Then register with your MCP client, e.g. Claude Code:
-claude mcp add csa-google-workspace -- csa-google-workspace-mcp
+uv tool install "csa-google-workspace[mcp]"    # or:
+pipx install "csa-google-workspace[mcp]"
 ```
+
+`pip install` works too, and is the right choice when you are embedding the **library** in your
+own application — see [the note below](#why-an-isolated-install) for when it is not.
+
+**2. Authorize, once, in a terminal.** Put your Desktop-app OAuth client at
+`~/.csa_google_workspace/client_secret.json` (or point `CSA_GW_CLIENT_SECRETS` elsewhere):
+
+```bash
+csa-google-workspace-mcp login
+csa-google-workspace-mcp login --force         # ...or re-authorize deliberately
+```
+
+**3. Register it with your MCP client.** All of these are stdio clients launching the same console
+script, so the server is identical; only the registration differs.
+
+```bash
+# Claude Code          (-s user: see the scope note below)
+claude mcp add -s user csa-google-workspace -- csa-google-workspace-mcp
+
+# Codex CLI            (already global)
+codex mcp add csa-google-workspace -- csa-google-workspace-mcp
+
+# Gemini CLI           (note: no `--`)
+gemini mcp add -s user csa-google-workspace csa-google-workspace-mcp
+
+# Claude Desktop       (a JSON file, not a command - so this writes it for you)
+csa-google-workspace-mcp configure
+csa-google-workspace-mcp configure --print     # ...or show the JSON without writing
+```
+
+**Claude Desktop is the one that needs its own command**, and not for tidiness. Desktop is a GUI
+app: it inherits launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), which contains neither
+`~/.local/bin` nor Homebrew, so a bare command name is simply not found. `configure` writes the
+**absolute** path along with your `CSA_GW_*` variables, merged into whatever else is already in
+the file, with a timestamped backup. Restart Desktop afterwards.
+
+**Three differences that bite**, read from the installed CLIs — Claude Code 2.1.251, `codex-cli`
+0.151.0, Gemini CLI 0.57.0 — rather than from docs:
+
+| | Claude Code | Codex | Gemini |
+|---|---|---|---|
+| separator before the command | `--` | `--` | **none** — the command is positional |
+| default scope | **`local`** — this project only | global | **`project`** — lands in `./.gemini/` |
+| an environment variable | `-e KEY=value` | `--env KEY=value` | `-e KEY=value` |
+
+**The scope default is the trap, and it catches two of the three.** Only Codex registers globally
+on its own. Claude Code defaults to `local` and Gemini to `project`, so a plain `mcp add` in
+whatever directory you happened to be in registers the server *there* — and it is then missing
+everywhere else, which reads as a failed install rather than a scoping choice. `-s user` is what
+you almost certainly want for a tool like this; drop it deliberately when you want one project to
+have Drive access and the rest not to, which is a legitimate thing to want.
+
+**Two Gemini flags to leave alone.** `--trust` *"bypass all tool call confirmation prompts"* — not
+on a server that can edit documents, share files and answer access requests. And
+`--include-tools` / `--exclude-tools` filter **client-side**: they change what the model is
+offered, not what the credentials can reach, so they are tidiness rather than a control. For a
+real bound on the surface, use `CSA_GW_FLAVOUR` or a profile, which this server enforces.
+
+**On DesktopSetup.** CSA's `DesktopSetup` scripts install this server among other things — so if
+you ran those, you already have it. It is a *meta-installer*, not an install method for this
+project: the instructions above are the canonical ones, and are what a person outside CSA uses.
 
 ### Turn off the built-in Google Drive connector
 
@@ -356,12 +411,20 @@ it ended up with rather than guessing: read `csa-gw://config`, or call
 documents. It is not the last word: a broader model is being researched. What is here is meant
 to be concrete and honest rather than complete.
 
-**Why `pipx`.** This is a CLI you run, not a library you import, so it wants its own
-environment. `pip` into a shared or default virtualenv works until another project disagrees
-about a dependency — `mcp>=2.1` here versus something else pinning `mcp<2.0` is a conflict
-people actually hit. `pipx` also gives the console script an absolute shebang, which is what
-makes it launchable from a GUI app (see Claude Desktop in the troubleshooting table). Use
-`pip` when you are embedding the *library* in your own application, where you want it in your
+<a id="why-an-isolated-install"></a>
+**Why an isolated install (`uv tool` or `pipx`), not plain `pip`.** This is a CLI you run, not a
+library you import, so it wants its own environment. `pip` into a shared or default virtualenv
+works until another project disagrees about a dependency — `mcp>=2.1` here versus something else
+pinning `mcp<2.0` is a conflict people actually hit.
+
+Both isolating installers also make the console script **launchable from a GUI app** (see Claude
+Desktop in the troubleshooting table), which a `pip install` into an activated virtualenv does
+not: a GUI launches with neither your shell's `PATH` nor its `VIRTUAL_ENV`. They get there
+differently — `pipx` writes an absolute Python shebang, while `uv` writes a `/bin/sh` trampoline
+that `exec`s an absolute interpreter path — and both were checked here by running the installed
+script under an **empty environment**, which is the property that actually matters.
+
+Use `pip` when you are embedding the *library* in your own application, where you want it in your
 environment.
 
 Requires an **installed/desktop-app** OAuth client from your own Google Cloud project, with
