@@ -1804,8 +1804,15 @@ CSA_GW_OAUTH=1       CSA_GW_CLIENT_SECRETS=path/to/client_secret.json pytest tes
 
 These are recorded design decisions, **not bugs**:
 
-- [ ] **`Location.tab` resolution** — multi-tab cell disambiguation via `workbook.xml` +
-  rels (part → sheet-name). Real correctness gap for multi-tab sheets; its own task.
+- [x] ~~**`Location.tab` resolution**~~ — **done 2026-08-31** (#290). The three-hop walk
+  (`workbook.xml` → workbook rels → each sheet's rels → its `threadedComments` part) landed,
+  and every consumer reports it: an `export_comments` `tab` column, `comments_by_cell(tab=)`,
+  `CommentOut.tab`. Two things the probe corrected before any code was written — **`r:id` does
+  not track sheet position** (a real export numbers the first sheet `rId5`) and relationship
+  targets are **relative** — and one claim in the issue that had to be withdrawn: sheet identity
+  **cannot** break `match_locations` ties, because the lookup side is a Drive comment and carries
+  no sheet at all. The warning had to get *narrower* rather than wider: the old caveat fired on
+  every multi-tab workbook, which would now cry wolf on the files this fixed.
 - [ ] ~~**Caching pass** (as a read-through cache)~~ — **dropped 2026-08-30.** Accessors
   re-fetch per call and that is how it works, not a gap. The claim this item made — *"the biggest
   runtime win for embedded review sessions"* — was never measured, and three things argue against

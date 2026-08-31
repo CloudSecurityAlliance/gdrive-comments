@@ -10,6 +10,90 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-31 — v0.37.0 (a comment says which tab, and the register arrives formatted) — not released
+
+Two gaps closed, both measured against live Google before any code was written.
+
+### A spreadsheet comment now says which TAB it is on (#290)
+
+`Location.tab` was declared and never populated, so on a multi-tab workbook `B4` named two
+different cells and the library could not say which. `_cellmap` now walks the XLSX relationship
+graph:
+
+```
+xl/workbook.xml             <sheet name="Sheet1" r:id="rId5"/>
+xl/_rels/workbook.xml.rels  rId5 -> worksheets/sheet1.xml
+xl/worksheets/_rels/sheet1.xml.rels
+                            .../threadedComment -> ../threadedComments/threadedComment1.xml
+```
+
+**Three assumptions died against a real export**, each of which would have shipped as a silent
+bug: `r:id` does **not** track sheet position (the first sheet is `rId5`, so pairing
+`threadedComment1.xml` with "the first sheet" is wrong); relationship `Target`s are **relative**
+and need normalising before use as zip keys; and a sheet with no comments has **no
+threadedComment relationship at all**.
+
+Degrades **asymmetrically, on purpose.** The cell comes from the comment's own `ref`; the tab
+needs three hops through a graph. So a damaged graph costs the **tab** and never the **cell** —
+and an unresolved tab stays `None` rather than defaulting to the first sheet, because on a
+two-tab workbook that default is a coin flip presented as a fact.
+
+- `export_comments` gains a `tab` column and reads `cell_text` from that tab alone.
+- `comments_by_cell(cell, tab=)` narrows to one sheet, and **refuses a tab that is not there**
+  rather than returning an empty list. For a model the tool result *is* the world, so an empty
+  answer for a misspelled tab is a well-formed wrong answer — and it acts as a silent
+  precondition check, since *"no comments on B11"* is what something reads before overwriting
+  B11. The refusal names the tabs that exist, so it self-corrects in one turn.
+- `CommentOut.tab`; `Location` gains a real docstring saying what `None` means.
+
+**A warning had to get NARROWER.** The old caveat fired on every multi-tab workbook and
+announced there was no tab column; it now reports the shortfall (`1 of 40 could not be placed`),
+because a blanket warning would cry wolf on exactly the files this fixed. That narrowing exposed
+a gap it had been covering by accident — when the export is unavailable **nothing** gets a cell,
+and the register was left with three empty columns and no explanation. That is now its own,
+distinct caveat.
+
+**A claim withdrawn.** The issue argued sheet identity would break ties in `match_locations`. It
+cannot: the lookup side is a *Drive* comment, which carries no sheet at all, so two entries tying
+on `(author, text, second)` still tie. A test records the reasoning so nobody "fixes" it.
+
+### The comment register arrives formatted (#277)
+
+`export_comments(destination="sheet")` wrote through the **values** API — text only — so the
+Google Sheet register was a plain grid while the local `.xlsx` had a header fill, frozen pane,
+autofilter, column widths and decision dropdowns. It now uploads the workbook `_export` already
+built and lets Drive convert it, which **removes** a code path rather than adding one.
+
+Safe **only because the file is created in the same call**: uploading a workbook over an existing
+spreadsheet silently resets every comment's cell anchor to `A1` (measured, see the previous
+release's note on `copy_file`).
+
+**The probe that mattered was not about looks.** `_export` forces every data cell to text so a
+comment body beginning `=` cannot become a live formula (#182), and that defence lives in the
+XLSX writer — so if Drive re-inferred types on conversion, this change would have reintroduced
+formula injection while looking like a formatting improvement. It does not: `=1+1` reads back as
+the string `=1+1` rather than as `2`. Frozen row, autofilter, header bold and fill, column widths
+and validation dropdowns all survive as well.
+
+- `FileCollection.create` accepts **bytes** for `kind="spreadsheet"` (XLSX, converted on upload)
+  alongside **str** for a document (Markdown). Types are checked per kind, not sniffed.
+- `export_comments(tabName=)` names the tab — free on this route, since it is the worksheet title
+  in the workbook being built, so no `add_tab` and no create-then-move.
+- The MCP `create_file` still refuses `content` for a spreadsheet, but that is a **transport**
+  limit (the parameter is a JSON string; a workbook is binary), and the message now says what
+  does work.
+- `openpyxl` ships with the `mcp` extra, so the formatted route is normal. A minimal install
+  degrades to the values grid and **says** the register is unformatted.
+
+### Notes
+
+`test_tab_ambiguity.py` was rewritten rather than patched: it was the *other* resolution of the
+same TODO — state the limitation loudly instead of fixing it — so its central assertion became
+the bug. Two existing guards earned their keep: the #182 docstring guard caught the security
+rationale being moved off the function it watched, and `test_raw_is_the_default` caught that
+`destination="sheet"` no longer used the `RAW` path its premise depended on (both formula
+defences are now pinned separately).
+
 ## 2026-08-31 — v0.36.1 (the version a client sees)
 
 **RR-002**, found by an external audit and true since the MCP server first shipped.
