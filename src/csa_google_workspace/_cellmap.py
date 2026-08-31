@@ -4,6 +4,7 @@ Uses defusedxml (not stdlib xml.etree): the XLSX comes from Google, but comment
 text inside it is attacker-controllable, so we harden against XXE / billion-laughs."""
 import io
 import logging
+import posixpath
 import re
 import zipfile
 from collections import defaultdict
@@ -23,6 +24,12 @@ _MAX_MEMBER_UNCOMPRESSED = 50 * 1024 * 1024    # 50 MB per persons/threadedComme
 _MAX_TOTAL_UNCOMPRESSED = 100 * 1024 * 1024    # 100 MB across all members read
 _MAX_MEMBERS = 256                              # persons + threadedComments XML members
 
+# The relationship namespace `r:id` lives in, and the suffix of the relationship TYPE that
+# points a worksheet at its threaded comments. Matched by suffix because Microsoft has revised
+# the date segment (`office/2017/10/...`) before and the trailing word is the stable part.
+_R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_TC_REL_SUFFIX = "/threadedComment"
+
 
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -34,15 +41,86 @@ def _second(ts: str) -> str:
     return s.split(".")[0]
 
 
-def location_from_ref(ref: str) -> Location:
+def location_from_ref(ref: str, tab: str | None = None) -> Location:
+    """A1 reference -> Location. `tab` defaults to None: a caller that does not know the sheet
+    must not have one invented for it (see `_sheet_names_by_comment_part`)."""
     m = re.match(r"([A-Za-z]+)(\d+)", ref or "")
     if not m:
-        return Location(cell=ref, row=0, col=0)
+        return Location(cell=ref, row=0, col=0, tab=tab)
     letters, row = m.group(1).upper(), int(m.group(2))
     col = 0
     for ch in letters:
         col = col * 26 + (ord(ch) - ord("A") + 1)
-    return Location(cell=ref, row=row, col=col)
+    return Location(cell=ref, row=row, col=col, tab=tab)
+
+
+def _resolve(base_dir: str, target: str) -> str:
+    """An OPC relationship Target resolved to a zip member path.
+
+    Targets are relative to the *directory of the part that declares them*, so a worksheet's
+    `../threadedComments/threadedComment1.xml` means `xl/threadedComments/...`. Used
+    unnormalised as a zip key it matches nothing and the tab silently comes back None.
+    """
+    if target.startswith("/"):
+        return target.lstrip("/")
+    return posixpath.normpath(posixpath.join(base_dir, target))
+
+
+def _sheet_names_by_comment_part(read_named) -> dict[str, str]:
+    """threadedComments part path -> the sheet TITLE that references it (#290).
+
+    Three hops through the relationship graph, and each one is load-bearing:
+
+        xl/workbook.xml             <sheet name="Sheet1" r:id="rId5"/>
+        xl/_rels/workbook.xml.rels  rId5 -> worksheets/sheet1.xml
+        xl/worksheets/_rels/sheet1.xml.rels
+                                    .../threadedComment -> ../threadedComments/thread...1.xml
+
+    **The graph must be walked, not guessed.** A real Google export numbers the first sheet
+    `rId5`, so neither the `r:id` nor the `threadedCommentN.xml` index tracks sheet position;
+    pairing them up by number happens to work on a one-sheet file and breaks silently on real
+    ones (probed 2026-08-31).
+
+    Returns only what it could resolve. **A part missing from the result means "sheet unknown",
+    which is not the same as "the first sheet"** - see `parse_xlsx_comments` for why an absent
+    tab must never be filled with a plausible default.
+    """
+    workbook = read_named("xl/workbook.xml")
+    package = read_named("xl/_rels/workbook.xml.rels")
+    if workbook is None or package is None:
+        return {}
+
+    titles: dict[str, str] = {}                       # r:id -> sheet title
+    for el in workbook.iter():
+        if _local(el.tag) != "sheet":
+            continue
+        rid, name = el.get(f"{{{_R_NS}}}id") or el.get("id"), el.get("name")
+        if rid and name:
+            titles[rid] = name
+
+    sheet_parts: dict[str, str] = {}                  # sheet part path -> sheet title
+    for el in package.iter():
+        if _local(el.tag) != "Relationship":
+            continue
+        rid, target = el.get("Id"), el.get("Target")
+        if rid in titles and target:
+            sheet_parts[_resolve("xl", target)] = titles[rid]
+
+    out: dict[str, str] = {}
+    for part, title in sheet_parts.items():
+        directory = posixpath.dirname(part)
+        rels = read_named(posixpath.join(directory, "_rels", posixpath.basename(part) + ".rels"))
+        if rels is None:
+            continue                                  # a sheet whose rels we cannot read
+        for el in rels.iter():
+            if _local(el.tag) != "Relationship":
+                continue
+            target = el.get("Target")
+            # A sheet with no comments has NO threadedComment relationship at all - real
+            # exports carry only a drawing there. Absence is normal, not an error.
+            if target and (el.get("Type") or "").endswith(_TC_REL_SUFFIX):
+                out[_resolve(directory, target)] = title
+    return out
 
 
 def parse_xlsx_comments(xlsx_bytes: bytes) -> list[dict]:
@@ -64,6 +142,28 @@ def parse_xlsx_comments(xlsx_bytes: bytes) -> list[dict]:
         members += 1
         budget -= zinfo.file_size
         return z.read(zinfo)
+
+    def _read_named(name: str):
+        """Parsed XML for a member, or None for absent / over-budget / malformed.
+
+        Everything the relationship walk reads goes through here, so a damaged or missing
+        graph costs the TAB and never the cell. Failing an export over a sheet name would
+        trade the valuable half of the mapping for the decorative one.
+        """
+        try:
+            zinfo = z.getinfo(name)
+        except KeyError:
+            return None
+        data = _read(zinfo)
+        if data is None:
+            return None
+        try:
+            return ET.fromstring(data)
+        except Exception:                   # noqa: BLE001 - malformed XML is not our problem
+            log.warning("could not parse %s while resolving sheet names; tab will be None", name)
+            return None
+
+    sheet_by_part = _sheet_names_by_comment_part(_read_named)
 
     persons: dict[str, str] = {}
     for zinfo in z.infolist():
@@ -94,6 +194,10 @@ def parse_xlsx_comments(xlsx_bytes: bytes) -> list[dict]:
                     "author": persons.get(el.get("personId")),
                     "text": text,
                     "second": _second(el.get("dT", "")),
+                    # None when the relationship graph could not be walked. NEVER a fallback
+                    # to the first sheet: on a two-tab workbook that is a coin flip presented
+                    # as a fact, which is the `list_labels` mistake in a different module.
+                    "sheet": sheet_by_part.get(name),
                 })
     return roots
 
@@ -108,5 +212,8 @@ def match_locations(comments, roots) -> dict:
         second = _second(c.created_time.isoformat()) if c.created_time else ""
         cands = index.get((author, c.content, second), [])
         if len(cands) == 1:                     # confident unique match only
-            out[c.id] = location_from_ref(cands[0]["ref"])
+            # The tab rides along on the matched entry. It does NOT participate in the match:
+            # a Drive comment carries no sheet, so a tie between two entries on different tabs
+            # is still a tie - see tests/test_cellmap_tabs.py::TestTheTabDoesNotBreakTies.
+            out[c.id] = location_from_ref(cands[0]["ref"], tab=cands[0].get("sheet"))
     return out

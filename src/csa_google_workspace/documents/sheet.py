@@ -171,8 +171,52 @@ class Sheet(Document):
     def _locate_comment(self, raw: dict):
         return self._cell_map().get(raw.get("id"))
 
-    def comments_by_cell(self, cell: str) -> list:
-        return [c for c in self.comments.all() if c.location and c.location.cell == cell]
+    def comments_by_cell(self, cell: str, tab: str | None = None) -> list:
+        """Comments anchored at `cell`, optionally narrowed to a single tab.
+
+        `tab=None` keeps the pre-#290 behaviour: every tab, which on a multi-tab workbook can
+        return comments about different sheets that share a cell reference. Callers that care
+        should read `Comment.location.tab`, which is now populated wherever the sheet could be
+        resolved from the export.
+
+        A comment whose tab could NOT be resolved (`location.tab is None`) is excluded when a
+        tab is named. It might be on that tab; saying so would be a guess, and this method's
+        contract is "comments I can place here", not "comments that might be here".
+        """
+        wanted = self.resolve_tab(tab) if tab is not None else None
+        found = []
+        for comment in self.comments.all():
+            location = comment.location
+            if not location or location.cell != cell:
+                continue
+            if wanted is not None and location.tab != wanted:
+                continue
+            found.append(comment)
+        return found
+
+    def resolve_tab(self, tab: str) -> str:
+        """The real tab title matching `tab`. **Raises rather than returning nothing.**
+
+        Case-insensitive and whitespace-tolerant, following `add_tab`: Sheets treats tab names
+        that way in A1 references, so `budget` and `Budget` would collide at use anyway.
+
+        **An unknown name is refused, not answered with an empty result**, and the consumer is
+        why. For a model the tool result *is* the world - it has no tab bar to glance at - so an
+        empty list for a misspelled tab is a well-formed wrong answer with no correction path.
+        Worse, it acts as a silent precondition check: *no comments on B11* is exactly what
+        something checks before overwriting B11, so a typo becomes a data-loss authorisation.
+        The refusal costs one call and carries the fix, because it names the tabs that exist.
+
+        Public because the MCP layer needs the same resolution to report honestly, and because
+        duplicating this comparison is how the two layers would drift apart.
+        """
+        wanted = tab.strip().casefold()
+        for detail in self.tab_details:
+            if detail["title"].casefold() == wanted:
+                return str(detail["title"])
+        raise exc.NotFoundError(
+            f"no tab named {tab!r} in this spreadsheet; present: "
+            f"{[d['title'] for d in self.tab_details]}")
 
     def reload(self) -> None:
         self._cell_map_cache = None

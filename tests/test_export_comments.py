@@ -166,17 +166,26 @@ class TestASpreadsheetRegister:
         assert row["cell_text_by_tab"] == {"Summary": "Total", "Detail": "Line items"}
 
     def test_a_multi_tab_workbook_says_why_the_tab_is_absent(self):
+        """No `exports` here, so the cell map fails wholesale and NOTHING gets a cell - which
+        since #290 is a different caveat from "the tab could not be resolved". Both must exist:
+        narrowing the multi-tab one without adding the no-cell one left this register with
+        three empty columns and no explanation."""
         app = build(sheet_tabs=("Summary", "Detail"),
                     values={(SHEET, "Summary"): [["Total"]]}, comments=SHEET_COMMENTS)
         out = call(app, SHEET)
-        assert any("tab" in c.lower() for c in out["caveats"])
+        assert any("could be mapped to a cell" in c for c in out["caveats"])
 
-    def test_a_single_tab_workbook_has_no_tab_caveat(self):
-        """The answer is exact, so warning would be noise."""
+    def test_a_single_tab_workbook_has_no_ambiguity_caveat(self):
+        """The answer is exact, so warning would be noise.
+
+        Asserted on the AMBIGUITY caveat's own wording rather than the word "tab": since #290
+        two different caveats mention tabs - "could not be placed on a tab" (ambiguity) and the
+        no-cell one, which lists `tab` among the columns it left empty. Keyword-matching "tab"
+        conflated them and made this test fail on a caveat it was never about."""
         app = build(sheet_tabs=("Only",), values={(SHEET, "Only"): [["x"]]},
                     comments=SHEET_COMMENTS)
         out = call(app, SHEET)
-        assert not any("tab" in c.lower() for c in out["caveats"])
+        assert not any("could not be placed on a tab" in c for c in out["caveats"])
 
     def test_an_empty_cell_is_reported_as_empty_not_missing(self):
         app = build(sheet_tabs=("Only",), values={(SHEET, "Only"): []},
