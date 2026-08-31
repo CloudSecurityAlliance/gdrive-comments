@@ -771,7 +771,15 @@ class ApiBackend:
         return _errors.call(self._services.drive.files().list(**kw).execute)
 
     def get_document(self, file_id, suggestions_view_mode=None):
-        kw = {"documentId": file_id}
+        # `includeTabsContent=True` because a Google Doc can have TABS, and without it the
+        # response carries the FIRST TAB ONLY in the legacy top-level `body`, with no `tabs` key
+        # and nothing to say the rest exists. Measured: see `experiments/docs-tabs/`.
+        #
+        # It also MOVES the content: with the flag, top-level `body` comes back EMPTY and
+        # everything lives under `tabs[].documentTab.body` - even for a single-tab document. So
+        # this line and `_content.doc_tab_bodies` are one change; adding the flag while any
+        # consumer still read `body` would turn a silent truncation into a silent blank.
+        kw = {"documentId": file_id, "includeTabsContent": True}
         if suggestions_view_mode:
             kw["suggestionsViewMode"] = suggestions_view_mode
         return _errors.call(self._services.docs.documents().get(**kw).execute)
