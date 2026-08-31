@@ -192,11 +192,20 @@ class TestEveryLibraryDeclarationStillDefaultsToRaw:
 
 
 class TestTheExportToSheetPremiseHolds:
-    """`_export.py`'s comment declines to escape `to_grid` output because *"a Sheets write uses
-    RAW"*. That was a GLOBAL claim which was only LOCALLY true — it held for the one path
-    `to_grid` happens to use, and nothing enforced it. Enforced here."""
+    """`export_comments(destination="sheet")` must not deliver a live formula, and since #277
+    there are TWO routes with TWO different mechanisms. Both are asserted, because the premise
+    that made one safe says nothing about the other.
 
-    def test_a_grid_of_comments_is_written_raw(self):
+    * **XLSX upload** (openpyxl present - the normal case): `_build_xlsx` forces every data
+      cell to text, so the archive carries an inline string rather than an `<f>` element. Probed
+      2026-08-31: Drive's convert-on-upload PRESERVES that, and `=1+1` arrives as the string
+      `=1+1` rather than as `2`.
+    * **values API** (openpyxl absent): the write is `RAW`, so Sheets stores the text literally.
+      This is the original premise - `_export.to_grid` skips escaping because of it - and it was
+      a GLOBAL claim only LOCALLY true, which is why it is pinned here.
+    """
+
+    def _run(self):
         backend = FakeBackend(
             {SHEET: {"id": SHEET, "name": "Draft",
                      "mimeType": "application/vnd.google-apps.document"}},
@@ -208,7 +217,50 @@ class TestTheExportToSheetPremiseHolds:
                                 "CSA_GW_PROFILE": "full"})
         app = create_server(lambda: Workspace(PolicyBackend(backend, st.policy)), settings=st)
         call(app, "export_comments", fileId=SHEET, destination="sheet")
+        return backend
+
+    def test_the_uploaded_workbook_carries_no_live_formula(self):
+        import io
+        import zipfile
+        backend = self._run()
+        uploaded = [f["_uploaded"] for f in backend._files.values() if "_uploaded" in f]
+        assert uploaded, "destination=sheet should upload a workbook when openpyxl is present"
+        with zipfile.ZipFile(io.BytesIO(uploaded[0]["content"])) as z:
+            sheet = z.read("xl/worksheets/sheet1.xml").decode()
+        assert "<f>" not in sheet, "the delivered register contains a live formula"
+        assert "IMPORTXML" in sheet, "sanity: the payload should be present, as text"
+
+    def test_the_values_fallback_is_written_raw(self):
+        """The original premise, still pinned. Forced down the fallback by making the formatted
+        route unavailable, so this cannot silently stop being exercised."""
+        import csa_google_workspace._export as export_mod
+        original = export_mod.xlsx_supported
+        export_mod.xlsx_supported = lambda: False
+        try:
+            backend = self._run()
+        finally:
+            export_mod.xlsx_supported = original
         used = options_used(backend)
         assert used and set(used) == {"RAW"}, (
             f"the comment grid was written with {used}; `_export.py` skips escaping on the "
             f"premise that this path is RAW")
+
+    def test_the_fallback_says_the_register_is_unformatted(self):
+        """A quality drop must be stated, not silent - otherwise an unformatted register reads
+        as the intended output."""
+        import csa_google_workspace._export as export_mod
+        original = export_mod.xlsx_supported
+        export_mod.xlsx_supported = lambda: False
+        try:
+            backend = FakeBackend(
+                {SHEET: {"id": SHEET, "name": "Draft",
+                         "mimeType": "application/vnd.google-apps.document"}},
+                documents={SHEET: {"body": {"content": []}}}, comments={SHEET: []})
+            st = settings_from_env({"CSA_GW_ALLOWLIST_READ": "*",
+                                    "CSA_GW_ALLOWLIST_MODIFY": "*", "CSA_GW_PROFILE": "full"})
+            app = create_server(lambda: Workspace(PolicyBackend(backend, st.policy)),
+                                settings=st)
+            out = call(app, "export_comments", fileId=SHEET, destination="sheet")
+        finally:
+            export_mod.xlsx_supported = original
+        assert "UNFORMATTED" in out["detail"] and "openpyxl" in out["detail"]

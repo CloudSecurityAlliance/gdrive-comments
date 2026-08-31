@@ -101,11 +101,27 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
         real heading, `- item` a real list, and a table a real table. That is a much better
         first draft than creating an empty document and appending plain text.
 
+        FOR A SPREADSHEET, `content` is not the way. Sheets accepts neither Markdown nor plain
+        text as an import format, so a formatted spreadsheet has to arrive as a workbook, which
+        is binary and cannot be sent through this parameter. Create the spreadsheet and use
+        `update_cells`, or - if what you want is a comment register - use
+        `export_comments(destination="sheet")`, which builds the formatted workbook itself.
+
         Returns the new file, including its `url` — hand that to the user so they can open it.
         Creating a file is not restricted by the modify allowlist, because a file that does not
         exist yet cannot be damaged; writing to it afterwards is."""
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {sorted(KINDS)}, not {kind!r}")
+        # The library accepts XLSX BYTES for a spreadsheet; this parameter is a JSON string, so
+        # that route is unreachable from here and the refusal has to stay. The reason changed
+        # though - it is a transport limit, not a missing capability - so the message names what
+        # to do instead rather than saying spreadsheets cannot have content.
+        if content is not None and kind != "document":
+            raise ValueError(
+                f"content is Markdown for a document; a {kind} cannot be created from text. "
+                f"A spreadsheet's formatted content is a workbook, which cannot be sent as a "
+                f"string - create it and use update_cells, or use "
+                f'export_comments(destination="sheet") for a register.')
         return file_ref_out(get_workspace().files.create(
             name, kind, parent_id=parentId, content=content))
 

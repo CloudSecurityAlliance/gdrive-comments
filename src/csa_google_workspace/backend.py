@@ -258,9 +258,12 @@ class FakeBackend:
         if parent_id:
             meta["parents"] = [parent_id]
         if content is not None:
-            # Records what was uploaded so a test can assert conversion happened, which is the
-            # only interesting part of create-with-content.
-            meta["_uploaded"] = {"bytes": len(content), "as": content_mime_type}
+            # Records what was uploaded so a test can assert conversion happened. The CONTENT
+            # is kept, not just its length, because the security-relevant question about the
+            # XLSX register route is what the bytes actually contain - a live `<f>` formula
+            # element or an inline string (#182) - and that cannot be asserted from a size.
+            meta["_uploaded"] = {"bytes": len(content), "as": content_mime_type,
+                                 "content": content}
         self._files[file_id] = meta
         # Seed an empty body too. A created file that cannot then be opened or written to is
         # not a useful double — the whole point of creating one is to use it next.

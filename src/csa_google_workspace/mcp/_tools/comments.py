@@ -119,6 +119,7 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
     @_errors
     def export_comments(fileId: str, destination: str = "rows",
                         path: str | None = None, sheetName: str | None = None,
+                        tabName: str | None = None,
                         includeResolved: bool = True, author: str | None = None,
                         since: str | None = None,
                         includeDeleted: bool = False) -> CommentExportOut:
@@ -153,7 +154,10 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
           "csv"    also returns `csv` - the whole thing as CSV text. Best when you can write
                    a file yourself, or when the user wants to paste it somewhere.
           "sheet"  CREATES A NEW GOOGLE SHEET and returns `sheet_url`. Give that link to the
-                   user. Optional `sheetName`. Needs `file.create` and `content.write`, and
+                   user. The register arrives FORMATTED - header fill, frozen top row,
+                   autofilter, column widths, and dropdowns on the decision columns.
+                   `sheetName` names the file, `tabName` the tab inside it (default
+                   "Comments"). Needs `file.create` and `content.write`, and
                    the new sheet must be reachable by the modify allowlist.
           "file"   writes a .csv on this machine and returns `written_path`.
           "xlsx"   writes a formatted .xlsx REGISTER on this machine - frozen header, filter,
@@ -232,15 +236,43 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         elif destination == "sheet":
             workspace = get_workspace()
             name = sheetName or f"Comments on {doc.name}"
-            ref = workspace.files.create(name, "spreadsheet")
-            sheet = workspace.open(ref.id)
-            # _require, not `sheet.update(...)`: `open()` is typed as Document and only Sheet
-            # has `update`. This also means a future kind that cannot take a grid fails with
-            # the project's standard message rather than an AttributeError.
-            _require(sheet, "update", "writing a grid")("A1", _export.to_grid(columns, rows))
+            tab = tabName or "Comments"
+            if _export.xlsx_supported():
+                # Upload a formatted workbook and let Drive convert it. Sheets accepts neither
+                # Markdown nor plain text as an import format, so this is the ONLY route to a
+                # register that arrives with a header fill, a frozen pane, an autofilter,
+                # column widths and the decision dropdowns - the values API writes text only.
+                #
+                # Safe here, and only here, because the file is created in this same call.
+                # Uploading a workbook over an EXISTING spreadsheet silently resets every
+                # comment's cell anchor to A1 (measured 2026-08-31).
+                #
+                # Probed against live Drive before adopting: the conversion preserves the frozen
+                # row, the autofilter, column widths, the header's bold and fill, the validation
+                # dropdowns - AND the forced text typing, so a comment body beginning `=` stays
+                # a string instead of becoming a live formula in the delivered sheet (#182).
+                ref = workspace.files.create(
+                    name, "spreadsheet",
+                    content=_export.to_xlsx_bytes(columns, rows, title=tab))
+                out["detail"] += f' Written to a new formatted Google Sheet, "{name}".'
+            else:
+                # openpyxl absent (it ships with the `mcp` extra, so this is a minimal install).
+                # Degrade to the plain grid rather than failing a tool that used to work - and
+                # SAY the register is unformatted, so a silent quality drop is not mistaken for
+                # the intended output.
+                ref = workspace.files.create(name, "spreadsheet")
+                sheet = workspace.open(ref.id)
+                # _require, not `sheet.update(...)`: `open()` is typed as Document and only
+                # Sheet has `update`. A future kind that cannot take a grid then fails with the
+                # project's standard message rather than an AttributeError.
+                _require(sheet, "update", "writing a grid")(
+                    "A1", _export.to_grid(columns, rows))
+                out["detail"] += (
+                    f' Written to a new Google Sheet, "{name}" - UNFORMATTED, because openpyxl '
+                    f"is not installed on the server. `pip install "
+                    f"'csa-google-workspace[xlsx]'` for the formatted register.")
             out["sheet_id"] = ref.id
             out["sheet_url"] = ref.url
-            out["detail"] += f' Written to a new Google Sheet, "{name}".'
         elif destination in ("file", "xlsx"):
             if not local_write:
                 raise ValueError(

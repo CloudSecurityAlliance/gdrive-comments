@@ -35,6 +35,20 @@ MAX_PAGE_SIZE = 100
 
 # What `create()` accepts, and the Google mime type each maps to. A folder is a file in Drive,
 # which is why it belongs in the same call rather than a separate one.
+# What `create(content=)` may upload, per kind, and the source MIME Drive converts FROM.
+# `body.mimeType` is the target; these are the source - that asymmetry is how text/markdown
+# becomes a real Doc rather than a Doc containing markdown.
+#
+# Sheets and Slides accept NEITHER markdown nor plain text as an import format (measured from
+# `about.get`'s importFormats, 2026-08-31), so a spreadsheet's only route to formatted content
+# is an XLSX workbook. There is deliberately no `presentation` entry: Slides has no import
+# format worth using here, and its native batchUpdate already does text styling.
+CONTENT_UPLOADS: dict[str, tuple[type, str, str]] = {
+    "document": (str, "text/markdown", "Markdown text"),
+    "spreadsheet": (bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "the bytes of an .xlsx workbook"),
+}
+
 KINDS = {
     "document": "application/vnd.google-apps.document",
     "spreadsheet": "application/vnd.google-apps.spreadsheet",
@@ -181,23 +195,46 @@ class FileCollection:
         return self._backend.download_file(parse_file_id(file_id_or_url))
 
     def create(self, name: str, kind: str, *, parent_id: str | None = None,
-               content: str | None = None) -> FileRef:
+               content: str | bytes | None = None) -> FileRef:
         """Create a new file. `kind` is `document`, `spreadsheet`, `presentation` or `folder`.
 
-        With `content`, the text is uploaded as Markdown and Drive converts it — so headings,
-        lists, tables and links become real document structure rather than literal `#`
-        characters. That is the other half of the Markdown round-trip: `Doc.as_markdown()` out,
-        this in. Only meaningful for `document`.
+        With `content`, Drive **converts on upload**, so the result is real document structure
+        rather than a file containing markup. What `content` must be depends on `kind`:
+
+        * `document` — **str**, Markdown. Headings, lists, tables and links become real
+          structure. The other half of the round trip: `Doc.as_markdown()` out, this in.
+        * `spreadsheet` — **bytes**, an `.xlsx` workbook. Sheets accepts neither markdown nor
+          plain text as an import format, so a workbook is the only route to a spreadsheet that
+          arrives *formatted* — header fill, frozen panes, column widths, data validation.
+          `_export.to_xlsx_bytes` builds one.
+
+        The type is checked rather than sniffed, because passing the wrong one is a mistake
+        worth naming: str content for a spreadsheet would upload as a file called a workbook
+        and Drive would reject it with something unhelpful.
+
+        **Uploading a workbook is safe here only because the file is NEW.** Doing the same to an
+        existing spreadsheet silently resets every comment's cell anchor to A1 (measured
+        2026-08-31); there is deliberately no method on this library that does that.
         """
         mime = KINDS.get(kind)
         if mime is None:
             raise ValueError(f"kind must be one of {sorted(KINDS)}, not {kind!r}")
-        if content is not None and kind != "document":
-            raise ValueError(f"content is only supported for documents, not {kind}s")
-        payload = content.encode("utf-8") if content is not None else None
+        payload: bytes | None = None
+        source_mime: str | None = None
+        if content is not None:
+            allowed = CONTENT_UPLOADS.get(kind)
+            if allowed is None:
+                raise ValueError(
+                    f"content is not supported for {kind}s; it works for "
+                    f"{sorted(CONTENT_UPLOADS)}")
+            want, source_mime, described = allowed
+            if not isinstance(content, want):
+                raise ValueError(
+                    f"content for a {kind} must be {described} "
+                    f"({want.__name__}), not {type(content).__name__}")
+            payload = content.encode("utf-8") if isinstance(content, str) else content
         raw = self._backend.create_file(
-            name, mime, parent_id=parent_id, content=payload,
-            content_mime_type="text/markdown" if payload is not None else None)
+            name, mime, parent_id=parent_id, content=payload, content_mime_type=source_mime)
         return self._wrap(raw)
 
     def copy(self, file_id_or_url: str, *, name: str | None = None,

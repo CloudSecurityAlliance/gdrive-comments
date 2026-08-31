@@ -398,7 +398,7 @@ def used_columns(columns: list[str], rows: list[dict]) -> list[str]:
             if c in keep or any(flatten(row.get(c)) for row in rows)]
 
 
-def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None:
+def _build_xlsx(columns: list[str], rows: list[dict], *, title: str):
     """Write a formatted, immediately usable register.
 
     **No formulas, and that is now enforced rather than merely intended.** Two separate
@@ -493,4 +493,42 @@ def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None
             cell.alignment = Alignment(vertical="top", wrap_text=name in wide)
             if name in editable:
                 cell.fill = input_fill
-    wb.save(target)
+    return wb
+
+
+def xlsx_supported() -> bool:
+    """Whether the formatted-workbook path is available (openpyxl installed).
+
+    Asked rather than inferred from a caught exception, so a caller can choose a route *before*
+    building anything. `openpyxl` ships with the `mcp` extra, so the server always has it; a
+    library-only embedder may not, and a tool that used to work should degrade rather than fail.
+    """
+    try:
+        import openpyxl  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def to_xlsx(columns: list[str], rows: list[dict], target, *, title: str) -> None:
+    """Write the formatted register to `target` (a path or a file object)."""
+    _build_xlsx(columns, rows, title=title).save(target)
+
+
+def to_xlsx_bytes(columns: list[str], rows: list[dict], *, title: str) -> bytes:
+    """The same formatted register, as XLSX bytes, for upload-and-convert.
+
+    Exists so `export_comments(destination="sheet")` can deliver the register Drive users get
+    locally - header fill, frozen pane, autofilter, column widths, decision dropdowns - instead
+    of the plain grid the values API can write. Sheets accepts neither Markdown nor styled text,
+    so converting an uploaded workbook is the only route to a formatted spreadsheet.
+
+    **Only ever for a file being CREATED.** Uploading an XLSX over an EXISTING spreadsheet
+    silently resets every comment's cell anchor to A1 - measured 2026-08-31, see
+    experiments/markdown-formatting/RESULTS.md. A brand-new file has no comments to lose, which
+    is the only reason this route is safe here.
+    """
+    import io
+    buf = io.BytesIO()
+    _build_xlsx(columns, rows, title=title).save(buf)
+    return buf.getvalue()
