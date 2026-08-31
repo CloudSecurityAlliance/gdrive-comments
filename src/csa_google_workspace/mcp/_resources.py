@@ -30,6 +30,7 @@ from ..policy import (
     CAPABILITY_NOTES,
     DEFAULT_DISABLED,
     DEFAULT_ENABLED,
+    IRREVERSIBLE,
     MODIFY,
     PROFILES,
     READ,
@@ -38,6 +39,28 @@ from ..policy import (
 )
 from ._capabilities import reachable_capabilities
 from ._config import MODIFY_ALLOWLIST_VAR, READ_ALLOWLIST_VAR, Settings
+
+
+def _default_note() -> str:
+    """What `CSA_GW_CAPABILITIES` being unset actually means, derived from the constants.
+
+    Two shapes, because "excludes nothing" is a different sentence from "excludes X" and
+    formatting an empty list produced a broken one. The irreversible set is named explicitly
+    rather than assumed equal to whatever is off by default: those were the same collection
+    once, and drifted apart in v0.31.0.
+    """
+    default = ", ".join(f"`{c}`" for c in sorted(DEFAULT_ENABLED))
+    undoable = ", ".join(f"`{c}`" for c in sorted(IRREVERSIBLE))
+    count = len(IRREVERSIBLE)
+    if DEFAULT_DISABLED:
+        excluded = ", ".join(f"`{c}`" for c in sorted(DEFAULT_DISABLED))
+        return (f"Set with `CSA_GW_CAPABILITIES`. Unset means the default set ({default}), "
+                f"which excludes {excluded}.")
+    return (f"Set with `CSA_GW_CAPABILITIES`. Unset means the default set, which is "
+            f"**everything** - all {len(DEFAULT_ENABLED)} capabilities ({default}), including "
+            f"the {count} Google gives you no way to undo ({undoable}). Nothing is excluded by "
+            f"default; narrowing is what an operator configures.")
+
 
 CONFIG_URI = "csa-gw://config"
 HELP_URI = "csa-gw://help/configuration"
@@ -165,15 +188,22 @@ def render_config(settings: Settings) -> str:
             "for them yet.",
             "",
           ] if unreachable else []),
-        # Derived from DEFAULT_DISABLED, not written out. The previous version said the
-        # default "excludes renaming, trashing and sharing" while LISTING file.update and
-        # file.trash two clauses earlier - true when written, and contradicted by the v0.21.0
-        # regrouping, in the resource whose entire job is telling the truth about the config.
-        # `tests/test_resources.py` now asserts the sentence agrees with the constant.
-        f"Set with `CSA_GW_CAPABILITIES`. Unset means the default set "
-        f"({', '.join(f'`{c}`' for c in sorted(DEFAULT_ENABLED))}), which excludes "
-        f"{', '.join(f'`{c}`' for c in sorted(DEFAULT_DISABLED))} - the three Google gives "
-        f"you no way to undo.",
+        # Derived from the constants, never written out. This sentence has now been wrong
+        # TWICE, in the resource whose entire job is telling the truth about the config.
+        #
+        #   1. It said the default "excludes renaming, trashing and sharing" while LISTING
+        #      file.update and file.trash two clauses earlier - true when written, and
+        #      contradicted by the v0.21.0 regrouping.
+        #   2. v0.31.0 turned everything on, so DEFAULT_DISABLED became EMPTY. The text then
+        #      rendered "which excludes  - the three Google gives you no way to undo": an empty
+        #      gap, a hardcoded count that was four by then, and - worst - a claim that the
+        #      default excludes capabilities the same sentence had just listed as included.
+        #      It understated the default's reach, which is the dangerous direction.
+        #
+        # The guard in tests/test_config_text_agrees_with_policy.py passed through (2) because
+        # BOTH its assertions iterate a collection that had become empty, so both were
+        # vacuously true. Empty is the case to test, not the case to skip.
+        _default_note(),
         "",
         "## Other",
         "",
