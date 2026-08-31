@@ -828,6 +828,8 @@ accepting a share URL, which neither of theirs does.
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
 | `resolve_comment`, `reopen_comment` | Close or reopen a thread | ✗ | ✗ | ✅ |
+| `edit_comment` · `delete_comment` | Change or remove a comment — **the two Google gives no way to undo**, so both sit at `fileOrganizer` | ✗ | ✗ | ✅ |
+| `list_slides` | A deck's slides, with speaker notes and shape ids | ✗ | ✗ | ✅ |
 | `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
 | `export_comments` | Every comment as **flat rows for a spreadsheet or another tool** — with the passage or the cell's contents | ✗ | ✗ | ✅ |
 | `apply_comment_actions` | Fill the register in and **apply it back** — bulk replies and resolves, safe to re-run | ✗ | ✗ | ✅ |
@@ -852,10 +854,21 @@ equivalent upstream — where it cannot be misconfigured.
 ⁶ Creates Google-native files — Doc, Sheet, deck or folder — with an optional **Markdown** body
 that Drive converts into real headings, lists and tables. Not arbitrary media upload: Google's
 `drive.files.create` takes bytes, and this does not.
-⁷ Present, and **off in every profile but `full`**. Each needs its own capability named
-(`file.update`, `file.share`, `file.trash`) *and* the file listed for modify. The default
-`editor` profile therefore cannot rename, share or trash anything — including files it created
-itself, which is a real consequence rather than an oversight.
+⁷ Present, and **on by default** — narrowing is what an operator configures (v0.31.0). Each needs
+its own capability (`file.update`, `file.share`) *and* the file listed for modify, so an allowlist
+bounds them even when the capability is on.
+
+Where they sit on the profile ladder follows **recoverability**, not how alarming the verb sounds:
+`file.update` (rename/move) and `file.trash` are reversible — a rename can be renamed back, and
+Drive's bin holds a trashed file for 30 days for its owner to restore — so both are available from
+**`writer`** upward. `file.share` is not, in effect: the grant is revocable but a copy the
+recipient took is not, so it is **`organizer`** only. Drive draws the same line — its own Editor
+cannot share either.
+
+*(This footnote said "off in every profile but `full`" and that the "default `editor` profile
+cannot rename, share or trash anything". All three parts were wrong by v0.31.0: nothing is off by
+default, there is no default profile, and `writer` may rename and trash. It also contradicted the
+profile table above it in this same file.)*
 ⁸ `list_suggestions` returns them as objects; `read_file_content(suggestions="accepted")`
 renders what the document would say. **Neither accepts nor rejects** — the Docs API has no
 endpoint for either, which is a Google limitation rather than a scoping decision, and the only
