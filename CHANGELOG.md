@@ -6,11 +6,11 @@
 > are not a record of what was released.
 >
 > **On PyPI:** 0.1.0, 0.1.1, 0.1.2, 0.2.0, 0.2.1, 0.2.2, 0.2.3, 0.2.4, 0.2.5, 0.3.1, 0.11.0,
-> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0, 0.28.0, 0.29.0, 0.30.0, 0.30.1, 0.30.2, 0.30.3, 0.30.4, 0.30.5, 0.30.6, 0.30.7, 0.30.8, 0.30.9, 0.30.10, 0.30.11, 0.30.12, 0.30.13, 0.30.14, 0.31.0, 0.31.1, 0.32.0, 0.33.0, 0.34.0, 0.35.0, 0.35.1. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
+> 0.11.1, 0.12.0, 0.13.0, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0, 0.19.0, 0.19.1, 0.19.2, 0.20.0, 0.20.1, 0.21.0, 0.22.0, 0.23.0, ~~0.24.0~~, 0.25.0, 0.26.0, 0.27.0, 0.28.0, 0.29.0, 0.30.0, 0.30.1, 0.30.2, 0.30.3, 0.30.4, 0.30.5, 0.30.6, 0.30.7, 0.30.8, 0.30.9, 0.30.10, 0.30.11, 0.30.12, 0.30.13, 0.30.14, 0.31.0, 0.31.1, 0.32.0, 0.33.0, 0.34.0, 0.35.0, 0.35.1, 0.36.0. **0.24.0 is YANKED** (CSV formula injection — see its entry). `tests/test_release_history.py`
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
-## 2026-08-31 — v0.36.0 (the write surface goes both ways now) — not released
+## 2026-08-31 — v0.36.0 (the write surface goes both ways now)
 
 Closes **#278** and **#279**. **50 tools**, up from 40, and an **11th capability**.
 
@@ -89,6 +89,10 @@ method for exactly this; the shape assertion moved to the `ApiBackend` contract 
 Full suite: 1560 passed, 12 skipped.
 
 ## 2026-08-31 — v0.35.2 (a multi-tab Doc read back as a one-tab Doc) — not released
+
+> **Never tagged; its fix shipped in v0.36.0.** The bump landed with the fix, then the
+> tool-surface work superseded it before a release was cut. The entry stays because it
+> records *what changed and why* — the same reason the older unreleased headings do.
 
 **A bug, measured against live Google.** Closes **#280**.
 
