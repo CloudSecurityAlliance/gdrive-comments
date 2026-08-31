@@ -382,7 +382,7 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 38, each with structured output and read-only/destructive annotations
+**Tools** — 39, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
@@ -394,6 +394,7 @@ reviews the configuration and may name people or unannounced work.
 | **Create** | `create_file` · `copy_file` |
 | **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each OFF unless an operator names its capability |
 | **Access requests** | `list_access_proposals` · `resolve_access_proposal` 🔒 — answering "can I have access?"; approving is sharing, so it costs `file.share` |
+| **Classification** | `list_labels` — Drive labels resolved to names. **Read-only by construction**: the write scope is never requested |
 | **The server itself** | `describe_configuration` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
 
 The find-and-read names and parameters match Google's Drive MCP server and the claude.ai Drive
@@ -421,6 +422,7 @@ starts and tells you so through a tool error, rather than dying where no one can
 |---|---|
 | `Error 403: org_internal` — *"can only be used within its organization"* | The OAuth client is **Internal** to a Google Workspace organization and you signed in with an account outside it. Either pick an account in that organization (easy to get wrong if you have several), or create your own OAuth client. |
 | `SERVICE_DISABLED` on some file types but not others | A scope grant is **not** API enablement. Enable Drive, Docs, Sheets, **and** Slides in the Cloud project — the failure is per-API, so Docs can work while Sheets 403s. |
+| `list_labels` returns labels with `name: null` and `names_unavailable: true` | Label *ids* come from Drive v3; label *names* come from the separate **Drive Labels API**. Either it is not enabled in the Cloud project, or the cached token predates the `drive.labels.readonly` scope added in v0.34.0 — sign in again. Each label's `unresolved_reason` says which. **The file is still labelled**; only the names are missing. |
 | `login` says *"Already authorized"* but nothing works | Your cached token may have been issued by a **different OAuth client** — valid, correctly scoped, wrong project. `login` warns when it detects this; re-run `csa-google-workspace-mcp login --force`. |
 | Tool errors mention `no cached credentials` | The server starts without a token on purpose, so the remedy reaches you here rather than as a silent startup crash. Run `csa-google-workspace-mcp login`. |
 | Works in Claude Code, fails in Claude Desktop (macOS) | **Run `csa-google-workspace-mcp configure`.** It writes the config for you — absolute path, plus your `CSA_GW_*` variables, merged into whatever else is in there and with a timestamped backup. Then restart Desktop. *Why it happens:* Claude Code runs in your shell; Desktop is a GUI app and inherits launchd's `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`), which contains neither `~/.local/bin` nor Homebrew, and where `python3` is macOS's 3.9 — below this package's 3.10 floor. So a bare command name isn't found and `python3` is the wrong interpreter. `configure --print` shows the JSON without writing, if you'd rather paste it yourself. |
@@ -544,9 +546,9 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **38** |
+| MCP tools | 8 | 11 | **39** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **27** |
+| Tools they do not have | — | — | **28** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
 The twenty-three they do not have: **eleven** comment tools, five content-write tools,
@@ -636,6 +638,7 @@ accepting a share URL, which neither of theirs does.
 | `trash_file` | Move to trash. Not a permanent delete | ✗ | ✅ | ✅ ⁷ |
 | `list_access_proposals` | Who has **asked** for access and is still waiting | ✗ | ✗ | ✅ |
 | `resolve_access_proposal` | Approve or refuse a request. Approving **is** sharing | ✗ | ✗ | ✅ ⁷ |
+| `list_labels` | **Classification** — Drive labels, resolved to names | ✗ | ✗ | ✅ |
 | `list_comments`, `get_comment` | Comments as **structured objects** — ids, authors, resolved state, replies, cell | ✗ | *inline text only* | ✅ |
 | `create_comment` | Post a comment | ✗ | ✗ | ✅ |
 | `reply_comment` | Reply to a thread | ✗ | ✗ | ✅ |
@@ -691,6 +694,7 @@ any of the three servers touches, and how much of one capability lives in a sing
 | `update_file` | `drive.files.update` (`name`, `parents`) |
 | `share_file` | `drive.permissions.create` |
 | `list_access_proposals` | `drive.accessproposals.list` |
+| `list_labels` | `drive.files.listLabels` + `drivelabels.labels.get` (a **second API**) |
 | `resolve_access_proposal` | `drive.accessproposals.resolve` |
 | `trash_file` | `drive.files.update` (`trashed=true`) |
 | `list_comments`, `get_comment` | `drive.comments.list` / `.get` |

@@ -46,6 +46,9 @@ class Backend(Protocol):
     def update_permission(self, file_id: str, permission_id: str, *, role: str) -> JsonDict: ...
     def delete_permission(self, file_id: str, permission_id: str) -> None: ...
     def list_access_proposals(self, file_id: str) -> list[JsonDict]: ...
+    def list_file_labels(self, file_id: str) -> list[JsonDict]: ...
+    # Not file-scoped: a label DEFINITION belongs to the organisation, not to any one file.
+    def get_label_definition(self, label_id: str) -> JsonDict: ...
     def resolve_access_proposal(self, file_id: str, proposal_id: str, *, action: str,
                                 roles: list[str] | None = None, view: str | None = None,
                                 notify: bool = True) -> None: ...
@@ -70,7 +73,8 @@ class FakeBackend:
 
     def __init__(self, files, *, documents=None, spreadsheets=None,
                  values=None, presentations=None, exports=None, media=None, comments=None,
-                 permissions=None, access_proposals=None):
+                 permissions=None, access_proposals=None, file_labels=None,
+                 label_definitions=None):
         self._files = files
         # Keyed (file_id, comment_id) -> raw Drive comment dict, matching what
         # create_comment() builds. The seed exists for fixtures needing fields
@@ -93,6 +97,10 @@ class FakeBackend:
         # has no `create` either - a proposal is made from Drive's UI by somebody who does NOT
         # have access, and there is no endpoint on this side that can produce one.
         self._proposals = {fid: list(ps) for fid, ps in (access_proposals or {}).items()}
+        # Two halves, because Google splits them across two APIs: which labels are ON a file
+        # (Drive v3, opaque ids) and what a label IS (the Drive Labels API, names).
+        self._file_labels = {fid: list(ls) for fid, ls in (file_labels or {}).items()}
+        self._label_definitions = dict(label_definitions or {})
         self._writes = []
 
     def get_file_metadata(self, file_id: str) -> dict:
@@ -311,6 +319,16 @@ class FakeBackend:
     def list_access_proposals(self, file_id):
         self.get_file_metadata(file_id)              # raises NotFoundError
         return [copy.deepcopy(p) for p in self._proposals.get(file_id, [])]
+
+    def list_file_labels(self, file_id):
+        self.get_file_metadata(file_id)              # raises NotFoundError
+        return [copy.deepcopy(label) for label in self._file_labels.get(file_id, [])]
+
+    def get_label_definition(self, label_id):
+        try:
+            return copy.deepcopy(self._label_definitions[label_id])
+        except KeyError:
+            raise exc.NotFoundError(f"no label definition for {label_id!r}") from None
 
     def resolve_access_proposal(self, file_id, proposal_id, *, action,
                                 roles=None, view=None, notify=True):
@@ -679,6 +697,32 @@ class ApiBackend:
             page = resp.get("nextPageToken")
             if not page:
                 return out
+
+    def list_file_labels(self, file_id):
+        # Which labels are applied to this file - as OPAQUE IDS. Drive v3 will not tell you what
+        # a label is called; `get_label_definition` is the other half. Note `maxResults`, not
+        # `pageSize`: this endpoint spells its page size differently from every other list here.
+        out, page = [], None
+        while True:
+            kw = {"fileId": file_id, "maxResults": 100}
+            if page:
+                kw["pageToken"] = page
+            resp = _errors.call(self._services.drive.files().listLabels(**kw).execute)
+            out.extend(resp.get("labels", []))
+            page = resp.get("nextPageToken")
+            if not page:
+                return out
+
+    def get_label_definition(self, label_id):
+        # A DIFFERENT API - `drivelabels.googleapis.com`, its own scope, its own enablement -
+        # and the only thing that can turn a label id into "Confidential".
+        #
+        # `LABEL_VIEW_FULL` is required: the basic view omits `fields`, and without those the
+        # response cannot name a field or resolve a selection choice, which is most of the point.
+        name = label_id if str(label_id).startswith("labels/") else f"labels/{label_id}"
+        return _errors.call(
+            self._services.drivelabels.labels().get(
+                name=name, view="LABEL_VIEW_FULL").execute)
 
     def resolve_access_proposal(self, file_id, proposal_id, *, action,
                                 roles=None, view=None, notify=True):

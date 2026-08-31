@@ -6,6 +6,7 @@ from . import exceptions as exc
 from .access_proposals import AccessProposalsMixin
 from .backend import Backend
 from .comments import Comment, CommentCollection
+from .labels import LabelsMixin
 from .permissions import PermissionsMixin
 
 MIME_TO_TYPE = {
@@ -42,11 +43,12 @@ class CommentsMixin:
         return self.comments._wrap(d)
 
 
-class Document(CommentsMixin, PermissionsMixin, AccessProposalsMixin):
+class Document(CommentsMixin, PermissionsMixin, AccessProposalsMixin, LabelsMixin):
     """Abstract base. Never instantiated directly — use Workspace.open().
 
     Uniform Drive concerns arrive as mixins, one per concern — `CommentsMixin`,
-    `PermissionsMixin`, `AccessProposalsMixin`, and later revisions/approvals. They are all
+    `PermissionsMixin`, `AccessProposalsMixin`, `LabelsMixin`, and later
+    revisions/approvals. They are all
     the same shape: one Drive API, identical across Docs/Sheets/Slides. The per-type *content*
     axis is the subclasses in `documents/`.
     """

@@ -10,6 +10,7 @@ from .documents.sheet import Sheet
 from .documents.slides import Slide, Slides
 from .exceptions import DetachedError
 from .files import FileCollection, FileRef
+from .labels import Label, LabelField
 from .permissions import Permission
 from .policy import Policy, PolicyBackend, Scope
 from .suggestions import Suggestion
@@ -22,8 +23,8 @@ __all__ = [
     # load-bearing types for embedders / custom backends (audit #26)
     "Backend", "Document", "CommentCollection", "DetachedError",
     "FileRef", "FileCollection", "Permission",
-    "AccessProposal", "RoleAndView",
+    "AccessProposal", "RoleAndView", "Label", "LabelField",
     # policy / allowlisting (#82)
     "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",
 ]
-__version__ = "0.33.0"
+__version__ = "0.34.0"

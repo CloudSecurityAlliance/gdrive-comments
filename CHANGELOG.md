@@ -10,6 +10,93 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-08-30 — v0.34.0 (what a document is classified as) — not released
+
+Ships **Drive labels**, read-only, as `list_labels` — the last security-adjacent item on the
+1.0.0 inventory. **39 tools**, up from 38.
+
+### ⚠️ This release adds an OAuth scope, so everyone re-consents
+
+`drive.labels.readonly`. A cached token from an earlier version does not carry it, and the
+existing re-consent detection will prompt for a fresh sign-in. **It also needs a second API
+enabled in the Cloud project — `drivelabels.googleapis.com`** — because a granted scope is not
+API enablement, the trap this project already records for Docs/Sheets/Slides.
+
+Neither failure is fatal: see the degradation section below.
+
+### It takes two APIs, and that is the whole difficulty
+
+Drive v3's `files.listLabels` says **which** labels are on a file. It does not say what they are
+called — the `Label` it returns is `{id, revisionId, fields}`, no title, and selection values are
+opaque choice ids too. Rendering `Confidential` instead of `bXlsYWJlbA` needs the **Drive Labels
+API**, which is separate, with its own scope and its own enablement.
+
+So `doc.labels` is a join: one `list_file_labels`, then one `get_label_definition` per applied
+label. A document carries none or one in practice, so that is one or two calls — inside the
+settled "accessors re-fetch per call" rule, and not worth a cache.
+
+### Read-only by construction, not by configuration
+
+This library **never requests `drive.labels`**, only `drive.labels.readonly`. There is no
+capability to enable and no configuration in which a model can change a classification.
+
+Labels are what **DLP and retention policies key on**, so setting one is not an edit to a
+document — it is a claim about how the organisation must treat that document. Relabelling
+`Confidential` to `Public` would be defeating a control rather than using one, and unlike a bad
+edit, nobody sees a diff. Reading is the useful half anyway: *"what is this classified as, and
+should I be pasting it into a chat?"* is the question that actually comes up.
+
+`scopes_for()` therefore returns this scope in **both** postures, which is why
+`tests/test_auth.py` no longer asserts "the read-write set contains no `.readonly` scope". That
+rule was a proxy for "a posture must not silently ask for less than it claims"; labels break the
+proxy without breaking the rule, so the assertion is now specific — exactly one read-only scope,
+and it is that one.
+
+### Names can be unavailable, and that must never look like "unlabelled"
+
+Two ways the second API fails while the first succeeds: the API is off, or the token predates the
+scope. In both, the ids are **still true** — so failing the call would discard real information,
+and returning nothing would report a classified document as unclassified. **That is the error
+somebody acts on.**
+
+So labels come back with `name: null` and an `unresolved_reason` naming which cause and its fix.
+The two are told apart deliberately: an operator who reads "enable the API" when the real problem
+is a stale token will enable the API and still see no names.
+
+**And an id is never presented as a name.** `name` is `null`, not the id; `display` falls back to
+`label LBL1`, which reads as an unresolved reference rather than a title. The first draft here
+got this wrong for selection values — with no definition they fell through to `str(v)` and
+returned the bare choice id, exactly the failure the module was written to prevent. A test caught
+it before it shipped.
+
+`list_labels` surfaces the distinction as two flags, because the misreading to prevent is
+"no names shown" → "not classified":
+
+* `labelled: false` — genuinely no labels.
+* `labelled: true, names_unavailable: true` — labelled, names unreadable, reason attached.
+
+### Changed
+
+* `labels.py` (new) — `Label`, `LabelField`, `LabelsMixin`, and the join. Exported from the root.
+* `auth.py` — `_LABELS_RO`, requested in both postures.
+* `_services.py` — a lazy `drivelabels` client. Laziness matters more here: a deployment that
+  never asks about labels never builds it and never notices the API is off.
+* `backend.py` — `list_file_labels` (paginated with **`maxResults`**, which is what this endpoint
+  calls its page size, unlike every other list here) and `get_label_definition`
+  (`LABEL_VIEW_FULL`, without which the response carries no field or choice names at all).
+* `policy.py` — `list_file_labels` is `READS_FILE`; `get_label_definition` is `READS_LISTING`,
+  because a label definition belongs to the organisation and there is no file to check.
+* `mcp/` — `list_labels`, its schemas, its capability entry (`None`).
+
+### Tests
+
+`tests/test_labels.py` (24), five `ApiBackend` contract tests, and two rewritten scope tests.
+Verified by falsification: dropping unresolvable labels — the "unlabelled" regression — fails
+**8**; `maxResults`→`pageSize` fails 1 (and would have silently truncated a heavily-labelled
+file, since Google ignores the wrong name); `LABEL_VIEW_FULL`→`BASIC` fails 1.
+
+Full suite: 1499 passed, 12 skipped; coverage 88.98%, 100% on the new module.
+
 ## 2026-08-30 — v0.33.0 (answering "can I have access?") — not released
 
 Ships Drive's `accessproposals` as two MCP tools and a library mixin. A **1.0.0** item.

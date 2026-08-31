@@ -61,10 +61,10 @@ below; this is the index.
 | item | note |
 |---|---|
 | **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
-| **Drive labels** | The one inventory item that is security-adjacent — classification is what DLP keys on |
 | **Allowlist dry-run** | *"What would this run touch?"* — more valuable under open defaults, not less |
 | **Dead-entry detection** | An allowlisted file that has been trashed |
 | **`CONTROLS_TOKEN`** | A decision, not code: store a read-only PAT so CI can verify branch protection, or leave it verified locally |
+| ~~Drive labels~~ | **Shipped** v0.34.0 — read-only by construction; needs a 2nd API and a new scope |
 | ~~`accessproposals`~~ | **Shipped** v0.33.0 — `resolve` gated as `file.share`, confirmed by Google's own scope table |
 | ~~C2 flavour switch~~ | **Shipped** v0.32.0 — allowed *and* advertised; `claude` 14 tools, `google` 11 |
 | ~~C4 logging~~ | **Shipped** v0.31.1 |

@@ -12,9 +12,25 @@ _BASE = "https://www.googleapis.com/auth/"
 _RW = [f"{_BASE}drive", f"{_BASE}documents", f"{_BASE}spreadsheets", f"{_BASE}presentations"]
 _RO = [f"{s}.readonly" for s in _RW]
 
+# Drive **labels**, and read-only in BOTH postures - the only scope here that does not have a
+# write form, deliberately.
+#
+# Labels are a classification system: DLP and retention key on them, so writing one is not an
+# edit to a document, it is a claim about how the organisation must treat that document. A model
+# that could relabel `Confidential` to `Public` would be defeating a control rather than using
+# one. Reading them is the useful half anyway - "what is this document classified as?" is the
+# question people actually ask - so this library asks for `.readonly` and cannot mislabel
+# anything even when the operator has enabled every capability.
+#
+# It is also a SEPARATE API (`drivelabels.googleapis.com`). A granted scope does not enable an
+# API: until it is switched on in the Cloud project these calls 403 `SERVICE_DISABLED`, which is
+# why `labels.py` degrades to ids-without-names rather than failing the call.
+_LABELS_RO = f"{_BASE}drive.labels.readonly"
+
 
 def scopes_for(read_only: bool) -> list[str]:
-    return list(_RO if read_only else _RW)
+    """The scopes to request. `_LABELS_RO` is in both postures because it has no write form."""
+    return [*(_RO if read_only else _RW), _LABELS_RO]
 
 
 def token_path_for(token_path: str, read_only: bool) -> str:

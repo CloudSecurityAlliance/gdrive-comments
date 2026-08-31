@@ -350,3 +350,95 @@ def test_a_denial_sends_no_role_at_all():
         "f", "ap1", action="DENY", notify=False)
 
     assert stub.resolve_calls[0]["body"] == {"action": "DENY", "sendNotification": False}
+
+
+# --- labels: two APIs, and the parameter names differ from everything else here -------
+
+
+class _LabelsFilesStub:
+    def __init__(self, pages):
+        self._pages, self._i = pages, 0
+        self.calls = []
+
+    def listLabels(self, **kwargs):        # noqa: N802 - Google's method name
+        self.calls.append(kwargs)
+        page = self._pages[self._i]
+        self._i += 1
+        return _Request(page)
+
+
+class _LabelDefsStub:
+    def __init__(self, result=None):
+        self.calls = []
+        self._result = result or {}
+
+    def get(self, **kwargs):
+        self.calls.append(kwargs)
+        return _Request(self._result)
+
+
+class _DriveForLabels:
+    def __init__(self, files): self._files = files
+    def files(self): return self._files
+
+
+class _ServicesForLabels:
+    def __init__(self, files=None, defs=None):
+        self.drive = _DriveForLabels(files)
+        self._defs = defs
+
+    @property
+    def drivelabels(self):
+        outer = self
+        class _DL:
+            def labels(self): return outer._defs
+        return _DL()
+
+
+def test_list_file_labels_paginates_with_maxResults_not_pageSize():
+    """This endpoint spells its page size `maxResults`, unlike every other list in this backend,
+    which uses `pageSize`. Sending `pageSize` is not an error - Google ignores it - so the call
+    silently falls back to the default page size and a heavily-labelled file loses labels with
+    no failure anywhere."""
+    files = _LabelsFilesStub([
+        {"labels": [{"id": "L1"}], "nextPageToken": "n1"},
+        {"labels": [{"id": "L2"}]},
+    ])
+    out = ApiBackend(_ServicesForLabels(files=files)).list_file_labels("f")
+
+    assert [x["id"] for x in out] == ["L1", "L2"]
+    assert files.calls[0]["maxResults"] == 100
+    assert "pageSize" not in files.calls[0], "wrong parameter name; Google would ignore it"
+    assert "pageToken" not in files.calls[0]
+    assert files.calls[1]["pageToken"] == "n1"
+
+
+def test_a_file_with_no_labels_is_an_empty_list():
+    files = _LabelsFilesStub([{}])
+    assert ApiBackend(_ServicesForLabels(files=files)).list_file_labels("f") == []
+
+
+def test_get_label_definition_asks_the_full_view():
+    """`LABEL_VIEW_BASIC` omits `fields`, so without FULL the response cannot name a field or
+    resolve a selection choice - which is most of the reason for calling the second API at all.
+    The failure is quiet: a well-formed response that simply has no names in it."""
+    defs = _LabelDefsStub({"id": "L1"})
+    ApiBackend(_ServicesForLabels(defs=defs)).get_label_definition("L1")
+
+    assert defs.calls[0]["view"] == "LABEL_VIEW_FULL"
+
+
+def test_the_label_id_is_turned_into_a_resource_name():
+    """The Drive Labels API addresses labels as `labels/{id}`, while Drive v3 hands back a bare
+    id. Passing the bare id through is a 404 on a label that exists."""
+    defs = _LabelDefsStub()
+    ApiBackend(_ServicesForLabels(defs=defs)).get_label_definition("L1")
+    assert defs.calls[0]["name"] == "labels/L1"
+
+
+def test_an_already_qualified_name_is_not_doubled():
+    """Idempotent, because a caller holding a resource name is the likelier mistake than one
+    holding a bare id, and `labels/labels/L1` is a 404 that reads like a missing label."""
+    defs = _LabelDefsStub()
+    ApiBackend(_ServicesForLabels(defs=defs)).get_label_definition("labels/L1")
+    assert defs.calls[0]["name"] == "labels/L1"

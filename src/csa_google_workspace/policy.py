@@ -325,6 +325,14 @@ _GATES: dict[str, Gate] = {
     # "Who is waiting for access?" has no write in it. Ungated like every other read, and
     # file-scoped like them: it discloses who has asked, which is disclosure about the file.
     "list_access_proposals": READS_FILE,
+    # Which labels are on this file: a read, and file-scoped like every other read.
+    "list_file_labels": READS_FILE,
+    # What a label IS - its title, its fields, its choices. NOT file-scoped, because a label
+    # definition belongs to the ORGANISATION rather than to any one file, so there is no file
+    # to check against an allowlist. It is also the only call here that reaches a second Google
+    # API (`drivelabels`), and it can only ever read: this library never requests the write
+    # scope, so mislabelling is impossible rather than merely disabled.
+    "get_label_definition": READS_LISTING,
     "search_files": READS_LISTING,
     "list_comments": READS_FILE,
     "get_comment": READS_FILE,

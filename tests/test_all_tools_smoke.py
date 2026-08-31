@@ -76,6 +76,7 @@ ARGS: dict[str, dict] = {
     "update_file_permission": {"fileId": DOC, "permissionId": "p1", "role": "reader"},
     "unshare_file":          {"fileId": DOC, "permissionId": "p1"},
     "list_access_proposals": {"fileId": DOC},
+    "list_labels":           {"fileId": DOC},
     # DENY rather than approve, so the smoke run does not leave a permission behind that the
     # permission tools above would then see. Both branches are exercised properly in
     # tests/test_access_proposals.py; this asserts the tool is reachable and wired.
@@ -120,6 +121,11 @@ def server():
         access_proposals={DOC: [{"proposalId": "ap1", "fileId": DOC,
                                  "requesterEmailAddress": "asker@example.com",
                                  "rolesAndViews": [{"role": "reader"}]}]},
+        file_labels={DOC: [{"id": "LBL1", "revisionId": "1",
+                            "fields": {"f1": {"valueType": "text", "text": ["x"]}}}]},
+        label_definitions={"LBL1": {"id": "LBL1", "properties": {"title": "Sensitivity"},
+                                    "fields": [{"id": "f1",
+                                                "properties": {"displayName": "Level"}}]}},
     )
     return create_server(lambda: Workspace(backend), settings=settings_from_env(
         {"CSA_GW_ALLOWLIST_READ": "*", "CSA_GW_ALLOWLIST_MODIFY": "*",

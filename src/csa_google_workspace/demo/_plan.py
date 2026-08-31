@@ -285,6 +285,13 @@ def per_type(kind: str) -> list[Step]:
              "See who can reach it",
              "Reading who has access is ungated. GRANTING access is not - see the next step.",
              group=kind),
+        Step("list_labels", lambda s, key=key: {"fileId": s[key]},
+             "See how it is CLASSIFIED",
+             "Drive labels, resolved to names through a second API. Expect zero on a file this "
+             "demo just made. Watch the distinction: `labelled: false` means no labels, while "
+             "`labelled: true` with `names_unavailable: true` means labels exist and could not "
+             "be NAMED - never the same answer.",
+             group=kind),
         Step("list_access_proposals", lambda s, key=key: {"fileId": s[key]},
              "See who has ASKED to reach it",
              "The other side of access: people who hit the file without permission and "
