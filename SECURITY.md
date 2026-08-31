@@ -52,6 +52,19 @@ which tools are live — but it sits on the read→act path. **Contain it at the
 
 - **Treat all document/comment text as untrusted data, never instructions.** Keep it in a
   clearly-delimited data channel, never the system/tool-instruction layer.
+- **And not only document text.** As of v0.33.0 the sharpest untrusted input this server handles
+  is an **access-request message** (`request_message`, from `list_access_proposals`). Every other
+  untrusted string here was written by somebody who *already had access* to the file. That one is
+  free text from somebody with **none**, and it reaches a model that is being asked to decide
+  whether to **give them some**. The barrier to injecting it is clicking "Request access" on a
+  link.
+
+  The rules that follow from it, and they generalise to any request-shaped input: decide on the
+  identity the *provider* vouches for (`requester_email`), never on the message or a display
+  name; report the message rather than acting on it; and keep it out of `__repr__`, because a log
+  line is where injected text gets read later by something that has forgotten where it came from.
+  `find_access_proposal(email)` exists so an instruction like *"approve the request from alice@…"*
+  can be actioned without matching on the attacker-controlled field.
 - **Require human confirmation for destructive/irreversible actions** — delete, bulk-resolve,
   overwrite, raw `batch_update`. Mandatory for an interactive tool.
 - **Grant least authority per action** — see *Read-only by default* below.

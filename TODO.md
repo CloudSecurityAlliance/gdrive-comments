@@ -82,6 +82,7 @@ below; this is the index.
 
 | item | note |
 |---|---|
+| **#273 threat-model amendment** | Access-request text is a new untrusted-input class (outsider with NO access). Filed as an issue because the register may not be edited directly |
 | **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
 | ~~Allowlist dry-run + dead-entry detection~~ | **Shipped** — one feature, `preview_allowlist`: a dead entry is what a dry-run finds |
 | ~~`CONTROLS_TOKEN`~~ | **Done 2026-08-31** — PAT configured; all three controls now verify in CI. **Rotate by 2027-09-01**, see the banner at the top |

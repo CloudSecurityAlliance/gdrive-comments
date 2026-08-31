@@ -911,8 +911,10 @@ Ask for one a file cannot produce and the error names the ones it can, rather th
 
 ### Planned — capabilities no server exposes yet
 
-The Google APIs reach considerably further than any of the three servers currently do. These
-are the ones worth building, in the same format, with the tool names they would ship under.
+The Google APIs reach considerably further than **any** server in the field currently does —
+see [the wider field](#the-wider-field--every-drivedocs-mcp-server-we-could-find) for who else is
+in it. These are the ones worth building, in the same format, with the tool names they would ship
+under.
 Sequencing is in [`TODO.md`](./TODO.md); the two tables together are the roadmap.
 
 | Tool | What it does | Google API | Google | Claude | Our tool |
@@ -925,13 +927,20 @@ Sequencing is in [`TODO.md`](./TODO.md); the two tables together are the roadmap
 | `read_revision` | The text of an earlier version, so two can be compared | `drive.revisions.get` (+ export) | ✗ | ✗ | ✗ *planned* |
 | `pin_revision` | Mark a version `keepForever` so autocleanup cannot drop it | `drive.revisions.update` | ✗ | ✗ | ✗ *planned* |
 | `list_changes` | What changed across a Drive since a token — a sweep that reads only the delta | `drive.changes.list` + `getStartPageToken` | ✗ | ✗ | ✗ *planned* |
-| `list_file_labels` · `set_file_labels` | Read and apply Drive labels — classification and data governance | `drive.files.listLabels` / `.modifyLabels` | ✗ | ✗ | ✗ *planned* |
 | `get_slide_image` | Render a slide to a PNG, so a model can actually *see* a deck | `slides…pages.getThumbnail` | ✗ | ✗ | ✗ *planned* |
 | `find_named_range` · `annotate_range` | Durable anchors that survive edits, instead of fragile A1 ranges and character offsets | `docs` named ranges · `sheets…developerMetadata` | ✗ | ✗ | ✗ *planned* |
 | **Docs structure & formatting** | Tables, styles, headers/footers, footnotes, bullets, images, page breaks, tabs, smart chips — **37 of `batchUpdate`'s 40 request types are unused by anybody** | `docs.documents.batchUpdate` | ✗ | ✗ | ✅ 3 of 40 |
 
 That last row is the largest gap in the whole comparison, and the most direct answer to "help
-me get work done": today no MCP server can add a table to a document.
+me get work done".
+
+**Correction, 2026-08-31.** This used to read *"today no MCP server can add a table to a
+document"*. That is **no longer true**, and it was the kind of claim that ages badly without
+anyone noticing: `piotr-agier/google-drive-mcp` ships `insertTable`, `editTableCell`,
+`insertImageFromUrl`, `applyTextStyle`, `applyParagraphStyle` and `createParagraphBullets`, read
+from its own `docs/tools.md`. The `batchUpdate` surface is still mostly unused across the field,
+and it is still the biggest gap **here** — but the field has moved and this project has not moved
+with it.
 
 **Waiting on a hosted variant.** `drive.files.watch` and `changes.watch` deliver *push*
 notifications — react the moment a comment appears, rather than polling for it. They require a
@@ -941,8 +950,18 @@ is a substantial piece of work in its own right: multi-user OAuth, per-user Goog
 custody, and a public attack surface all arrive with it. See `TODO.md`. `list_changes` polling
 covers the same ground locally in the meantime.
 
+**Shipped since this table was written.** `list_labels` (v0.34.0) reads Drive labels, resolving
+them to real names through the separate Drive Labels API — so the labels row left this table
+rather than staying in it as a plan.
+
+**Deliberately refused, not merely unplanned: `set_file_labels`.** This library never requests the
+`drive.labels` write scope, only `.readonly`, so there is no configuration in which a model can
+change a classification. Labels are what DLP and retention policies key on — setting one is not an
+edit to a document, it is a claim about how the organisation must treat it, and unlike a bad edit
+nobody sees a diff.
+
 **Not planned at all.** Shared-drive administration (`drives.*`), permanent deletion
-(`files.delete`, `emptyTrash` — both other servers stop at trash, and that is a considered
+(`files.delete`, `emptyTrash` — both Google's and Claude's stop at trash, and that is a considered
 line), and client-side-encryption tokens. None of them help anyone review a document.
 
 **Use Google's or Claude's if** you want zero setup, you are reading rather than editing, you
