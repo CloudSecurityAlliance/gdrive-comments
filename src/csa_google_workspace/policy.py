@@ -212,9 +212,17 @@ PROFILES: dict[str, frozenset[str]] = {
     # it, `full` bundled R1 destruction with R0 disclosure and that posture had no name.
     # `comment.edit` and `comment.delete` sit here on recoverability: Drive has NO comment-level
     # restore (verified), and the soft delete strips content AND author.
-    # `content.delete` joins this rung, not `writer`, on the same recoverability test that put
-    # `comment.delete` here: deleting a tab or a paragraph range has no trash and no API undo.
-    # A `writer` may therefore edit a document all day and never destroy part of one.
+    # `content.delete` joins this rung, not `writer`, because it reaches what EDITING CANNOT:
+    # removing a tab, or a range of a Doc. That is the honest line, and it is not the
+    # recoverability line - Drive keeps revision history for both, so a human can restore either.
+    #
+    # It is NOT a bound on destruction generally, and the comment here used to claim it was:
+    # *(A `writer` may therefore edit a document all day and never destroy part of one.)* False.
+    # A `writer` holds `content.write`, and `update_cells` overwrites whatever was in the range
+    # while `clear_cells` empties it - both measured. Withholding those would not prevent the
+    # destruction, only make somebody write a placeholder that looks like data (CINO, 2026-09-01;
+    # see tests/test_cell_destruction_is_content_write.py). What bounds content destruction is
+    # the MODIFY allowlist, by file.
     "fileOrganizer": frozenset({COMMENT_CREATE, COMMENT_REPLY, COMMENT_RESOLVE, CONTENT_WRITE,
                                 FILE_CREATE, FILE_UPDATE, FILE_TRASH,
                                 COMMENT_EDIT, COMMENT_DELETE, CONTENT_DELETE}),

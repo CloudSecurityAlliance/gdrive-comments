@@ -214,9 +214,11 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
 
         Google refuses to delete the only tab in a spreadsheet, and so does this.
 
-        Requires `content.delete` — a capability separate from `content.write` precisely so an
-        operator can permit editing and refuse destruction. If it is off, say so rather than
-        looking for another way."""
+        Requires `content.delete` — separate from `content.write` so an operator can permit
+        editing and refuse **structural** destruction: removing a tab, or a range of a Doc, which
+        editing cannot reach. It is **not** a bound on destruction generally — `update_cells` and
+        `clear_cells` are `content.write` and discard whatever was in the range. If it is off, say
+        so rather than looking for another way."""
         doc = get_workspace().open(fileId)
         _require(doc, "delete_tab", "tab deletion")(name)
         return tabs_out(_require(doc, "tab_details", "tab listing"))

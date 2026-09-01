@@ -138,6 +138,22 @@ class TestTheDescriptionsDoNotPromiseABoundThatDoesNotExist:
         described = self._clear_description().lower()
         assert "revision history" in described and "human" in described
 
+    def test_no_tool_description_promises_destruction_can_be_refused(self):
+        """The same false promise lived in `delete_tab`'s description too, which the first sweep
+        missed. Checked across EVERY registered description rather than the one tool the audit
+        named - the phrase is the defect, not its location."""
+        import asyncio
+
+        from csa_google_workspace.mcp import settings_from_env
+        from csa_google_workspace.mcp.server import create_server
+        app = create_server(lambda: Workspace(FakeBackend({})),
+                            settings=settings_from_env({"CSA_GW_ALLOWLIST_READ": "*"}))
+        for tool in asyncio.run(app.list_tools()):
+            described = (tool.description or "")
+            assert "permit editing and refuse destruction" not in described, (
+                f"{tool.name} offers a bound the design does not provide: `content.write` "
+                f"already destroys cell contents")
+
     def test_the_readme_does_not_promise_destruction_can_be_refused(self):
         """The exact sentence that was wrong: it offered an operator a bound the design cannot
         provide, because `update_cells` destroys just as thoroughly."""
