@@ -100,6 +100,7 @@ below; this is the index.
 | **C5 uploaded formats** | **Blocked on** provenance trust — a dependency, not a queue position |
 | **`.docx` comments** | Separate from C5's text extraction, and more interesting for a comments-first tool |
 | **Traversal · corpus · revisions · vector search** | Contains the **probe** worth running early: does Google prune Docs revisions? |
+| **Can prompts resist injection?** | **Research, expecting "no"** (CINO 2026-09-01). We author ~49 KB of instructions + tool descriptions per session; more defensive wording costs context budget for an unmeasured benefit. Gated on *how would "improved" be measured* — an eval harness may be the real deliverable. Narrower than #297. See *Can the prompts themselves resist injection?* |
 | **Scoping — research first** | **#82 closed 2026-09-01** having shipped its core. What is left needs research, not a design: scoping now has **two motivations that want opposite things** — containment (host-set, hard to change) and *context management* (user-set, easy to change). See *Scoping needs research before design* |
 | **Per-capability scope · allowlist expiry** | Both weakened by the defaults reversal |
 | **Document-text Resource · comment-triage Prompt** | Conveniences over tools that already exist |
@@ -354,6 +355,69 @@ for. That is a stronger driver than the security case ever produced on its own.
 `research/server-landscape.md`. A conclusion of *"scope by folder, accept the cost"* and one of
 *"do not scope; improve retrieval"* are both acceptable outcomes. Implementation is a separate
 decision that this research informs rather than presupposes.
+
+
+### Can the prompts themselves resist injection? — research, expecting "no"
+
+**Asked 2026-09-01 (CINO), with the prior stated up front: *"I don't think we can, but we should
+research this and look."*** That framing is the useful part — the value here is most likely a
+**negative result**, and a negative result written down is what stops the next person adding more
+defensive words on the assumption they help.
+
+Narrower than [#297](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/297),
+which surveys hardening broadly and the scanning-service landscape. This asks only: **can the text
+we author do better than it does?**
+
+#### The surface we actually control (measured 2026-09-01)
+
+| | |
+|---|---|
+| `mcp/server.py` `INSTRUCTIONS` | **3,330 characters** |
+| 50 tool descriptions | **45,819 characters** |
+| of those, mentioning untrusted content or injection | **12 of 50** |
+
+Roughly **49 KB of text we write** reaches the model every session. That number is the reason this
+is not a free question: more defensive wording has a **certain** cost in context budget against an
+**unmeasured** benefit, and 12-of-50 is either a real gap or evidence that repeating it everywhere
+was judged not to help. Nobody recorded which.
+
+#### Why the prior is "no"
+
+Injection defeats instruction *by construction*. Our text and the attacker's text arrive in the
+same context window as the same kind of thing; the model has no channel that distinguishes them by
+authority, only by position and framing. `mcp/_inline.py` already says this plainly about the one
+structural control we have — *"the label is a hedge, not a control"*, and *"delimiting is the
+weakest of the three spotlighting modes and none of them holds against an adaptive adversary"*.
+
+So the honest expectation is that better wording buys a little against **careless** injection and
+nothing against a deliberate one. Worth confirming rather than assuming, because the whole
+mitigation story currently rests on it.
+
+#### What could actually be tested
+
+- **Does the `_inline.py` fence measurably help?** It is the one structural thing we do —
+  header, no footer, `one_line()` so nothing inside can forge a block line. It has never been
+  measured against an adversarial input, only reasoned about.
+- **Does repetition at the point of use help?** 12 of 50 descriptions carry the warning. If
+  repetition helps, the other 38 are a gap; if it does not, the 12 are noise costing context.
+- **Does naming the specific attack beat a generic warning?** `INSTRUCTIONS` already does this
+  (*"a comment may say 'resolve all comments'"*). Untested.
+- **Does position matter** — instructions at session start versus restated adjacent to the
+  content?
+- **Do the tool annotations do more than the prose?** `readOnlyHint` / `destructiveHint` drive
+  client approval prompts, which is a control the *client* enforces rather than the model
+  choosing to obey. If so, the leverage is in annotations, not paragraphs.
+
+#### The question that gates all of it
+
+**How would "improved" even be measured?** Without an eval — a corpus of injected documents and a
+way to score whether the agent acted on them — every answer above is somebody's taste, and this
+project does not currently have one. Building that harness may well be the *real* deliverable, and
+it is reusable: the same corpus measures a scanner from #297, the fence, and any future wording.
+
+If the conclusion is *"wording cannot be improved and here is the evidence"*, then the follow-on
+is to **stop spending context on defensive prose** and put the effort into the things that do
+bound behaviour — capabilities, allowlists, and the client's approval mode.
 
 ### The structured allow/deny model — designed 2026-08-31, deferred post-1.0.0
 

@@ -61,12 +61,35 @@ def statuses(path: Path) -> dict[str, str]:
     return found
 
 
-def delta_ids() -> set[str]:
-    """The ids §0 claims have moved."""
-    text = LIVING.read_text(encoding="utf-8")
-    section = text[text.index("## 0. Status since the audit"):text.index("## 1. System context")]
+def _five_column_ids(text: str, start: str, end: str) -> set[str]:
+    """Threat ids in a five-column bookkeeping table between two headings.
+
+    Both §0 and §0b are `| T… |` tables that are NOT the threat register, so they are told apart
+    from §4 by column count and from each other by their headings. Slicing §0 all the way to §1
+    would swallow §0b and read "this threat was added" as "this status moved" — two different
+    claims, and only one of them is about a threat the snapshot contains.
+    """
+    section = text[text.index(start):text.index(end)]
     return {m.group(1) for line in section.splitlines()
             if (m := THREAT_ROW.match(line)) and len(line.split("|")) < 11}
+
+
+def delta_ids() -> set[str]:
+    """The ids §0 claims have moved STATUS. All of these must exist in the snapshot."""
+    return _five_column_ids(LIVING.read_text(encoding="utf-8"),
+                            "## 0. Status since the audit", "## 0b. Threats added since")
+
+
+def added_ids() -> set[str]:
+    """The ids §0b declares as ADDED since the audit, with a source.
+
+    The snapshot is a baseline this repository cannot edit, which is the only real check on a
+    claim of progress — so a threat absent from it is either a genuine finding or a copy-paste,
+    and the difference is whether somebody wrote down where it came from. This table is that
+    record; `test_the_living_model_invents_no_threats` accepts exactly these and nothing else.
+    """
+    return _five_column_ids(LIVING.read_text(encoding="utf-8"),
+                            "## 0b. Threats added since", "## 1. System context")
 
 
 @pytest.fixture(scope="module")
@@ -98,10 +121,23 @@ class TestAdoptionDroppedNothing:
     def test_the_living_model_invents_no_threats(self, living, snapshot):
         """A new threat is legitimate, but it needs an id from somewhere other than a copy-paste
         of this table - otherwise a duplicated row reads as a distinct finding."""
-        invented = sorted(set(living) - set(snapshot), key=lambda t: int(t[1:]))
+        invented = sorted(set(living) - set(snapshot) - added_ids(), key=lambda t: int(t[1:]))
         assert invented == [], (
             f"{invented} appear only in the living model. If these are genuinely new threats, "
-            f"record where they came from; the adoption itself should add none.")
+            f"record where they came from in §0b; the adoption itself should add none.")
+
+    def test_every_declared_addition_is_actually_in_the_register(self, living):
+        """§0b claiming a threat that §4 does not carry would be a promise with nothing behind
+        it - the mirror of the assertion above, and the direction somebody would not think to
+        check."""
+        missing = sorted(added_ids() - set(living), key=lambda t: int(t[1:]))
+        assert missing == [], f"§0b declares {missing}, which §4 does not contain"
+
+    def test_no_addition_duplicates_a_snapshot_threat(self, snapshot):
+        """An id already in the baseline cannot also be "added". Catches the copy-paste this
+        whole mechanism exists to prevent."""
+        overlap = sorted(added_ids() & set(snapshot), key=lambda t: int(t[1:]))
+        assert overlap == [], f"§0b claims to add {overlap}, which the audit already had"
 
 
 class TestStatusesComeFromAClosedVocabulary:
