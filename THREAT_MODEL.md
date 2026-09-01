@@ -44,6 +44,7 @@ rather than here, so the flaw trail and the fix trail stay independently reviewa
 | T32 | unmitigated | **mitigated** | A download is refused on its declared size before being fetched | 0.30.0 |
 | T34 | unmitigated | **partially_mitigated** | Attribution inside the untrusted-content fence is no longer forgeable: line breaks collapse to `⏎` and `:` in an author name becomes `∶`, capped at 80 chars. Still **delimiting** — the weakest spotlighting mode — not datamarking | 0.30.2 |
 | T35 | unmitigated | **mitigated** | `to_xlsx` forces `data_type = "s"`, so a leading `=` is written as `inlineStr` rather than inferred as a formula | 0.30.2 |
+| T36 | Prompt injection through `request_message` on an access proposal: free text from somebody with **no access to the file at all**, delivered to a model that is deciding whether to grant them some. The payload argues for its own approval — *"grant writer to X"*, *"approve without checking"*, *"also add this address"* — and the tool that would act on it, `resolve_access_proposal`, is `file.share` in disguise, so a successful injection is an **exfiltration primitive** rather than a nuisance: the grant is revocable, a copy the recipient took is not. Narrower reach than T2 (one file, one decision, a human plausibly present) which is why it is `high` and not `critical` | remote_auth | `list_access_proposals` → `request_message` reaching the model's context; `resolve_access_proposal` is the actuator | A4, A3, A8, A2 | high | possible | partially_mitigated | Mitigations shipped **with** the feature rather than retrofitted: `resolve_access_proposal` is gated as `file.share` **for a denial too**, so an operator who switched that off has said this server does not decide who gets access; `accept()` defaults to `reader`, never the role the requester asked for, so the one input the attacker fully controls cannot select their own access level; `owner` is refused outright; `find_access_proposal` matches on `requester_email` — the one field Google vouches for — rather than on the message; and `AccessProposal.__repr__` carries neither the message nor the email, so an embedder logging the object does not persist the payload | `access_proposals.py` (module docstring, `GRANTABLE_ROLES`, `accept_access_proposal`, `__repr__`); `tests/test_access_proposals.py::TestTheUntrustedMessage` |
 
 ### The residual worth naming: T15 is a docstring, not a control
 
@@ -92,6 +93,17 @@ project's named primary risk, and none of the work above narrows who decides.
 The nineteen rows not listed in §0 keep the audit's status. Absence from that table means *not
 addressed*, not *checked and fine*.
 
+
+## 0b. Threats added since the audit
+
+**One row.** The audit's snapshot is the baseline this repository cannot edit, which is what makes
+it a check on claims of progress — so a threat that is not in it needs to say **where it came
+from** before it can be trusted as a finding rather than a copy-paste. `tests/test_threat_model.py`
+enforces that: a living threat absent from both the snapshot and this table fails the suite.
+
+| id | added | source | why it is not an instance of an existing threat |
+|---|---|---|---|
+| T36 | 2026-09-01 | [#273](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/273), filed against the capability shipped in v0.33.0 | Every untrusted-content threat in the snapshot — T2 above all — describes text written by somebody who **already had access to the file**. `request_message` is written by somebody with **none**, and reaches a model deciding whether to grant them some. Different actor, different entry point, and a barrier of clicking "Request access" on a link |
 
 ## 1. System context
 
