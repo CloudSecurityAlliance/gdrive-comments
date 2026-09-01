@@ -156,11 +156,18 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
 
     Both hold their lists directly; there is no allowlist file. See `_scope_from_env`.
 
-    Each is a ceiling; none can widen another. **Both allowlists fail closed**: unset means
-    nothing is permitted, and unrestricted access must be typed as `*`.
+    Each is a ceiling; none can widen another. **Unset means every file** (v0.31.0 reversed the
+    original fail-closed default); what fails closed is a list somebody *tried* to write — a
+    malformed entry, or one with no usable entries, refuses and the server does not start, because
+    widening that to everything would hand them the opposite of what they wrote.
 
-    This always returns a `Policy` — never `None` — because "nothing configured" is now a
-    meaningful and restrictive answer rather than an absent one.
+    This always returns a `Policy` — never `None` — so "nothing configured" is a permissive answer
+    rather than an absent one, and `_scope_from_env` below is where that is implemented.
+
+    *(This docstring asserted the pre-v0.31.0 model — "both allowlists fail closed: unset means
+    nothing is permitted" — while the function it documents implemented the opposite. Found as
+    RR-003, 2026-09-01. It is called out because an internal docstring is the version an AI
+    remediation agent is most likely to preserve while changing the code around it.)*
     """
     _reject_legacy_allowlist(env)
     capabilities = _capabilities_from_env(env)
