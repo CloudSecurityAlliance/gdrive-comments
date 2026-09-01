@@ -29,6 +29,7 @@ Newest first.
 | audit | date | tool | model | interaction | automation | depth | findings | remediation |
 |---|---|---|---|---|---|---|---|---|
 | [2026-09-01 · ChatGPT Codex / GPT-5](2026-09-01-chatgpt-codex-gpt5/) | 2026-09-01 | codex + chatgpt-codex-local-repository | gpt-5 | light | assisted | standard | 3 total · 0 exploitable · 2 hardening | complete — see [REMEDIATION.md](2026-09-01-chatgpt-codex-gpt5/REMEDIATION.md); threat-model rows deferred by decision |
+| [2026-09-01 · defending-code-reference-harness / claude (re-audit)](2026-09-01-defending-code-reference-harness-claude/) | 2026-09-01 | claude-code + anthropics/defending-code-reference-harness | claude-opus-5 | heavy | assisted | adversarial | 43 threats · 9 flaws · 10 guards-that-cannot-fail · 1 refuted · 1 fixed upstream mid-audit | not started — 24 issues listed in ISSUES.md, fixing deferred to a separate session |
 | [2026-08-27 · defending-code-reference-harness / claude](2026-08-27-defending-code-reference-harness-claude/) | 2026-08-27 | claude-code + anthropics/defending-code-reference-harness | claude-opus-5 | heavy | assisted | adversarial | 35 total · 1 exploitable · 15 hardening | in progress — see [REMEDIATION.md](2026-08-27-defending-code-reference-harness-claude/REMEDIATION.md) |
 | [2026-07-22 · Code audit, security-lensed](../AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code | — | moderate | assisted | standard | 29 (#1…#29) | findings-only |
 | [2026-07-22 · Security audit](../SECURITY-AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code + pip-audit, bandit, defusedxml fuzzing | — | moderate | assisted | standard | 4 (SEC-1…SEC-4) | findings-only |
@@ -56,7 +57,7 @@ looked for, which is the reason this table exists.
 | `mcp/` — server, auth flow, config, resources | 2026-09-01 · codex |
 | `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
 | `demo/` | 2026-08-27 · claude-code |
-| `tests/` as code | **partial** — 6/117 at 2026-09-01 |
+| `tests/` as code | **partial** — 13/117 at 2026-09-01 |
 | `.github/workflows/` | 2026-09-01 · codex |
 | packaging and secret-scanning config | 2026-08-27 · claude-code |
 | `scripts/` | 2026-09-01 · codex |
