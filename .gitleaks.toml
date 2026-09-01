@@ -1,6 +1,6 @@
 # gitleaks configuration.
 #
-# One allowlist entry, for one triaged false positive. Recorded here rather than re-triaged
+# Triaged false positives, recorded here rather than re-triaged
 # every scan: a scanner that reports a known non-finding trains people to skim its output,
 # which is how a real finding gets missed.
 #
@@ -12,7 +12,11 @@ useDefault = true
 
 [[rules]]
 id = "generic-api-key"
-[rules.allowlist]
+
+# NOTE the plural. Two `[[rules]]` blocks sharing an `id` do NOT merge - the second REPLACES
+# the first's allowlist, silently, so the original false positive came back while the new one
+# was suppressed. Measured with gitleaks locally while adding the second entry.
+[[rules.allowlists]]
 description = """
 `CSA_GW_INTEGRATION=1` and its siblings in prose. The generic-api-key rule fires on the
 entropy of the surrounding sentence, not on a credential — these are documented environment
@@ -24,3 +28,22 @@ and trufflehog reports 0 verified and 0 unverified secrets across the same histo
 regexes = ['''CSA_GW_[A-Z_]+=[01]''']
 paths = ['''CLAUDE\.md''', '''README\.md''', '''SECURITY\.md''', '''RELEASING\.md''',
          '''PROVENANCE\.md''', '''TODO\.md''', '''CHANGELOG\.md''']
+
+[[rules.allowlists]]
+description = """
+The Drive Labels fixture in `tests/test_labels.py`. The rule fires on a test that pairs a fake
+activation URL (`http://x`) with the real service name `drivelabels.googleapis.com`, which
+together read as a configured endpoint plus a key. They are neither: the URL is a
+one-character placeholder and the service name is public API vocabulary that appears in
+Google's own documentation.
+
+Found by audit 2026-09-01-01 (CODX-INFO-2026-09-01-01), which reported it twice — once per
+historical commit touching the line. Trufflehog `--only-verified` reports 0 secrets over the
+same history.
+
+Added even though gitleaks is not yet a CI gate. The audit scoped this as *"if gitleaks is
+added to CI"*, but the reasoning at the top of this file does not wait for that: the scan is
+run by hand today, and a known non-finding costs a re-triage every time somebody runs it.
+"""
+regexes = ['''drivelabels\.googleapis\.com''']
+paths = ['''tests/test_labels\.py''']
