@@ -8,7 +8,8 @@ Reading is ungated; **granting is not**. `share()` creates a permission, and gra
 arbitrary address access to a document is an exfiltration primitive — one Google's own MCP
 server declines to expose at all. Ours exposes it behind two independent bounds
 ([#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82)): the
-`file.share` capability, which is OFF unless named explicitly, and the modify allowlist, which
+`file.share` capability — **on by default** since v0.31.0, and the first thing worth narrowing
+because it is the only one that moves data out of the organisation — and the modify allowlist, which
 must name the file. Listing who *already* has access needs neither.
 """
 from __future__ import annotations

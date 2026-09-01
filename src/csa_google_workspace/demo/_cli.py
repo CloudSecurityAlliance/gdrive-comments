@@ -59,12 +59,28 @@ def main(argv: Sequence[str], env: Mapping[str, str]) -> int:
     no_feedback = "--no-feedback" in argv or auto
     repo = env.get("CSA_GW_DEMO_REPO", REPO)
     share_with = env.get("CSA_GW_DEMO_SHARE", "")
+    from_env = bool(share_with)
     if "--share" in argv:
         index = argv.index("--share")
         if index + 1 >= len(argv):
             _echo("--share needs an email address")
             return 2
         share_with = argv[index + 1]
+        from_env = False
+    # UNATTENDED SHARING MUST BE EXPLICIT. `--auto` sets `confirm=None`, so an environment value
+    # would grant a real person access to real files with nobody in the loop and nothing asked -
+    # and `file.share` has been on by default since v0.31.0, so the step is reachable on an
+    # unconfigured install. An interactive run still honours the variable, because there the
+    # confirmation prompt IS the check (CODX-2026-09-01-02).
+    #
+    # Dropped rather than refused: the share step skips cleanly on an empty address, so an
+    # existing unattended run keeps working and simply stops sharing. Exiting non-zero would
+    # break a scheduled demo to protect it.
+    if auto and from_env:
+        _echo(f"ignoring CSA_GW_DEMO_SHARE={share_with!r}: unattended runs do not share from the "
+              f"environment, because there is nobody to confirm it. Pass --share {share_with} "
+              f"if you meant it.")
+        share_with = ""
 
     # Built exactly as `serve` builds it - same provider, same settings, same policy - so the
     # demonstration exercises the server a client would get, not a variant assembled for it.

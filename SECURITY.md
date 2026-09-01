@@ -158,8 +158,11 @@ What it does about it, and what it does not:
   worth relying on as far as it goes.
 - **The library's default is different, on purpose.** `Workspace.from_credentials` applies a
   *permissive* policy: it is called by a developer writing code who has already made a decision.
-  The MCP server is configuration handed to a model, so it fails closed. Two artifacts, two
-  threat models.
+  The MCP server is configuration handed to a model — and **since v0.31.0 it does not fail
+  closed either**: unset permits everything, and narrowing is what an operator configures. So
+  the two artifacts now share a default, and what differs is who is expected to narrow it.
+  *(This said the server "fails closed" until 2026-09-01, forty lines below the corrected
+  statement in the same file — CODX-2026-09-01-01.)*
 
 ### 2. Token custody
 

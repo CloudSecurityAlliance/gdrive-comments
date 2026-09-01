@@ -189,12 +189,54 @@ class TestTheTools:
         # everything destructive is how a confirmation prompt stops being read.
         assert tools["update_file"].destructive_hint is False
 
-    def test_the_tools_say_the_capability_is_off_by_default(self):
-        """The description is where a model learns why a refusal happened, and what the user
-        would have to change - which is the difference between reporting and retrying."""
+    def test_no_tool_description_contradicts_the_actual_default(self):
+        """**This test used to assert the opposite, and that is why the stale text survived.**
+
+        It required each of these descriptions to contain *"off unless an operator"* - true when
+        written, and false from v0.31.0 when every capability became enabled by default. So the
+        wrong text was not merely un-caught: it was **protected by a passing test**. Anybody
+        correcting the description would have been stopped by CI and could reasonably have
+        concluded the description was right.
+
+        Worse, this file already knew: `test_share_is_on_by_default_and_off_below_organizer`
+        opens its docstring with *"REVERSED in v0.31.0"*. One test was updated, its neighbour was
+        not. Found by an external audit as CODX-2026-09-01-01.
+
+        So this now derives from the constants instead of pinning a form of words. A description
+        may say whatever reads best; it may not claim a capability is off when `DEFAULT_ENABLED`
+        says otherwise.
+        """
+        from csa_google_workspace.policy import DEFAULT_ENABLED
+
         tools = {t.name: (t.description or "") for t in asyncio.run(self.server().list_tools())}
-        for name in ("update_file", "trash_file", "share_file"):
-            assert "off unless an operator" in tools[name], name
+        for name, capability in (("update_file", "file.update"),
+                                 ("trash_file", "file.trash"),
+                                 ("share_file", "file.share")):
+            description = tools[name].lower()
+            if capability in DEFAULT_ENABLED:
+                for claim in ("off unless an operator", "off by default",
+                              "disabled by default"):
+                    assert claim not in description, (
+                        f"{name} says {claim!r} but {capability} IS in DEFAULT_ENABLED - a "
+                        f"model reads this as a reason not to warn the user")
+
+    def test_the_descriptions_still_say_what_a_refusal_would_need(self):
+        """What the old test was *for*, kept. The description is where a model learns why a
+        refusal happened and what the user would have to change - the difference between
+        reporting and retrying - so removing the false claim must not remove the guidance."""
+        tools = {t.name: (t.description or "") for t in asyncio.run(self.server().list_tools())}
+        for name, capability in (("update_file", "file.update"),
+                                 ("trash_file", "file.trash"),
+                                 ("share_file", "file.share")):
+            assert capability in tools[name], f"{name} does not name its capability"
+            # Any wording that conveys the second bound. The first draft of this required the
+            # literal word "allowlist" and failed on `share_file`, which says "the file must be
+            # listed for modify" - the same guidance, different words. Pinning a phrase is
+            # precisely the mistake the test above exists to undo, so this must not repeat it.
+            described = tools[name].lower()
+            assert any(phrase in described for phrase in
+                       ("allowlist", "listed for modify", "modify list")), (
+                f"{name} does not convey that the file must also be in the modify scope")
 
     def test_share_file_warns_that_it_sends_data_outside(self):
         tools = {t.name: (t.description or "") for t in asyncio.run(self.server().list_tools())}

@@ -13,9 +13,10 @@ the thing no unit test can: whether the tool descriptions are good enough for so
 them correctly from a standing start.
 
 It also reports what the CURRENT policy will not allow, because the alternative is a
-demonstration that walks somebody into a refusal it could have predicted. A default `editor`
-profile cannot trash anything, which means it cannot clear up after itself — better said at the
-start than discovered as litter in somebody's Drive.
+demonstration that walks somebody into a refusal it could have predicted. There is no default
+profile — an unconfigured install permits everything — but a `commenter` install cannot trash
+anything, which means it cannot clear up after itself; better said at the start than discovered
+as litter in somebody's Drive.
 """
 from __future__ import annotations
 

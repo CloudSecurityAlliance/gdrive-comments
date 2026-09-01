@@ -529,7 +529,7 @@ reviews the configuration and may name people or unannounced work.
 | **Tabs** | `list_tabs` · `add_tab` (Sheets) · `list_document_tabs` · `add_document_tab` (Docs) — different resources, deliberately different names |
 | **Destroy content** 🔒 | `clear_cells` · `delete_range` · `delete_tab` · `delete_document_tab` — `content.delete`, separate from `content.write` so editing can be allowed and destruction refused |
 | **Create** | `create_file` · `copy_file` |
-| **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each OFF unless an operator names its capability |
+| **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each **on by default**, each still needing its capability *and* the file in the modify allowlist |
 | **Access requests** | `list_access_proposals` · `resolve_access_proposal` 🔒 — answering "can I have access?"; approving is sharing, so it costs `file.share` |
 | **Classification** | `list_labels` — Drive labels resolved to names. **Read-only by construction**: the write scope is never requested |
 | **The server itself** | `describe_configuration` · `preview_allowlist` · `read_server_resource` · `authenticate` · `report_a_problem` · `demonstration_plan` |
@@ -596,7 +596,7 @@ opened Claude.
 |---|---|
 | `reply_comment` | text to post as a reply |
 | `resolve_comment` | `TRUE` resolves · `FALSE` reopens · blank leaves it alone |
-| `delete_comment` | `TRUE` removes it — for spam. Off unless an operator enables `comment.delete` |
+| `delete_comment` | `TRUE` removes it — for spam. `comment.delete` is **on by default**; it sits at `fileOrganizer` on the profile ladder |
 
 ```
 "apply the register at ~/Downloads/draft comments.xlsx"

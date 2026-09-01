@@ -39,7 +39,11 @@ SCRIPT_NAME = "csa-google-workspace-mcp"
 # token carries its own client id and secret. Writing a credential path into a shared config file
 # spreads it for no benefit.
 CARRIED_PREFIX = "CSA_GW_"
-NOT_CARRIED = frozenset({"CSA_GW_CLIENT_SECRETS"})
+# `CSA_GW_DEMO_*` are for ONE RUN of the demo and are not policy, but this config is where policy
+# state persists — so carrying them turns a value meant for a single run into ambient state that
+# outlives it. `CSA_GW_DEMO_SHARE` is a share recipient, which makes it the one that matters
+# (CODX-2026-09-01-02). The server path never reads either.
+NOT_CARRIED = frozenset({"CSA_GW_CLIENT_SECRETS", "CSA_GW_DEMO_SHARE", "CSA_GW_DEMO_REPO"})
 
 
 @dataclass

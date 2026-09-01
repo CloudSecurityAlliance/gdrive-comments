@@ -366,8 +366,9 @@ _GATES: dict[str, Gate] = {
     # obtain a writable duplicate of something unwritable.
     "create_file": Gate(FILE_CREATE, MODIFY, file_scoped=False),
     "copy_file": Gate(FILE_CREATE, READ, file_scoped=True),
-    # file lifecycle: all three are MODIFY and file-scoped, and all three are OFF by default
-    # (DEFAULT_DISABLED). Renaming or moving a document somebody else relies on is disruptive
+    # file lifecycle: all three are MODIFY and file-scoped, and all three are ON by default
+    # since v0.31.0 - `DEFAULT_DISABLED` is empty, which is why naming it here was misleading
+    # rather than merely stale. Renaming or moving a document somebody else relies on is disruptive
     # without being destructive; trashing is recoverable for 30 days; sharing is neither -
     # it is the only capability here that can move data OUT of the organisation, which is why
     # Google's own MCP server declines to expose it at all. Ours exposes it behind a
@@ -444,8 +445,10 @@ class Policy:
     `Policy.default()` is **permissive** on both scopes. That is deliberate and it is *not*
     the MCP server's default: this class is also the library's, and `Workspace.from_credentials`
     is called by a developer writing code who has already made a decision. The MCP server is
-    configuration handed to a model, so it fails closed when nothing is configured. Two
-    artifacts, two threat models — see `mcp/_config.py`.
+    configuration handed to a model — and since v0.31.0 it does **not** fail closed when
+    nothing is configured: unset means every file and every capability. What fails closed is a
+    list somebody *tried* to write, and an unlisted `Backend` method. Two artifacts, two
+    threat models, but no longer two defaults — see `mcp/_config.py`.
     """
     enabled: frozenset[str]
     read: Scope = field(default_factory=Scope.everything)
