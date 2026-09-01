@@ -25,10 +25,12 @@ Costly to rediscover, and invisible from the Python API.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -44,6 +46,12 @@ LEGACY = "2025-11-25"
 def speak(*requests: dict, env_extra: dict | None = None, timeout: int = 60):
     """Run the server as a subprocess, send JSON-RPC on stdin, parse stdout as a client would.
 
+    **Reads until every request id has an answer, rather than writing and closing stdin.** The
+    first version used `communicate()`, which closes stdin immediately — and the server can then
+    reach EOF and shut down before draining a queued request. That passed on four Python versions
+    and failed on 3.12 with `IndexError`, which is the shape of a race rather than a defect: a
+    flaky test is worse than no test, because it teaches people to re-run CI.
+
     A deliberately minimal environment: no token is configured, because the server starts without
     one by design and every assertion here is about the protocol rather than about Drive.
     """
@@ -58,14 +66,40 @@ def speak(*requests: dict, env_extra: dict | None = None, timeout: int = 60):
     proc = subprocess.Popen(
         [sys.executable, "-m", "csa_google_workspace.mcp"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, env=env)
-    payload = "".join(json.dumps(request) + "\n" for request in requests)
+        text=True, env=env, bufsize=1)
+    expected = {r["id"] for r in requests if "id" in r}
+    messages: list[dict] = []
+    lines: list[str] = []
+    deadline = time.monotonic() + timeout
     try:
-        out, err = proc.communicate(payload, timeout=timeout)
-    except subprocess.TimeoutExpired:               # pragma: no cover - CI hang guard
-        proc.kill()
-        pytest.fail("the server did not answer over stdio within the timeout")
-    return [json.loads(line) for line in out.splitlines() if line.strip()], out, err
+        for request in requests:
+            proc.stdin.write(json.dumps(request) + "\n")
+            proc.stdin.flush()
+        seen: set = set()
+        while seen != expected and time.monotonic() < deadline:
+            line = proc.stdout.readline()
+            if not line:                            # the server closed stdout
+                break
+            if not line.strip():
+                continue
+            lines.append(line)
+            message = json.loads(line)
+            messages.append(message)
+            if "id" in message:
+                seen.add(message["id"])
+        if seen != expected:
+            pytest.fail(f"no answer for request id(s) {sorted(expected - seen)} within "
+                        f"{timeout}s; got {len(messages)} message(s)")
+    finally:
+        # stdin is closed only AFTER the answers are in, so EOF cannot race the last request.
+        with contextlib.suppress(Exception):
+            proc.stdin.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=15)
+        if proc.poll() is None:                     # pragma: no cover - CI hang guard
+            proc.kill()
+        err = proc.stderr.read()
+    return messages, "".join(lines), err
 
 
 def _src():
@@ -184,6 +218,12 @@ class TestToolsOverTheWire:
             initialize(),
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
-        tools = [m for m in messages if m.get("id") == 2][0]["result"]["tools"]
+        listed = [m for m in messages if m.get("id") == 2]
+        # Guarded rather than indexed. The first version did `[...][0]` and, when the response
+        # raced EOF, failed with `IndexError: list index out of range` - which says nothing about
+        # what went wrong. `speak` no longer allows that race, and this still reads clearly if
+        # something else ever eats the response.
+        assert listed, "tools/list produced no response"
+        tools = listed[0]["result"]["tools"]
         missing = [t["name"] for t in tools if "inputSchema" not in t]
         assert missing == [], f"tools with no inputSchema on the wire: {missing}"
