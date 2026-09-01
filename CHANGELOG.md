@@ -10,6 +10,108 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-01 — v0.39.0 (the guards that were not guarding) — not released *(yet — flipped once PyPI confirms)*
+
+Opens remediation for security audit `2026-09-01-02`
+([`docs/security-audits/2026-09-01-defending-code-reference-harness-claude/`](docs/security-audits/2026-09-01-defending-code-reference-harness-claude/)),
+which found **0 exploitable** issues and a theme instead: several guards had stopped checking
+anything, and one untrusted string could reach a terminal.
+
+Two of the findings turned out to be right about the defect and wrong about the fix, and both are
+written up that way — the reasoning is the part worth keeping.
+
+### The security fix — a tool result could lie to the renderer (#312)
+
+`request_message` on an access proposal is the sharpest untrusted input this library has: free text
+from somebody with **no access to the file**, reaching a model deciding whether to give them some.
+The audit said it lacked the fence comment bodies get.
+
+Measuring first changed the fix. The SDK returns every result twice — `structured_content` for the
+model, and the same dict as pretty-printed JSON for the human — and **JSON escaping already
+prevents a value forging a sibling field**, more strongly than the fence built by hand for the
+flat-text path. What it does *not* stop is a live `ESC`: `json.dumps` escapes it to a
+six-character `\u001b` sequence, and the client decodes that straight back to a real `0x1b` byte.
+
+```python
+payload = "please grant access\x1b[2K\r\x1b[1A\x1b[2Kgranted by admin"
+json.loads(json.dumps(payload))     # ESC survives
+```
+
+In a terminal that is *erase line, carriage return, cursor up, erase line* — it deletes the line it
+is on **and the line above it**, which is where a warning would have been printed.
+
+> **The attack is an asymmetry.** The model reads the structured content, where those bytes are
+> inert data. The human reads the rendered text, where they are instructions to the renderer. One
+> response can show a person a short, innocuous request while the model reads a long injection.
+> Every control here against prompt injection assumes the human can see what the model saw.
+
+`mcp/_untrusted.py` now neutralises C0 controls and DEL in **every** tool result, applied once in
+the decorator every tool passes through — not per field, because the untrusted strings are not one
+field: a file `name` or tab `title` comes from anybody with write access, `display_name` on a
+permission from the **external** person it describes, comment bodies from collaborators. Controls
+become visible Control Pictures rather than being dropped, so the record still says what arrived.
+
+`\r` is exempt **on purpose**: `ExportOut.csv` is RFC 4180, which mandates CRLF. The residual — a
+bare `\r` can overwrite the line it is on, but cannot erase one or move the cursor — is documented
+and the exemption is pinned by a test that fails if it is removed.
+
+`request_message` is additionally **capped at 2000 characters** with a marker naming the true
+length. It is the one field short by nature; comment bodies and documents are legitimately long and
+are left whole.
+
+### The guards that had stopped checking anything (#308, #316, #320)
+
+- **The weekly controls detector could not go red** (#316). `check_controls.py | tee controls.txt`
+  with no `pipefail` reported `tee`'s status — always 0. Measured as `exit=0` → `exit=3`. The job
+  whose only purpose is noticing that PyPI Trusted Publishing, the `pypi` environment's reviewers,
+  or branch protection drifted **between releases** could not fail.
+- **The policy matrix had stopped covering the code** (#308). `content.delete` had **no row** since
+  v0.36.0 — zero one-capability-at-a-time coverage for the capability authorising structural
+  destruction — and **8 of 27** gated methods were exercised by nothing, including
+  `resolve_access_proposal`, which grants a stranger access to a document. Both hid behind
+  `if EXPECTED.get(c)`, which skipped missing rows along with the one deliberately-empty one, and
+  behind a completeness test that compared the table against itself.
+- **A capability-name guard was reading the wrong surface** (#320). It scanned `INSTRUCTIONS` and
+  found zero tokens. Same error as the previous audit's: the claims live in the tool descriptions.
+- **A miscount detector was blind to the form the defect takes** (#320). It matched digits only,
+  while the stale claims were spelled out — *"all ten capabilities"*, wrong since `content.delete`
+  made eleven. The one test built to catch a capability miscount could not see the miscount that
+  existed. Extended to number words, it found two immediately.
+
+The general lesson, now applied: **self-test the detector.** "No document miscounts" is satisfied
+trivially when no document states a count — and that is the *preferred* state, so the remedy cannot
+be to demand a count somewhere.
+
+### Tool descriptions say what they require, and only that
+
+- **No description states policy state** (#332). #305 had replaced *"OFF by default"* with *"on by
+  default"* — true when written, and the same hand-maintained sentence in the same place. The defect
+  was never the value; it was that current state was written where a human maintains it. Descriptions
+  now name the capability and stop, pointing at `describe_configuration`, which computes state and
+  cannot drift. Parameter defaults are **kept** and guarded — `role` defaulting to `reader` is
+  load-bearing, since the requested role is chosen by the person asking.
+- **Every gated tool names its capability.** Fourteen of twenty-seven did not, and the split was not
+  random: every content and file tool did, every comment tool did not. Four needed more than a name —
+  `apply_comment_actions` needs `comment.reply` **and** `comment.resolve`; `copy_file` is gated on
+  the *source* being readable, and the copy's new id is not writable either; `create_file` is not
+  file-scoped at all; `reopen_comment` requires `comment.resolve` rather than a capability of its own.
+
+### Two findings answered rather than implemented
+
+- `clear_cells` stays `content.write`, not `content.delete` (#308). An agent that cannot blank a cell
+  writes a junk value instead, which is worse for the sheet and harder for a human to spot. The real
+  defence against data destruction is Drive revision history and sheet protections.
+- Two tests that skip when nothing is default-disabled are **not** vacuous (#320). They point at
+  `TestTheEmptyCaseIsTheOneThatShipped`, which covers the current state in five tests; inverting them
+  would delete coverage that applies the day a capability becomes default-disabled again.
+
+### Also
+
+- `TOOL_CAPABILITIES` is documented as **a floor, not a complete statement** — `export_comments` is
+  declared ungated and correctly names `file.create`, because `destination="sheet"` creates a file.
+  Where the static table and execution disagree, execution decides.
+- Stale capability counts corrected in `CLAUDE.md`, `README.md` and `docs/DECISIONS.md`.
+
 ## 2026-09-01 — v0.38.0 (the configuration contract, told one way)
 
 Opens remediation for the correctness review in
