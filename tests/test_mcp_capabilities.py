@@ -143,3 +143,49 @@ def test_the_config_resource_still_flags_a_gap_when_there_is_one(monkeypatch):
     assert "not reachable through this server" in flat
     assert "do not plan work around them" in flat
     assert "not a mistake in the policy" in flat
+
+
+def _descriptions() -> dict[str, str]:
+    app = create_server(lambda: Workspace(FakeBackend({})), settings=settings_from_env(ENV))
+    return {t.name: (t.description or "") for t in asyncio.run(app.list_tools())}
+
+
+def test_every_gated_tool_names_the_capability_it_requires():
+    """#332 settled what a tool description is for: *"name the capability it requires and
+    stop"*. Fourteen of the twenty-seven gated tools did not do the first half.
+
+    That is not cosmetic. A model that cannot see which capability a tool needs cannot tell the
+    user WHY a refusal happened or WHAT to change, and the refusal message is the only other
+    place the name appears - which is after the failure rather than before it. Every content and
+    file tool already named its capability; every comment tool did not, so the surface was
+    inconsistent as well as thin.
+    """
+    descriptions = _descriptions()
+    missing = sorted(name for name, capability in TOOL_CAPABILITIES.items()
+                     if capability and capability not in descriptions.get(name, ""))
+    assert missing == [], (
+        f"these tools are gated but their description never names the capability: {missing}. "
+        f"A model reading the description cannot then explain a refusal or say what to change. "
+        f"Add the capability name; do NOT add whether it is currently enabled - that is "
+        f"`describe_configuration`'s job and it drifts (#332).")
+
+
+def test_the_reverse_is_deliberately_not_asserted():
+    """**`TOOL_CAPABILITIES` is a floor, not a complete statement**, so "an ungated tool must
+    name no capability" would be wrong - and this test exists to stop somebody adding it.
+
+    `export_comments` is declared `None` and its description names `content.write` and
+    `file.create`. That is CORRECT: with `destination="sheet"` it creates a Drive file and
+    writes to it, so those capabilities genuinely apply to that argument. `apply_comment_actions`
+    is declared `comment.reply` and needs `comment.resolve` too, for the same reason - the
+    requirement depends on the arguments, and a one-capability-per-tool map cannot say so.
+
+    This is the same lossiness as the dynamic gate on `create_reply` (see
+    `tests/test_policy_matrix.py`): the static table is a useful second opinion and not a
+    complete specification. Where the two disagree, EXECUTION decides.
+    """
+    descriptions = _descriptions()
+    assert TOOL_CAPABILITIES.get("export_comments") is None
+    assert "file.create" in descriptions["export_comments"], (
+        "export_comments creates a Drive file for destination='sheet' and should say which "
+        "capability that needs, even though the map declares it ungated")
