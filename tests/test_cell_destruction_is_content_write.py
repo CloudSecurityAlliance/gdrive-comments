@@ -159,7 +159,11 @@ class TestTheDescriptionsDoNotPromiseABoundThatDoesNotExist:
         provide, because `update_cells` destroys just as thoroughly."""
         from pathlib import Path
 
-        from tests.test_docs_do_not_drift import without_historical_notes  # noqa: PLC0415
+        # Bare import, not `from tests.…`: pytest puts the test directory on `sys.path`,
+        # but there is no `tests` PACKAGE - so the dotted form worked locally and failed
+        # on all five CI legs with ModuleNotFoundError. `test_cellmap_tabs` is imported
+        # the same way elsewhere in this suite.
+        from test_docs_do_not_drift import without_historical_notes  # noqa: PLC0415
 
         readme = without_historical_notes(
             (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8"))
