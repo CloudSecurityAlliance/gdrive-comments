@@ -784,7 +784,7 @@ those are the answer and this is not.
   [#788](https://github.com/taylorwilsdon/google_workspace_mcp/issues/788) are both still open.
 - **`export_comments`** — a review register as a Google Sheet or CSV, with the passage or *cell
   contents* each comment is about. Nobody else has an equivalent.
-- **A policy layer.** Ten named capabilities, two file allowlists, `preview_allowlist`, and a
+- **A policy layer.** Eleven named capabilities, two file allowlists, `preview_allowlist`, and a
   **flavour switch** that publishes another vendor's exact tool surface. No other server here
   has anything comparable — most are all-or-nothing on your whole Drive.
 - **A stated injection posture** — redacting `__repr__`s, untrusted-content rules in every tool
