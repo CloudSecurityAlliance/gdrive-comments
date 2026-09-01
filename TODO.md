@@ -83,7 +83,7 @@ below; this is the index.
 | item | note |
 |---|---|
 | **#273 threat-model amendment** | Access-request text is a new untrusted-input class (outsider with NO access). Filed as an issue because the register may not be edited directly |
-| **C6 MCP Registry listing** | Last, because C2 changed the surface it advertises — now unblocked |
+| **C6 MCP Registry listing** | **Pinned 2026-08-31** — waiting on the registry *inventory* in `ModelContextProtocol-Security/mcpserver-marketplace`, then submit to all of them at once |
 | ~~Allowlist dry-run + dead-entry detection~~ | **Shipped** — one feature, `preview_allowlist`: a dead entry is what a dry-run finds |
 | ~~`CONTROLS_TOKEN`~~ | **Done 2026-08-31** — PAT configured; all three controls now verify in CI. **Rotate by 2027-09-01**, see the banner at the top |
 | ~~Drive labels~~ | **Shipped** v0.34.0 — read-only by construction; needs a 2nd API and a new scope |
@@ -770,8 +770,27 @@ should not skip. Prompted by noticing the changelog claimed versions nobody coul
       so far avoided: what the canonical install instruction *is*, given there are three
       (`pipx`, the `[mcp]` extra, and DesktopSetup).
 
-      Blocked on nothing technical. Should follow the last capability gate so the manifest does
-      not describe a surface that changes a week later.
+      Blocked on nothing technical, and the capability gates it was waiting behind are now done
+      (labels shipped in v0.34.0, and the install story settled in #265 — which mattered, because
+      the manifest has to declare a canonical install and there were three candidates).
+
+      **Pinned 2026-08-31 (CINO), on a dependency rather than a doubt.** The official registry is
+      not the only one, and submitting to it first would mean doing this once per registry as each
+      is remembered. The inventory lives in
+      [`ModelContextProtocol-Security/mcpserver-marketplace`](https://github.com/ModelContextProtocol-Security/mcpserver-marketplace)
+      — a CSA project that already catalogues MCP servers and marketplaces — which the CINO is
+      extending to list the registries themselves. **Then submit to all of them in one pass.**
+
+      That ordering is worth the wait for a reason specific to this item: a `server.json` is a
+      *published manifest*, and the namespace, description and declared install method are what
+      other people's tooling resolves. Writing it once, against a known-complete list of consumers,
+      is how the same name lands everywhere. Writing it per-registry as each is discovered is how
+      three registries end up with three slightly different descriptions and one wrong install
+      line.
+
+      **Still to decide when it is taken up:** the namespace (likely
+      `io.github.CloudSecurityAlliance/csa-google-workspace`, since ownership is proven by GitHub
+      OAuth), and whether GitHub's own registry goes in the same pass.
 
 This overlaps **C1** (the API-stability and deprecation policy): both are about what the project
 owes someone who depends on it. C1 says what will not change; this says what did.
