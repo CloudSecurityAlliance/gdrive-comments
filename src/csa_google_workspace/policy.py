@@ -130,15 +130,38 @@ CAPABILITY_NOTES: dict[str, tuple[str, str]] = {
     COMMENT_CREATE:  ("start a comment thread", "yes - delete it, or it stays visible"),
     COMMENT_REPLY:   ("reply to a thread", "yes - the reply can be deleted"),
     COMMENT_RESOLVE: ("resolve or reopen a thread", "yes - and either way it posts a visible reply"),
-    CONTENT_WRITE:   ("edit document, sheet and slide content", "yes - Drive revision history"),
+    # "edit" UNDERSTATES THIS AND THE UNDERSTATEMENT MATTERS. `content.write` includes
+    # cell-level destruction: `clear_cells` empties a range, `update_cells` overwrites whatever
+    # was there, and `replace_text` with an empty replacement blanks text. An operator reading
+    # "edit" would not expect that, so it is spelled out.
+    #
+    # It stays in `content.write` deliberately (CINO, 2026-09-01). Blanking a cell is a
+    # FUNDAMENTAL editing operation, not an advanced one - and withholding it does not prevent
+    # the destruction, it just makes somebody write a placeholder value instead, which is worse:
+    # a blank cell is obviously empty, `-` or `TBD` or `0` looks like data. The same reasoning
+    # that put trashing under `writer` rather than higher up: withholding a reversible capability
+    # produced irreversible litter in real Drives.
+    CONTENT_WRITE:   ("edit content, INCLUDING blanking cells and overwriting what was there",
+                      "yes - Drive revision history, which a human can restore from"),
     FILE_CREATE:     ("create a new file", "n/a - nothing that exists is touched"),
     FILE_UPDATE:     ("rename or move a file", "yes - rename or move it back"),
     FILE_TRASH:      ("put a file in the trash", "yes, 30 days - the owner can restore it"),
     COMMENT_EDIT:    ("edit an existing comment", "NO - Google keeps no visible edit history"),
     COMMENT_DELETE:  ("delete a comment", "NO - the soft delete strips content and author"),
-    CONTENT_DELETE:  ("delete a tab, or a range of document content",
-                      "NO through this API - Drive keeps revision history a HUMAN can restore "
-                      "from, but there is no trash and no undo an agent can reach"),
+    # STRUCTURAL destruction, which is the line that actually separates this from
+    # `content.write` - not "destructive vs not", because writing is destructive too. Removing a
+    # tab or a Docs range is unreachable from `content.write`; emptying cells is not (see above).
+    #
+    # The recoverability wording is deliberately the SAME as `content.write`'s, because the
+    # mechanism is the same one. It previously read "NO through this API", which put it beside
+    # `comment.delete` in a reader's mind - and those are not alike: Drive keeps no revision
+    # history for comments at all, so a deleted comment is gone in a way a deleted range is not.
+    CONTENT_DELETE:  ("delete a tab, or a range of document content - STRUCTURAL destruction, "
+                      "which editing cannot reach",
+                      "NO for an agent - there is no trash and no undo it can reach. A HUMAN "
+                      "can restore from Drive revision history, which is what separates this "
+                      "from deleting a comment: Drive keeps no revision history for comments at "
+                      "all, so that one is gone for everybody"),
     FILE_SHARE:      ("share a file with someone else", "NO, in effect - a copy taken is not revocable"),
 }
 

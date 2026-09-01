@@ -300,8 +300,17 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
         CONFIRM THE RANGE WITH THE USER before calling. `Sheet1!A:Z` is a whole sheet's worth of
         data and reads almost identically to `Sheet1!A1:Z1`.
 
-        Requires `content.delete`, not `content.write` — clearing is destruction, and an operator
-        may permit editing while refusing it."""
+        THIS IS DESTRUCTIVE, and it needs only `content.write`. Both halves of that are
+        deliberate (CINO, 2026-09-01): destructive because the previous contents are gone from
+        the live sheet, and `content.write` because blanking a cell is a fundamental editing
+        operation — withholding it does not prevent the destruction, it just makes somebody write
+        a placeholder instead, and per the paragraph above a placeholder is *worse* than a blank
+        because it looks like data.
+        `update_cells` and `replace_text` are destructive in the same way and for the same
+        reason: an overwrite discards what was there. `content.delete` covers only what editing
+        cannot reach — removing a tab, or a range of a Doc.
+        Recoverable, though not by you: Drive keeps revision history a **human** can restore
+        from. There is no undo an agent can reach, which is why the range matters."""
         doc = get_workspace().open(fileId)
         _require(doc, "clear", "cell clearing")(a1Range)
         return {"file_id": fileId, "type": doc.type, "occurrences_changed": 1,
