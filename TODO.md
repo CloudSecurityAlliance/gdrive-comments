@@ -191,17 +191,24 @@ arrived *after* the gate that turns them off.
       - [x] **Capability gating.** `policy.py`: named capabilities, a `Policy`, and a
             `PolicyBackend` wrapper that **fails closed** — a `Backend` method with no declared
             gate is refused, not delegated, so a new method arrives *off*. `CSA_GW_CAPABILITIES`
-            is the complete permitted list, not a delta, so it reviews like code. Default
-            refuses the three that cannot be undone - edit a comment, delete a comment,
-            share a file (regrouped on recoverability in v0.21.0; see A5). Cannot be
-            widened in-band.
+            is the complete permitted list, not a delta, so it reviews like code. Cannot be
+            widened in-band. **Everything is enabled by default since v0.31.0** — narrowing is
+            what an operator configures — and the four that cannot be undone are
+            `comment.edit`, `comment.delete`, `content.delete` and `file.share`; recoverability
+            now *orders the ladder* rather than deciding the default (v0.21.0 regrouping, A5).
+            *(This said "Default refuses the three that cannot be undone". Two errors: the
+            default refuses nothing, and `content.delete` made it four in v0.36.0.)*
       - [x] **Per-URL scope** — **done 2026-08-25** (v0.8.0, split by access kind in v0.9.0).
             Two flat lists of document URLs held **in the environment** —
             `CSA_GW_ALLOWLIST_READ` and `CSA_GW_ALLOWLIST_MODIFY`, no file — matched by
-            file id. **Both fail closed**: unset permits
-            nothing, and `*` must be typed. Folder URLs are a **loud error**, not an inert
-            entry. `search_files` results are filtered to the read scope. Denials log at
-            WARNING.
+            file id. **Unset permits every file** since v0.31.0. What fails closed is a list
+            somebody *tried* to write: a malformed entry, or one with no usable entries, is
+            refused and the server does not start. Folder URLs are a **loud error**, not an
+            inert entry. `search_files` results are filtered to the read scope — an excluded
+            file must not even be *named*, or search becomes a way to enumerate what the policy
+            hides. Denials log at WARNING.
+            *(This said "Both fail closed: unset permits nothing, and `*` must be typed", which
+            was true until the v0.31.0 reversal and is the same stale claim SECURITY.md carried.)*
       - [ ] **Split 2026-08-30 (CINO)**, because the four remaining pieces aged differently
             once the defaults were reversed in v0.31.0. Any structured format still has to stay
             *environment-shaped* — the policy lives in the client config, not a file, deliberately.
@@ -218,6 +225,19 @@ arrived *after* the gate that turns them off.
               silently dead entry is a policy that says less than its author believes.
 
             **Post-1.0.0:**
+            - **session-level scoping** — the second half of #82's original ask, and the only
+              piece of it never built or written down anywhere until now. A library embedder
+              narrows a `Workspace` for one run: `with ws.scope(files=[id], ops={"comment"}): …`.
+              #82 states the two properties that make it a control rather than theatre, and they
+              are the whole design: it must be **monotonically narrowing** (a scope can only ever
+              be a subset of the policy it inherits; widening raises) and **set by the host, not
+              the guest** (the harness constructs the narrowed `Workspace` *before* handing it to
+              the agent). If the agent controls the `with` block, it controls the scope.
+              **The MCP server already has this property by a different route** — its policy is
+              read from the environment at startup and no tool can change it — so this is a
+              *library embedder* feature, which is why it did not arrive with the server work.
+              Bounds an agent that has been **misled**; it does not bound one running arbitrary
+              code in the same process with the credentials.
             - **per-capability scope** — *"commentable but not editable"* for one file. Needs a
               structured value the flat list cannot express, and the Drive-role profiles now
               cover most of what people actually wanted from it.
