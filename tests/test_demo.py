@@ -364,15 +364,26 @@ class TestDiscoverableFromMcp:
             # pairing - a configuration able to revoke but not grant would be odd, and one able
             # to grant but not revoke is the state this library was in until #235.
             "share_file", "update_file_permission", "unshare_file",
-            # And every DELETE, added in v0.36.0 with `content.delete`. This row is the clearest
-            # statement of why that capability exists: an `editor` writes cells, appends rows,
-            # inserts text and adds tabs, and is refused all four ways of destroying content.
-            "clear_cells", "delete_range", "delete_tab", "delete_document_tab"}
+            # The STRUCTURAL deletes, added in v0.36.0 with `content.delete`: an `editor` writes
+            # cells, appends rows, inserts text and adds tabs, and is refused the operations that
+            # remove a tab or a range - the things editing cannot reach.
+            #
+            # `clear_cells` WAS in this set and should not have been. It is gated `content.write`
+            # in `policy._GATES`; `mcp/_capabilities.py` said `content.delete`, so the plan
+            # predicted a refusal that would never happen - and this test, naming the set
+            # explicitly, pinned the wrong prediction. Found as F1 by audit 2026-09-01-02.
+            #
+            # It stays `content.write` deliberately: withholding it would not prevent the
+            # destruction (`update_cells` overwrites just as thoroughly) and would make somebody
+            # write a placeholder that looks like data. See
+            # tests/test_cell_destruction_is_content_write.py.
+            "delete_range", "delete_tab", "delete_document_tab"}
 
     @pytest.mark.parametrize("profile,expected", [
-        # `content.delete` joins each set in v0.36.0. The interesting row is `editor` (=writer):
-        # it may edit content all day and is refused every DELETE, which is the whole reason the
-        # capability was split out rather than folded into `content.write`.
+        # `content.delete` joins each set in v0.36.0. The `editor` (=writer) row is refused the
+        # STRUCTURAL deletes - removing a tab or a range - and NOT cell clearing, which is
+        # `content.write`. The capability was split out for what editing cannot reach, not to
+        # separate destructive from non-destructive: editing a spreadsheet is destructive too.
         ("reader", {"comment.create", "comment.reply", "comment.resolve", "comment.edit",
                     "comment.delete", "content.write", "content.delete", "file.create",
                     "file.update", "file.trash", "file.share"}),

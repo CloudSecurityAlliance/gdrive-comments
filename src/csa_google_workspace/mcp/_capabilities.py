@@ -108,7 +108,12 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "delete_tab": CONTENT_DELETE,
     "delete_document_tab": CONTENT_DELETE,
     "delete_range": CONTENT_DELETE,
-    "clear_cells": CONTENT_DELETE,
+    # CONTENT_WRITE, matching `policy._GATES`. This said CONTENT_DELETE and was the ORIGIN
+    # of the F1 inconsistency (audit 2026-09-01-02): being hand-written, it disagreed with
+    # the gate and then propagated - `demonstration_plan` predicted a refusal that would
+    # not happen, and the tool description told a model the wrong capability. Blanking
+    # cells is `content.write` deliberately; see the note on CONTENT_WRITE in policy.py.
+    "clear_cells": CONTENT_WRITE,
     # about the server rather than about Google; no Google call, so no capability
     "describe_configuration": None,
     # A read in the strict sense - it touches no Google API at all, only this process.

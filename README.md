@@ -468,6 +468,26 @@ Five more things worth knowing:
   matching nothing. The reasons are involved enough to be written down — see `TODO.md`,
   *"Folders in the allowlist"*.
 
+**Editing a spreadsheet is destructive, and no capability separates that out.** `update_cells`
+overwrites whatever was in the range, `clear_cells` empties it, and `replace_text` with an empty
+replacement blanks text — all under **`content.write`**. That is deliberate rather than an
+oversight: blanking a cell is a fundamental editing operation, and withholding it does not prevent
+the destruction, it makes somebody write `-` or `TBD` or `0` instead — which is worse, because a
+blank cell is obviously empty and a placeholder looks like data. `clear_cells` exists precisely so
+that does not happen: writing `""` leaves a cell *containing* an empty string, which anything
+reading the sheet can tell apart from a cleared one.
+
+So `content.delete` is a bound on **structural** destruction, not on destruction generally. What
+bounds content destruction is **`CSA_GW_ALLOWLIST_MODIFY`** — by file, which is the honest control
+here. And all of it is recoverable by a **human** through Drive revision history; what an agent
+lacks is any undo it can reach itself.
+
+*(This table previously grouped `clear_cells` under "Destroy content — `content.delete`, separate
+from `content.write` so editing can be allowed and destruction refused". The gate was always
+`content.write`, and the promise could not have been kept anyway, since `update_cells` destroys
+just as thoroughly. Raised by audit 2026-09-01-02 as F2's sibling; the resolution was to correct
+the claim rather than move the gate.)*
+
 **`csa-google-workspace-mcp configure` writes this file for you**, with the absolute path
 Desktop needs and your current `CSA_GW_*` variables carried across. It merges rather than
 replaces, keeps a timestamped backup, and refuses rather than overwriting if the file does not
@@ -525,9 +545,9 @@ reviews the configuration and may name people or unannounced work.
 | **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
 | **Read** | `read_file_content` · `read_range` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
 | **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` · `apply_comment_actions` |
-| **Write content** | `replace_text` · `append_text` · `insert_text` · `insert_slide_text` · `update_cells` · `append_rows` |
+| **Write content** | `replace_text` · `append_text` · `insert_text` · `insert_slide_text` · `update_cells` · `append_rows` · `clear_cells` — all `content.write`, and **all destructive to what was there**; see above |
 | **Tabs** | `list_tabs` · `add_tab` (Sheets) · `list_document_tabs` · `add_document_tab` (Docs) — different resources, deliberately different names |
-| **Destroy content** 🔒 | `clear_cells` · `delete_range` · `delete_tab` · `delete_document_tab` — `content.delete`, separate from `content.write` so editing can be allowed and destruction refused |
+| **Destroy structure** 🔒 | `delete_range` · `delete_tab` · `delete_document_tab` — `content.delete`. Separate from `content.write` because these reach what editing cannot: removing a tab or a Docs range. **Not a general "destruction" bound** — see the note below |
 | **Create** | `create_file` · `copy_file` |
 | **File lifecycle** 🔒 | `update_file` · `trash_file` · `share_file` · `update_file_permission` · `unshare_file` — each **on by default**, each still needing its capability *and* the file in the modify allowlist |
 | **Access requests** | `list_access_proposals` · `resolve_access_proposal` 🔒 — answering "can I have access?"; approving is sharing, so it costs `file.share` |
