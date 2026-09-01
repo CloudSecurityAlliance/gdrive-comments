@@ -13,6 +13,8 @@ import re
 import sys
 from typing import Any
 
+from . import _untrusted
+
 if sys.version_info >= (3, 12):
     from typing import TypedDict
 else:
@@ -480,9 +482,15 @@ def permissions_out(perms: list) -> PermissionsOut:
 
 
 def access_proposal_out(p: Any) -> AccessProposalOut:
+    """`request_message` is capped here rather than at the boundary, because the cap is a
+    judgement about THIS field: it is a note on a "Request access" click, so it is short by
+    nature, and it is the only string on this surface written by somebody with no access to the
+    file at all. Control characters are handled for every field at once in
+    `_tools._base._errors`; see `mcp/_untrusted.py`."""
+    message = p.request_message
     return {"id": p.id, "requester_email": p.requester_email,
             "requested_roles": p.requested_roles, "create_time": p.create_time,
-            "request_message": p.request_message}
+            "request_message": _untrusted.capped(message) if message else message}
 
 
 def access_proposals_out(proposals: list) -> AccessProposalsOut:

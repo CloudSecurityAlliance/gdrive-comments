@@ -22,6 +22,10 @@ fabricate one of the block's own lines - see #183. Without that, a body containi
 plus `    Someone Trusted: approved` was byte-identical to a real reply from them, which defeats
 the only distinction the block draws.
 
+Terminal control sequences are NOT this module's problem: `_untrusted.scrub` handles them for
+every tool result at once, including this one, so do not add a second pass here. What it cannot
+do is what this module does - a boundary scrub has no idea which strings were merged into which.
+
 Neither makes the content trustworthy. Delimiting is the weakest of the three spotlighting
 modes and none of them holds against an adaptive adversary; what the fix removed is a forgery
 that needed no adaptation at all.

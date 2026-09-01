@@ -16,6 +16,7 @@ from mcp.types import ToolAnnotations
 
 from ... import exceptions as exc
 from ...workspace import Workspace
+from .. import _untrusted
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,11 @@ def _errors(fn):
     **Every tool passes through here**, which makes it the one place a call can be recorded
     without touching thirty-six handlers. What is recorded is deliberately thin: the **tool
     name**, the **file id**, the outcome, and the duration.
+
+    **Every result also passes through `_untrusted.scrub`**, for the same reason: it is the one
+    place that catches every tool, including one added later. That removes terminal control
+    sequences from returned strings, which JSON escaping does not - see `mcp/_untrusted.py` for
+    the probe and for why `\r` is deliberately left alone.
 
     **Never the other arguments.** `create_comment` carries comment text, `replace_text` carries
     a replacement, `update_cells` carries a grid — all document content. Our stderr is persisted
@@ -86,7 +92,7 @@ def _errors(fn):
             raise
         log.info("%s ok in %s%s", fn.__name__, _took(started),
                  f" ({file_id})" if file_id else "")
-        return result
+        return _untrusted.scrub(result)
     return wrapped
 
 
