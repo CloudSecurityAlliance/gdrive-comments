@@ -111,7 +111,14 @@ class Settings:
     read_only: bool = False
     client_secrets: str | None = None
     policy: Policy | None = None            # None -> Policy.default()
-    profile: str | None = None              # the CSA_GW_PROFILE name, for reporting
+    profile: str | None = None              # the CSA_GW_PROFILE name AS SET, for reporting
+    # WHICH control actually decided the capability set: "profile", "explicit" or "default".
+    # Separate from `profile` because the two disagree in the one case an operator most needs a
+    # straight answer: with both CSA_GW_PROFILE and CSA_GW_CAPABILITIES set, the explicit list
+    # wins and the profile is IGNORED - and every reporting surface used to render the ignored
+    # profile as the active one anyway (RR-003's sibling, RR-005). `profile` still holds what was
+    # set, because "you set this and it did nothing" is the useful thing to say.
+    capability_source: str = "default"
     # Where `export_comments(destination="file")` puts a .csv when the caller gives only a
     # NAME. Defaults to ~/Downloads - the platform's designated "a program gave me a file"
     # location: discoverable in the Finder sidebar, persistent (unlike a temp directory, whose
@@ -147,7 +154,7 @@ class Settings:
     local_write: bool = True     # export_comments -> .csv/.xlsx, and write-back of markers
 
 
-def policy_from_env(env: Mapping[str, str]) -> Policy:
+def _policy_and_source(env: Mapping[str, str]) -> tuple[Policy, str]:
     """Build the server's policy from the environment. Three independent bounds:
 
       CSA_GW_CAPABILITIES       *what* may be mutated
@@ -156,11 +163,21 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
 
     Both hold their lists directly; there is no allowlist file. See `_scope_from_env`.
 
-    Each is a ceiling; none can widen another. **Both allowlists fail closed**: unset means
-    nothing is permitted, and unrestricted access must be typed as `*`.
+    Each is a ceiling; none can widen another. **Unset means every file** (v0.31.0 reversed the
+    original fail-closed default); what fails closed is a list somebody *tried* to write — a
+    malformed entry, or one with no usable entries, refuses and the server does not start, because
+    widening that to everything would hand them the opposite of what they wrote.
 
-    This always returns a `Policy` — never `None` — because "nothing configured" is now a
-    meaningful and restrictive answer rather than an absent one.
+    Returns `(policy, capability_source)`. `policy_from_env` below keeps the single-value
+    signature, because it is the public one and callers outside this module do not need the source.
+
+    This always returns a `Policy` — never `None` — so "nothing configured" is a permissive answer
+    rather than an absent one, and `_scope_from_env` below is where that is implemented.
+
+    *(This docstring asserted the pre-v0.31.0 model — "both allowlists fail closed: unset means
+    nothing is permitted" — while the function it documents implemented the opposite. Found as
+    RR-003, 2026-09-01. It is called out because an internal docstring is the version an AI
+    remediation agent is most likely to preserve while changing the code around it.)*
     """
     _reject_legacy_allowlist(env)
     capabilities = _capabilities_from_env(env)
@@ -172,16 +189,25 @@ def policy_from_env(env: Mapping[str, str]) -> Policy:
             log.warning("both %s and CSA_GW_CAPABILITIES are set; the explicit capability "
                         "list wins and the profile is ignored", PROFILE_VAR)
         enabled = frozenset(capabilities.enabled)
+        source = "explicit"
     elif profile is not None:
         enabled = PROFILES[profile]
+        source = "profile"
     else:
         enabled = DEFAULT_ENABLED
+        source = "default"
     return Policy(
         enabled=enabled,
         read=_scope_from_env(env, READ_ALLOWLIST_VAR),
         modify=_scope_from_env(env, MODIFY_ALLOWLIST_VAR),
-    )
+    ), source
 
+
+
+def policy_from_env(env: Mapping[str, str]) -> Policy:
+    """The effective policy. See `_policy_and_source` for which control decided it."""
+    policy, _source = _policy_and_source(env)
+    return policy
 
 def _scope_from_env(env: Mapping[str, str], variable: str) -> Scope:
     """One allowlist scope, from its environment variable. **Unset means every file.**
@@ -299,11 +325,14 @@ def _capabilities_from_env(env: Mapping[str, str]) -> Policy | None:
 def settings_from_env(env: Mapping[str, str]) -> Settings:
     explicit = env.get("CSA_GW_CLIENT_SECRETS")
     default = os.path.expanduser(DEFAULT_CLIENT_SECRETS_PATH)
+    # Resolved once, so the policy and the record of WHICH control produced it cannot disagree.
+    policy, capability_source = _policy_and_source(env)
     return Settings(
         token_path=env.get("CSA_GW_TOKEN") or DEFAULT_TOKEN_PATH,
         read_only=(env.get("CSA_GW_READ_ONLY") or "").strip().lower() in _TRUE,
         client_secrets=explicit or (default if os.path.exists(default) else None),
-        policy=policy_from_env(env),
+        policy=policy,
+        capability_source=capability_source,
         profile=_profile_from_env(env),
         export_dir=(env.get("CSA_GW_EXPORT_DIR") or "").strip() or DEFAULT_EXPORT_DIR,
         flavour=_flavours.flavour_from_env(env),
@@ -351,9 +380,14 @@ def startup_warnings(settings: Settings) -> list[str]:
     if policy is None:
         return []
     out: list[str] = []
-    if settings.profile:
+    if settings.profile and settings.capability_source == "profile":
         out.append(f"profile: {settings.profile} — "
                    f"{', '.join(sorted(PROFILES[settings.profile])) or 'no mutations at all'}")
+    elif settings.profile:
+        # Warning from the profile alone described a set that was not in force (RR-005).
+        out.append(f"CSA_GW_PROFILE={settings.profile} is IGNORED — CSA_GW_CAPABILITIES is also "
+                   f"set and an explicit list wins. In force: "
+                   f"{', '.join(sorted(policy.enabled)) or 'no mutations at all'}")
     for label, scope, variable in (
             ("READ", policy.read, READ_ALLOWLIST_VAR),
             ("MODIFY", policy.modify, MODIFY_ALLOWLIST_VAR)):

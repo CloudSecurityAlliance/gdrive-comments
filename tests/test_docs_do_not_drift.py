@@ -445,3 +445,92 @@ class TestTheReadmeDoesNotContradictTheProfileLadder:
             reachable = {p for p, caps in PROFILES.items() if "file.share" in caps}
             assert reachable == {"organizer"}, (
                 f"README says file.share is organizer-only; it is reachable from {reachable}")
+
+
+class TestTheConfigurationContractIsToldOneWay:
+    """RR-003, an external correctness review's only P0 (2026-09-01).
+
+    v0.31.0 reversed the defaults. Eleven releases later the repository still told the *old* story
+    in four surfaces nobody had re-read — and the worst of them was not prose in a file:
+
+    * `README.md` line 31, in the **opening bullets**: *"Every destructive capability is off until
+      an operator names it, and the file allowlists fail closed."*
+    * `README.md`: *"963 offline tests"* (1631) and *"34 tools"* (50).
+    * `README.md`: *"Unset means nothing is permitted"* and *"It fails closed."*
+    * **`cli.py`'s `--help`**: profile names `editor | full`, *"Default: editor"*, *"Both FAIL
+      CLOSED"*.
+    * **`configure`'s printed output**: *"BOTH allowlists fail closed, so nothing is reachable
+      until you set CSA_GW_ALLOWLIST_READ"* — told to an operator **at the moment they set the
+      server up**. A wrong sentence in a file nobody opens is a defect; a wrong sentence printed
+      during setup is somebody believing they are scoped when they are not.
+    * `_config.py`'s docstring, which is the version an AI remediation agent preserves while
+      changing the code around it.
+
+    Two lessons this class exists to hold:
+
+    1. **`--help` and `configure` output are documentation that lives in `.py` files.** The earlier
+       sweep treated drift as a docs task and never opened them.
+    2. **Suppressing a false positive by excluding a whole file excludes its true positives too.**
+       `check_doc_claims.py` had `OWN_TOOL_COUNT_FILES = {"CLAUDE.md", "INTERFACE-RESOURCES.md"}`
+       to quiet the README's competitor comparisons — and that exclusion is exactly what hid
+       *"34 tools"* in the README's own introduction. Exclude the sentence, never the document.
+    """
+
+    def test_no_surface_claims_an_unset_allowlist_permits_nothing(self):
+        """The single sentence that outlived its truth in five files."""
+        from csa_google_workspace.mcp._config import settings_from_env
+
+        if not settings_from_env({}).policy.modify.all_files:
+            pytest.skip("unset really does permit nothing now")
+
+        for path in ("README.md", "SECURITY.md", "TODO.md"):
+            text = without_historical_notes((ROOT / path).read_text(encoding="utf-8")).lower()
+            for phrase in ("unset means nothing is permitted",
+                           "both allowlists fail closed",
+                           "both fail closed"):
+                assert phrase not in text, f"{path} still says {phrase!r}; unset permits everything"
+
+    def test_the_cli_help_does_not_promise_a_closed_default(self):
+        """`--help` is the first thing an operator reads and it lives in code, which is why the
+        docs sweep missed it."""
+        from csa_google_workspace.mcp._config import settings_from_env
+
+        if not settings_from_env({}).policy.modify.all_files:
+            pytest.skip("unset really does permit nothing now")
+        help_text = without_historical_notes(_usage_text()).lower()
+        assert "fail closed: unset means nothing is permitted" not in help_text
+        assert "safe default" not in help_text, (
+            "there is no safe default: every capability is on unless narrowed")
+
+    def test_the_cli_help_uses_the_real_profile_vocabulary(self):
+        """It advertised `editor | full` as the profile names and `editor` as *the default*.
+        Both are wrong: the names mirror Drive's roles, and there is no default profile."""
+        from csa_google_workspace.policy import PROFILES
+
+        help_text = _usage_text()
+        for profile in sorted(PROFILES):
+            assert profile in help_text, f"--help does not mention the `{profile}` profile"
+        assert "Default: editor" not in help_text, "there is no default profile"
+
+    def test_configure_does_not_tell_an_operator_they_are_scoped_when_they_are_not(self):
+        """The sharpest of the RR-003 sites: printed during setup, not buried in a file."""
+        import inspect
+
+        from csa_google_workspace.mcp import cli
+        source = inspect.getsource(cli)
+        # The comment recording the bug legitimately quotes the old text; the printed string
+        # must not.
+        printed = "\n".join(line for line in source.splitlines()
+                            if not line.lstrip().startswith("#"))
+        assert "nothing is reachable" not in printed, (
+            "configure told the operator nothing is reachable until they set an allowlist, at "
+            "the moment they were setting the server up")
+
+
+def _usage_text() -> str:
+    """The `--help` text. Read from the `USAGE` constant rather than by capturing stdout: the
+    first version of this helper redirected stdout, got an empty string, and reported that
+    `--help` was missing a profile name it in fact lists. A capture that can silently return
+    nothing makes every assertion built on it vacuous."""
+    from csa_google_workspace.mcp import cli
+    return cli.USAGE

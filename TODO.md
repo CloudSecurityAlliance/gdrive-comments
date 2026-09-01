@@ -100,6 +100,7 @@ below; this is the index.
 | **C5 uploaded formats** | **Blocked on** provenance trust — a dependency, not a queue position |
 | **`.docx` comments** | Separate from C5's text extraction, and more interesting for a comments-first tool |
 | **Traversal · corpus · revisions · vector search** | Contains the **probe** worth running early: does Google prune Docs revisions? |
+| **THREAT_MODEL is stale on defaults** | RR-003 found the reversed-defaults claim in §3/§4 too *(34 tools, fails closed)*. **Not editable** — that is the audit's frozen text and the only baseline this repo cannot change. Either §0 supersedes it in prose (as T19 already does) or the follow-on security audit replaces the register. See *THREAT_MODEL needs updating* |
 | **Can prompts resist injection?** | **Research, expecting "no"** (CINO 2026-09-01). We author ~49 KB of instructions + tool descriptions per session; more defensive wording costs context budget for an unmeasured benefit. Gated on *how would "improved" be measured* — an eval harness may be the real deliverable. Narrower than #297. See *Can the prompts themselves resist injection?* |
 | **Scoping — research first** | **#82 closed 2026-09-01** having shipped its core. What is left needs research, not a design: scoping now has **two motivations that want opposite things** — containment (host-set, hard to change) and *context management* (user-set, easy to change). See *Scoping needs research before design* |
 | **Per-capability scope · allowlist expiry** | Both weakened by the defaults reversal |
@@ -356,6 +357,43 @@ for. That is a stronger driver than the security case ever produced on its own.
 *"do not scope; improve retrieval"* are both acceptable outcomes. Implementation is a separate
 decision that this research informs rather than presupposes.
 
+
+
+### THREAT_MODEL needs updating — the audit's frozen text now describes the old defaults
+
+**Noted 2026-09-01 (CINO), from RR-003.** A correctness review found the reversed-defaults claim in
+`THREAT_MODEL.md` as well, in three places:
+
+| line | says |
+|---|---|
+| `THREAT_MODEL.md:112` | *(the bundled MCP server exposes "34 tools" and "it fails closed")* |
+| `THREAT_MODEL.md:131` | *(Both file allowlists fail closed when unset)* |
+| `THREAT_MODEL.md:197` | *(both allowlists fail closed; `*` must be typed literally)* |
+
+**Deliberately not edited, and that is the whole reason this is a TODO rather than a commit.** That
+text is §4 and §3 — the audit's own words, frozen. The register's rule is that *threat text stays
+as the audit wrote it while `status` is current*, and the frozen snapshot in the audit directory is
+the one baseline this repository cannot edit, which makes it the only real check on a claim of
+progress. Rewriting §4 to look correct would destroy that. `tests/test_threat_model.py` enforces
+the boundary.
+
+So the fix is one of two things, and it is a judgement call rather than a mechanical edit:
+
+1. **§0 supersedes it in prose** — the cheap option, and the pattern is already established:
+   T19's row already says *(the §4 text and the recommendation table below still describe branch
+   protection as unverifiable; they are the audit's frozen words, and this row is what supersedes
+   them)*. The same treatment applied to the tool count and the fail-closed language would make
+   §0 carry every difference, which is what it is for.
+2. **The follow-on security audit replaces the register** against the post-RR-003 public contract.
+   That audit is already the intended next step, and it would rewrite these lines properly rather
+   than annotating them — at the cost of leaving stale sentences in public text until it runs.
+
+**Option 1 does not block option 2**, so the likely answer is both: annotate now, replace at the
+audit. What must *not* happen is a quiet edit of §4, because the value of the frozen baseline is
+exactly that nobody can.
+
+Worth noting the count is not wrong so much as undated: *(34)* was true at v0.28.0 when the audit ran, and the register
+correctly says so — it is only misleading because a reader takes it as present tense.
 
 ### Can the prompts themselves resist injection? — research, expecting "no"
 

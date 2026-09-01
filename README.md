@@ -28,8 +28,15 @@ What to expect while it is pre-1.0.0:
 
 Practical advice, none of it hypothetical:
 
-- **Every destructive capability is off until an operator names it**, and the file allowlists
-  [fail closed](#capability-boundaries). That design is load-bearing here, not decoration.
+- **Nothing is off by default, and an unconfigured install has your full Drive reach.** All
+  eleven capabilities are on and both allowlists permit every file; **narrowing is what you
+  configure** — [start here](#which-one-to-reach-for). That is coherent because a capability
+  enabled here is not a permission granted (every call runs as you, against Drive's own ACLs),
+  but it does mean a default install adds no bound of its own. `CSA_GW_READ_ONLY=1` is the one
+  variable that changes the most for the least effort.
+  *(This bullet said the opposite — "every destructive capability is off until an operator names
+  it, and the file allowlists fail closed" — for the eleven releases after v0.31.0 reversed it.
+  Found by an external correctness review, 2026-09-01, as RR-003.)*
 - **`apply_comment_actions` defaults to a dry run.** Read what it says it would do before passing
   `apply`. This posts under your name to a document your colleagues are reading.
 - **Try the write path on a document you can afford to break first.** Then use it in anger.
@@ -38,13 +45,14 @@ Practical advice, none of it hypothetical:
   in it.
 
 None of which is to undersell what works: the library is **feature-complete for its scoped
-roadmap** and **live-verified end-to-end against real Google**, behind **963 offline tests**, with
+roadmap** and **live-verified end-to-end against real Google**, behind **over 1,600 offline
+tests**, with
 `ruff` and `mypy` clean in CI across Python 3.10–3.14. Shipped across Docs/Sheets/Slides: comment
 management, content read/write, Sheets comment→cell mapping, and Docs suggestions read. See
 [`CHANGELOG.md`](./CHANGELOG.md); design and phased plans under
 [`docs/superpowers/`](./docs/superpowers/).
 
-**Built-in MCP server** (since 0.2.0) (`csa_google_workspace.mcp`): a local stdio server, **34
+**Built-in MCP server** (since 0.2.2) (`csa_google_workspace.mcp`): a local stdio server, **50
 tools**, so an AI client can read documents, triage and write comments, and edit content through
 the library. Content writes landed in 0.13.0 and Docs suggestions in 0.20.0, so the server now
 reaches everything the library does. Install with the `[mcp]` extra; see below.
@@ -437,8 +445,13 @@ deterministic rather than inferred, so it cannot be wrong about what it found.
 
 Five more things worth knowing:
 
-- **Unset means nothing is permitted.** The server still starts — a startup crash reaches you as
-  an opaque "server failed to start" — and tells you on stderr exactly which variable to set.
+- **Unset means every file** — and *malformed* is what fails closed. Those are two different
+  operators: unset is somebody who has not narrowed anything, malformed is somebody who **tried
+  and failed**, and only the second can be detected. A bad URL, or a list whose every line is a
+  comment, refuses and the server does not start; widening that to "everything" would hand them
+  the opposite of what they wrote. The server still starts in the unset case — a startup crash
+  reaches you as an opaque "server failed to start" — and warns on stderr that `*` grants access
+  to every file the credentials can reach.
 - **There is no file, and a path-shaped value says so** rather than being read or silently
   ignored.
 - **Matching is by file id**, so every URL form for one document is one entry, and a **copy** of
@@ -447,8 +460,10 @@ Five more things worth knowing:
 - **`search_files` results are filtered** to the read scope, not just made unopenable. A file
   outside it must not be *named* either, or search becomes a way to enumerate what the policy
   excludes.
-- **It fails closed.** A missing file, an unreadable one, an empty list or one bad line is a
-  hard error, never a quiet fallback to unrestricted access.
+- **An attempted-but-broken list fails closed.** One bad line, or a list with no usable entries,
+  is a hard error and never a quiet fallback to unrestricted access. This is the narrow, true form
+  of the "fails closed" claim; it does **not** extend to an unset variable — see the first bullet.
+  *(Both of these bullets asserted the pre-v0.31.0 model until 2026-09-01, RR-003.)*
 - **Folders are not supported yet** and a folder URL is rejected loudly rather than silently
   matching nothing. The reasons are involved enough to be written down — see `TODO.md`,
   *"Folders in the allowlist"*.

@@ -59,12 +59,17 @@ DOC_GLOBS = ["research/*.md", "docs/superpowers/specs/*.md"]
 # frozen as the audit wrote it, so "34 tools" there is a quotation rather than a claim about now.
 FROZEN_COUNTS = {"THREAT_MODEL.md"}
 
-# Where a bare "**N tools**" is a claim about US. Everywhere else - the README's comparison
-# section especially - a tool count usually belongs to somebody else ("`piotr-agier` ships **115
-# tools**"), and only the explicit "this project's N" form is ours. Stated per file rather than
-# inferred from the sentence, because the line that prompted this contains BOTH numbers and no
-# amount of regex cleverness reads it correctly.
-OWN_TOOL_COUNT_FILES = {"CLAUDE.md", "INTERFACE-RESOURCES.md"}
+# A tool count belongs to somebody else when one of these appears just before it - the README
+# compares against other servers ("`piotr-agier` ships **115 tools**"). Everything else is a claim
+# about us, in EVERY file.
+#
+# This replaced a per-file allowlist (`{"CLAUDE.md", "INTERFACE-RESOURCES.md"}`) which excluded
+# README.md to suppress exactly those comparison rows - and in doing so hid "**34 tools**" in the
+# README's own introduction for eleven releases. An external review found it (RR-003, 2026-09-01).
+# The lesson is narrow and worth keeping: **suppressing a false positive by excluding a whole file
+# excludes its true positives too.** Exclude the sentence, never the document.
+OTHER_SERVER_MARKERS = ("piotr-agier", "taylorwilsdon", "ships", "google's server",
+                        "claude.ai connector", "distant-tuna", "mkummer")
 
 # Names that are legitimately absent from the code, with the reason. A bare "known failure" list
 # would rot exactly like the docs it checks, so each entry says why it is not drift.
@@ -124,6 +129,43 @@ def _env_vars() -> set[str]:
     return found
 
 
+
+
+# This repository RECORDS what a document used to get wrong, next to the correction - it is how the
+# reasoning survives. A quotation of a stale claim is byte-identical to an assertion of it, so the
+# convention is that a historical aside is wrapped in `*( ... )*` and every check strips those
+# spans first. `tests/test_docs_do_not_drift.py` uses the same rule.
+_HISTORICAL_ASIDE = re.compile(r"\*\(.*?\)\*", re.DOTALL)
+
+
+def without_historical_notes(text: str) -> str:
+    """`text` with `*( ... )*` asides removed, so a quoted mistake is not read as a live claim."""
+    return _HISTORICAL_ASIDE.sub(" ", text)
+
+def _test_count() -> int:
+    """How many tests the offline suite collects.
+
+    Counted by collecting, not by parsing `def test_`: parametrisation means the two numbers
+    differ substantially, and the figure the README quotes is the one a reader would see from
+    `pytest`. Falls back to a `def test_` count if collection is unavailable, which keeps this
+    script usable in an environment without the dev extra.
+    """
+    import subprocess
+    try:
+        out = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q",
+                              str(ROOT / "tests")], capture_output=True, text=True, timeout=180,
+                             cwd=ROOT)
+        for line in reversed(out.stdout.splitlines()):
+            if "test" in line and "collected" in line:
+                for token in line.split():
+                    if token.isdigit():
+                        return int(token)
+    except Exception:                              # pragma: no cover - environment-dependent
+        pass
+    return sum(line.count("def test_")
+               for path in (ROOT / "tests").rglob("test_*.py")
+               for line in path.read_text(encoding="utf-8").splitlines())
+
 def _docs() -> list[Path]:
     paths = [ROOT / d for d in DOCS]
     for pattern in DOC_GLOBS:
@@ -137,6 +179,7 @@ def check() -> list[str]:
     from csa_google_workspace.policy import ALL_CAPABILITIES, PROFILES
 
     tools, env_vars = _tools(), _env_vars()
+    TEST_COUNT = _test_count()
     capabilities, profiles = set(ALL_CAPABILITIES), set(PROFILES)
     problems: list[str] = []
 
@@ -149,11 +192,15 @@ def check() -> list[str]:
     bare_count = re.compile(r"\*\*(\d+) tools\*\*")
     # Ours wherever it appears, including inside a comparison with another server.
     ours_count = re.compile(r"this (?:project|server)'s (\d+)\b")
+    # "over 1,600 offline tests" and friends. A floor, not an exact count, so it does not break
+    # every time a test is added - but a badly stale one still fails, which is the case that
+    # mattered: the README claimed 963 when the suite had 1631.
+    test_floor = re.compile(r"(?:over|more than)\s+([\d,]+)\s+(?:offline\s+)?tests")
     cap_count = re.compile(r"\*\*(\d+) capabilities\*\*|all (\d+) capabilities")
 
     for path in _docs():
         name = path.relative_to(ROOT).as_posix()
-        text = path.read_text(encoding="utf-8")
+        text = without_historical_notes(path.read_text(encoding="utf-8"))
 
         for var in sorted(set(env_pattern.findall(text)) - env_vars):
             if var not in EXPECTED_ABSENT:
@@ -165,13 +212,28 @@ def check() -> list[str]:
                     f"{name}: names capability `{cap}`, which policy.py does not define")
 
         if path.name not in FROZEN_COUNTS:
-            claims = {int(n) for n in ours_count.findall(text)}
-            if path.name in OWN_TOOL_COUNT_FILES:
-                claims |= {int(n) for n in bare_count.findall(text)}
+            # Whitespace-normalised, because these claims are prose and wrap across lines - the
+            # README's own "**50\ntools**" slipped past a line-anchored pattern.
+            flat = " ".join(text.split())
+            claims = {int(n) for n in ours_count.findall(flat)}
+            for match in bare_count.finditer(flat):
+                before = flat[max(0, match.start() - 80):match.start()].lower()
+                if not any(marker in before for marker in OTHER_SERVER_MARKERS):
+                    claims.add(int(match.group(1)))
+            for match in test_floor.finditer(flat):
+                floor = int(match.group(1).replace(",", ""))
+                if floor > TEST_COUNT:
+                    problems.append(
+                        f"{name}: claims over {floor:,} tests; the suite has {TEST_COUNT:,}")
+                elif TEST_COUNT > floor * 1.5:
+                    problems.append(
+                        f"{name}: claims over {floor:,} tests and the suite has "
+                        f"{TEST_COUNT:,} - stale enough to mislead. Raise the floor")
             for claimed in claims:
                 if claimed != len(tools):
                     problems.append(
-                        f"{name}: claims **{claimed} tools**; the server registers {len(tools)}")
+                        f"{name}: claims a tool count of {claimed}; the server registers "
+                        f"{len(tools)}")
             for a, b in cap_count.findall(text):
                 claimed = int(a or b)
                 if claimed != len(capabilities):

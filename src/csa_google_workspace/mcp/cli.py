@@ -37,23 +37,32 @@ environment:
                          consent is cached separately (token.readonly.json), so a
                          read-write token will NOT be reused - log in again with this
                          set. Your read-write token is left untouched.
-  CSA_GW_PROFILE         a named capability set: reader | commenter | editor | full.
+  CSA_GW_PROFILE         a named capability set, using Drive's OWN role names:
+                         reader | commenter | writer | fileOrganizer | organizer.
                          reader may change nothing; commenter may comment, reply and
-                         resolve; editor adds content edits and file creation; full adds
-                         rename/move, trash and share. Default: editor.
+                         resolve; writer adds content edits, file creation, rename/move
+                         and trash - everything RECOVERABLE; fileOrganizer adds editing
+                         and deleting comments and deleting content, which Google gives
+                         no way to undo; organizer adds sharing. `editor` and `full` are
+                         accepted as aliases of writer and organizer.
+                         UNSET MEANS NO PROFILE - not a safe middle. See below.
   CSA_GW_CAPABILITIES    which mutations are permitted - the complete list, not a delta.
-                         Unset means the safe default: comment and content writes on,
-                         file rename/move, trash and share OFF. Tokens: any capability
-                         name, plus `default`, `all`, `none`.
+                         UNSET MEANS EVERYTHING IS ON: all eleven capabilities,
+                         including the four Google gives no way to undo (comment.edit,
+                         comment.delete, content.delete, file.share). Narrowing is what
+                         you configure. Tokens: any capability name, plus `default`,
+                         `all`, `none`.
                            default,file.trash          the usual set, plus trashing
                            comment.create,comment.reply  exactly these two
                            none                        no mutation at all
   CSA_GW_ALLOWLIST_READ    which files may be READ
   CSA_GW_ALLOWLIST_MODIFY  which files may be CHANGED, added to, or deleted
 
-                         Both FAIL CLOSED: unset means nothing is permitted. Each holds
-                         either `*` or the document URLs themselves - there is no
-                         allowlist file, and a path-shaped value is reported as a
+                         UNSET MEANS EVERY FILE the credentials can reach. What fails
+                         closed is a list you TRIED to write: one bad line, or a list
+                         with no usable entries, refuses and the server does not start.
+                         Each holds either `*` or the document URLs themselves - there
+                         is no allowlist file, and a path-shaped value is reported as a
                          mistake rather than read.
 
                          The usual posture:
@@ -144,9 +153,17 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
                   f"({', '.join(carried)}) - Claude Desktop has no shell, so this is the "
                   f"only place it reads them", file=out)
         else:
+            # This told the operator the OPPOSITE of runtime behaviour, at the moment they
+            # set the server up - "nothing is reachable until you set CSA_GW_ALLOWLIST_READ"
+            # when in fact everything is. Found as RR-003, 2026-09-01. A wrong sentence in a
+            # file nobody opens is a defect; a wrong sentence printed during setup is somebody
+            # believing they are scoped when they are not.
             print("no CSA_GW_* variables set here, so none were carried - Desktop will use "
-                  "the defaults, and BOTH allowlists fail closed, so nothing is reachable "
-                  "until you set CSA_GW_ALLOWLIST_READ", file=out)
+                  "THE DEFAULTS, WHICH ARE OPEN: every capability on, and both allowlists "
+                  "permitting every file this account can reach. Narrowing is what you "
+                  "configure - set CSA_GW_READ_ONLY=1 for the narrowest useful posture, or "
+                  "CSA_GW_PROFILE / CSA_GW_ALLOWLIST_MODIFY to scope it. Run `describe` to "
+                  "see what an install actually permits.", file=out)
         print("restart Claude Desktop for this to take effect", file=out)
         return 0
     if argv and argv[0] == "demo":
