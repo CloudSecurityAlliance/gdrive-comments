@@ -37,7 +37,7 @@ scope_covered:
   - "git history — d33034b and all refs, security-keyword mined; f481733 (v0.31.0) read in full"
 index_label: "2026-09-01 · defending-code-reference-harness / claude (re-audit)"
 findings_summary: "43 threats · 9 flaws · 10 guards-that-cannot-fail · 1 refuted · 1 fixed upstream mid-audit"
-remediation_summary: "not started — 24 issues listed in ISSUES.md, fixing deferred to a separate session"
+remediation_summary: "not started — 25 issues filed (#308-#332); #1 was already fixed upstream by #305. Fixing deferred to a separate session"
 
 # Enumerated, not globbed: a glob claims the future (SCHEMA.md). Produced from the audited
 # tree itself with `git ls-tree -r d33034b --name-only`. tests/ is deliberately partial —
