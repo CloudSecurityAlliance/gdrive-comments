@@ -100,7 +100,7 @@ below; this is the index.
 | **C5 uploaded formats** | **Blocked on** provenance trust — a dependency, not a queue position |
 | **`.docx` comments** | Separate from C5's text extraction, and more interesting for a comments-first tool |
 | **Traversal · corpus · revisions · vector search** | Contains the **probe** worth running early: does Google prune Docs revisions? |
-| **Structured allow/deny (files·folders·drives)** | **Designed 2026-08-31, deferred**: folder membership is live, so it costs one `files.get` per level on EVERY access and cannot be cached |
+| **Scoping — research first** | **#82 closed 2026-09-01** having shipped its core. What is left needs research, not a design: scoping now has **two motivations that want opposite things** — containment (host-set, hard to change) and *context management* (user-set, easy to change). See *Scoping needs research before design* |
 | **Per-capability scope · allowlist expiry** | Both weakened by the defaults reversal |
 | **Document-text Resource · comment-triage Prompt** | Conveniences over tools that already exist |
 | **Docs `batchUpdate` breadth · MCPB bundle · `PlaywrightBackend`** | Unchanged |
@@ -224,7 +224,10 @@ arrived *after* the gate that turns them off.
             - **dead-entry detection** — an allowlisted file that has been trashed. Cheap, and a
               silently dead entry is a policy that says less than its author believes.
 
-            **Post-1.0.0:**
+            **Post-1.0.0 — and see [*Scoping needs research before design*](#scoping-needs-research-before-design)
+            below, which is now the gate on all three.** #82 was closed 2026-09-01 having
+            delivered its core ask; what is left is not a backlog of features to build but a
+            question nobody has answered.
             - **session-level scoping** — the second half of #82's original ask, and the only
               piece of it never built or written down anywhere until now. A library embedder
               narrows a `Workspace` for one run: `with ws.scope(files=[id], ops={"comment"}): …`.
@@ -244,10 +247,15 @@ arrived *after* the gate that turns them off.
             - **expiry** — weakest of the four. It was designed when an allowlist was *the*
               boundary; it is now an opt-in scope somebody deliberately chose, and time-bounding
               a choice is much less compelling than time-bounding a grant.
-      - [x] **The no-allowlist default: decided and flipped** (v0.9.0). Unset is fail closed
-            in the MCP server; `*` is the typed escape hatch. The library keeps a permissive
-            default, because `from_credentials` is called by a developer who has made a
-            decision while the server is configuration handed to a model.
+      - [x] **The no-allowlist default: decided, flipped, and flipped back.** v0.9.0 made unset
+            fail closed in the MCP server with `*` as the typed escape hatch; **v0.31.0 reversed
+            it** — unset now permits every file, and narrowing is what an operator configures.
+            What still fails closed is a list somebody *tried* to write: malformed, or with no
+            usable entries, refuses to start. The library always kept a permissive default,
+            because `from_credentials` is called by a developer who has made a decision while
+            the server is configuration handed to a model.
+            *(This entry described only the v0.9.0 state — the third place the reversed default
+            was still being asserted, after SECURITY.md and the A4 capability entry.)*
       - [x] **~~Superseded by the broader model, eventually.~~** ✅ **Resolved by the item two
             above**, and the recommendation it made ("flip it at 1.0.0") was overtaken by
             actually flipping it in v0.9.0. Struck rather than deleted because it named a
@@ -263,11 +271,89 @@ gating plus two flat lists of document URLs**. That is enough to be concrete —
 install is physically unable to change a document nobody listed — and it is enough to demonstrate
 that the project takes the read→act path seriously. It is **not** a general authorization model.
 
-A broader long-term design is being researched separately. Two properties of what is here should
+A broader long-term design is **not** being designed yet — see [*Scoping needs research before design*](#scoping-needs-research-before-design), which is the gate on it, and of which this structured model is one candidate shape rather than the answer. Two properties of what is here should
 survive into it, because they are what make it worth relying on at all: enforcement lives in a
 **`Backend` wrapper**, so library embedders and MCP clients get the same guarantee from one
 auditable place; and the policy **cannot be widened in-band**, because no tool changes it. Any
 richer model that gives those up is a step backwards regardless of what else it adds.
+
+
+### Scoping needs research before design
+
+**Decided 2026-09-01 (CINO), on closing [#82](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/82).**
+The umbrella delivered its core ask — `PolicyBackend`, per-capability gating, two file
+allowlists, fail-closed at the `Backend` seam. What remains (folders, per-capability scope,
+expiry, session scoping, the structured allow/deny model) is **too useful to drop and not
+understood well enough to build**. So it becomes a research task, and the research has to finish
+before anyone designs the shape.
+
+#### The finding that makes this research rather than implementation
+
+Scoping now has **two motivations, and they want opposite things.**
+
+| | **Damage containment** (#82's original framing) | **Context management** (the CINO's, 2026-09-01) |
+|---|---|---|
+| The point | bound what a *misled* agent can break | keep the model's working set small enough to be useful |
+| Who sets it | the **host**, before the agent runs | plausibly the **user, mid-task** — "just this project" |
+| Changing it | must be **hard**, and never in-band | wants to be **easy**, or nobody uses it |
+| Wrong is | a breach | an annoyance |
+| Stale membership | a security hole | a mild inconvenience |
+
+A control that an agent can widen is theatre; an ergonomic scope somebody has to restart the
+server to change is one nobody sets. **Those cannot both be one mechanism without deciding which
+property loses**, and the honest possibilities include *two* mechanisms that happen to share a
+matcher. Nothing in the existing design anticipated the second motivation, so its conclusions
+should not be assumed to carry.
+
+The context-management case is also the one with **real pull**: a working group folder of forty
+documents is a natural unit of work, and "point it at this project" is what people actually ask
+for. That is a stronger driver than the security case ever produced on its own.
+
+#### What must be answered before a design
+
+1. **Is scoping even the right lever for context?** If the goal is a manageable working set, the
+   alternative is better *retrieval* — search and ranking that surfaces the right five files out
+   of four hundred. A scope is a blunt instrument that a user maintains; retrieval is one the
+   tool maintains. This question has to be asked first, because the rest is wasted if the answer
+   is "index better, don't scope".
+2. **What shape is a scope?** Flat file ids (what exists), a folder, a Shared Drive, a Drive
+   **label**, a saved search, an explicit project manifest, or "what I touched this fortnight".
+   These have entirely different cost, freshness and failure characteristics, and the current
+   design considered only the first two.
+3. **What does each cost?** One number is measured: **folder membership is live, so a folder rule
+   costs one `files.get` per level on *every* access and cannot be cached** — which is why the
+   structured model was deferred. Nothing else has been measured. What does a 500-file project
+   cost to resolve? Does a label-based scope collapse to one query?
+4. **Where does it live?** Environment (today, and deliberately — the client config is the
+   artifact an operator can see), a config file, a file *in Drive*, a project file in the repo.
+   The environment answer was chosen for a security control; a per-project ergonomic scope may
+   want a different home, and that reopens a settled decision rather than extending it.
+5. **How stale may it be?** Folder membership changes underneath you. For containment that is a
+   TOCTOU gap; for context it is barely a defect. The answer differs *per motivation*, which is
+   the tension in question 1 wearing different clothes.
+6. **What does it compose with?** Capabilities, `CSA_GW_FLAVOUR`, session scoping, and the
+   **local corpus / index** idea recorded elsewhere in this file — which is the same question
+   from the other end, and whose safety rule (*anything found in an index is re-fetched through
+   the normal authorized path*) is a constraint on any answer here.
+7. **What is the prior art?** Google's own server sidesteps all of this with `drive.file`, where
+   the user picks files and **Google** enforces it upstream. IDE workspace roots, git
+   sparse-checkout and monorepo project files solve a recognisably similar problem. Somebody has
+   probably been here.
+
+#### What not to assume
+
+- **That the flat-list matcher generalises.** It is fine for ids and cannot express a folder, a
+  label or a query without becoming a different thing.
+- **That the environment is still the right home.** It was the right answer to *"where does a
+  security policy live"*.
+- **That deferring folders on cost settles it.** That measured one shape against one motivation.
+- **That this is small.** #82 stayed open for eleven days *after* its core shipped, mostly
+  because "what is left" was never stated plainly. This section is that statement.
+
+**Ends with a written comparison, in `research/`, and a recommendation** — the same shape as
+`research/server-landscape.md`. A conclusion of *"scope by folder, accept the cost"* and one of
+*"do not scope; improve retrieval"* are both acceptable outcomes. Implementation is a separate
+decision that this research informs rather than presupposes.
 
 ### The structured allow/deny model — designed 2026-08-31, deferred post-1.0.0
 
