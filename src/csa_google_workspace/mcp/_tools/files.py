@@ -109,7 +109,9 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
 
         Returns the new file, including its `url` — hand that to the user so they can open it.
         Creating a file is not restricted by the modify allowlist, because a file that does not
-        exist yet cannot be damaged; writing to it afterwards is."""
+        exist yet cannot be damaged; writing to it afterwards is.
+
+        Requires `file.create`. Not file-scoped — there is no file yet for an allowlist to check."""
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {sorted(KINDS)}, not {kind!r}")
         # The library accepts XLSX BYTES for a spreadsheet; this parameter is a JSON string, so
@@ -141,7 +143,11 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
 
         The copy is a **new file with a new id**, so it is not covered by the modify allowlist
         even if the original was — writing to it will be refused unless an operator lists it.
-        Defaults to Drive's own "Copy of …" name."""
+        Defaults to Drive's own "Copy of …" name.
+
+        Requires `file.create`, and the SOURCE in the read allowlist. The copy gets a new id,
+        which the modify allowlist does not list either, so copying cannot produce a writable
+        duplicate of something unwritable."""
         return file_ref_out(get_workspace().files.copy(fileId, name=name, parent_id=parentId))
 
     # ── File lifecycle ────────────────────────────────────────────────────────────────

@@ -66,7 +66,9 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
         smart quotes, or a line break inside the phrase). Read the document and try a shorter
         anchor rather than retrying the same string.
 
-        Not available for spreadsheets; use `update_cells` there."""
+        Not available for spreadsheets; use `update_cells` there.
+
+        Requires `content.write` and the file in the modify allowlist."""
         doc = get_workspace().open(fileId)
         method = _require(doc, "replace_text", "find-and-replace")
         changed = method(find, replace, matchCase)
@@ -80,7 +82,9 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
         """Add text to the end of a Google Doc's body.
 
         Documents only. Include your own leading newline if you want a new paragraph — the
-        text is inserted exactly as given."""
+        text is inserted exactly as given.
+
+        Requires `content.write` and the file in the modify allowlist."""
         doc = get_workspace().open(fileId)
         _require(doc, "append_text", "appending text")(text)
         return {"file_id": doc.id, "type": doc.type, "occurrences_changed": None,
@@ -99,7 +103,9 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
         is no option to change that here — see below.
 
         Overwrites whatever is in the range. It does not insert rows, and there is no undo
-        here — Drive's version history is the only way back."""
+        here — Drive's version history is the only way back.
+
+        Requires `content.write` and the file in the modify allowlist."""
         if not values or not all(isinstance(row, list) for row in values):
             raise ValueError("values must be a non-empty list of rows, each row a list")
         doc = get_workspace().open(fileId)
@@ -116,7 +122,9 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
         Unlike `update_cells` this never overwrites: Google finds the end of the data in
         `a1Range` (a bare tab name like `Sheet1` is fine) and writes below it.
 
-        Values are stored verbatim as text, exactly as in `update_cells`."""
+        Values are stored verbatim as text, exactly as in `update_cells`.
+
+        Requires `content.write` and the file in the modify allowlist."""
         if not values or not all(isinstance(row, list) for row in values):
             raise ValueError("values must be a non-empty list of rows, each row a list")
         doc = get_workspace().open(fileId)
@@ -151,7 +159,9 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
 
         `objectId` identifies the **shape**, not the slide — get one from `list_slides`.
         `index` is the character offset within that shape, so 0 prepends and omitting it is
-        usually what you want for an empty placeholder."""
+        usually what you want for an empty placeholder.
+
+        Requires `content.write` and the file in the modify allowlist."""
         doc = get_workspace().open(fileId)
         if doc.type != "presentation":
             raise exc.UnsupportedOperation(
