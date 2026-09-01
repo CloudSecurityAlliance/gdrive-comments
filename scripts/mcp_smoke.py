@@ -38,6 +38,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 PROTOCOL_VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
 CLIENT_CAPABILITIES_KEY = "io.modelcontextprotocol/clientCapabilities"
@@ -47,7 +48,17 @@ LEGACY = "2025-11-25"
 
 
 def speak(requests: list[dict], *, timeout: int = 90) -> tuple[list[dict], str, str]:
-    """Send JSON-RPC to a fresh server subprocess and parse stdout as a client would."""
+    """Send JSON-RPC to a fresh server subprocess and parse stdout as a client would.
+
+    **Reads until every request id has an answer.** The first version used `communicate()`, which
+    closes stdin immediately - and the server can then reach EOF and shut down before draining a
+    queued request, so `tools/list` sometimes never answered. It passed once in CI and failed on
+    the next run.
+
+    Worth recording that the identical race was fixed in `tests/test_mcp_wire_protocol.py` in the
+    same change, and left here: a fix applied at one layer does not protect another that
+    duplicates the mechanism.
+    """
     env = dict(os.environ)
     env.update({
         "CSA_GW_ALLOWLIST_READ": "*",
@@ -61,23 +72,45 @@ def speak(requests: list[dict], *, timeout: int = 90) -> tuple[list[dict], str, 
         [sys.executable, "-m", "csa_google_workspace.mcp"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, env=env)
-    payload = "".join(json.dumps(request) + "\n" for request in requests)
+    expected = {r["id"] for r in requests if "id" in r}
+    messages: list[dict] = []
+    lines: list[str] = []
+    deadline = time.monotonic() + timeout
     try:
-        out, err = proc.communicate(payload, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        fail("the server did not answer over stdio within "
-             f"{timeout}s. Is `pip install .[mcp]` complete?")
-    messages = []
-    for line in out.splitlines():
-        if not line.strip():
-            continue
+        for request in requests:
+            proc.stdin.write(json.dumps(request) + "\n")
+            proc.stdin.flush()
+        seen: set = set()
+        while seen != expected and time.monotonic() < deadline:
+            line = proc.stdout.readline()
+            if not line:                      # the server closed stdout
+                break
+            if not line.strip():
+                continue
+            lines.append(line)
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                fail(f"stdout carried a non-protocol line, which corrupts the JSON-RPC channel "
+                     f"under stdio: {line[:160]!r}")
+            messages.append(message)
+            if "id" in message:
+                seen.add(message["id"])
+        if seen != expected:
+            fail(f"no answer for request id(s) {sorted(expected - seen)} within {timeout}s. "
+                 f"Got {len(messages)} message(s). Is `pip install .[mcp]` complete?")
+    finally:
+        # stdin closes only AFTER the answers are in, so EOF cannot race the last request.
         try:
-            messages.append(json.loads(line))
-        except json.JSONDecodeError:
-            fail(f"stdout carried a non-protocol line, which corrupts the JSON-RPC channel "
-                 f"under stdio: {line[:160]!r}")
-    return messages, out, err
+            proc.stdin.close()
+        except Exception:                     # pragma: no cover
+            pass
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:     # pragma: no cover
+            proc.kill()
+        err = proc.stderr.read()
+    return messages, "".join(lines), err
 
 
 def fail(reason: str) -> None:

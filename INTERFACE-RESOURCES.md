@@ -1,6 +1,6 @@
 # INTERFACE-RESOURCES.md — csa-google-workspace
 
-**Last verified:** 2026-08-31 (v0.37.0)
+**Last verified:** 2026-09-01 (v0.38.0)
 **Scope:** Interfaces this repo exposes to callers, and first-party interfaces it
 consumes. Third-party Python dependencies live in `pyproject.toml`; the Google
 API surfaces this library wraps are third-party and are not listed here.
@@ -30,7 +30,7 @@ it means installing it and importing it.
   credentials (BYO `google.oauth2` credentials, or the bundled OAuth helper)
 - **Code:** [`src/`](src/)
 - **Status:** production — feature-complete for its scoped roadmap and
-  live-verified end-to-end against real Google. Current release **v0.37.0**;
+  live-verified end-to-end against real Google. Current release **v0.38.0**;
   the MCP server below arrived in v0.2.2. Classifier still reads
   `Development Status :: 4 - Beta`.
 
