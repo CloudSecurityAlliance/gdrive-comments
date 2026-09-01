@@ -384,12 +384,12 @@ def per_type(kind: str) -> list[Step]:
         Step("share_file", lambda s, key=key: {"fileId": s[key],
                                                "emailAddress": _require_share(s),
                                                "role": "reader",
-                                               "sendNotification": False},
+                                               "sendNotification": True},
              "Share it",
-             "The only step here that can move data OUT of the organisation, which is why it "
-             "is ON BY DEFAULT, so this step is reachable on an unconfigured install. "
-             "Notification is suppressed for the demo; in "
-             "real use, telling the recipient is the point.",
+             "The only step here that can move data OUT of the organisation, and it is ON BY "
+             "DEFAULT, so this step is reachable on an unconfigured install. The recipient IS "
+             "notified - a grant somebody is told about is one they can question, which is "
+             "exactly why it should not be quiet in a demonstration either.",
              captures=lambda s, out, k=kind: s.update({f"perm_{k}": out.get("id")}),
              requires="file.share", optional=True, group=kind),
         # Paired with the share above, deliberately: a demonstration that grants access and
