@@ -31,6 +31,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 REQS = ROOT / "requirements"
 TESTS_YML = ROOT / ".github/workflows/tests.yml"
+DOC_CLAIMS_YML = ROOT / ".github/workflows/doc-claims.yml"
 RELEASE_YML = ROOT / ".github/workflows/release.yml"
 
 LOCKS = ["dev.txt", "build.txt", "build-backend.txt"]
@@ -117,7 +118,7 @@ class TestCiInstallsFromTheLock:
         text = TESTS_YML.read_text(encoding="utf-8")
         assert "pip install -e . --no-deps --no-build-isolation" in text
 
-    @pytest.mark.parametrize("path", [TESTS_YML, RELEASE_YML])
+    @pytest.mark.parametrize("path", [TESTS_YML, RELEASE_YML, DOC_CLAIMS_YML])
     def test_the_editable_build_does_not_fetch_its_backend(self, path):
         """`pip install -e .` builds through PEP 517, which fetches `build-system.requires`
         from PyPI into an isolated env. Pinning the closure leaves that fetch untouched, so

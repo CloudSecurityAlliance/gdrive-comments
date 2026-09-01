@@ -130,6 +130,18 @@ def _env_vars() -> set[str]:
 
 
 
+
+# This repository RECORDS what a document used to get wrong, next to the correction - it is how the
+# reasoning survives. A quotation of a stale claim is byte-identical to an assertion of it, so the
+# convention is that a historical aside is wrapped in `*( ... )*` and every check strips those
+# spans first. `tests/test_docs_do_not_drift.py` uses the same rule.
+_HISTORICAL_ASIDE = re.compile(r"\*\(.*?\)\*", re.DOTALL)
+
+
+def without_historical_notes(text: str) -> str:
+    """`text` with `*( ... )*` asides removed, so a quoted mistake is not read as a live claim."""
+    return _HISTORICAL_ASIDE.sub(" ", text)
+
 def _test_count() -> int:
     """How many tests the offline suite collects.
 
@@ -188,7 +200,7 @@ def check() -> list[str]:
 
     for path in _docs():
         name = path.relative_to(ROOT).as_posix()
-        text = path.read_text(encoding="utf-8")
+        text = without_historical_notes(path.read_text(encoding="utf-8"))
 
         for var in sorted(set(env_pattern.findall(text)) - env_vars):
             if var not in EXPECTED_ABSENT:

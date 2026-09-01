@@ -40,10 +40,17 @@ jobs:
           python-version: "3.12"
       # The hash-pinned closure, like every other job here - the checker imports the package to
       # enumerate the real tool surface, so it needs the dependencies installed.
+      # The same shape as tests.yml and release.yml, and asserted by
+      # tests/test_lockfiles.py so it cannot drift apart from them. `pip install -e .` builds
+      # through PEP 517, which fetches `build-system.requires` from PyPI into an ISOLATED env -
+      # so pinning the closure alone leaves the code that builds the package resolving freely.
+      # The backend goes in from its own pinned file, and `--no-build-isolation` makes the build
+      # use it. (RR-008: this workflow claimed the pinned posture without having it.)
       - name: Install the pinned closure
         run: |
           pip install --require-hashes -r requirements/dev.txt
-          pip install --no-deps -e .
+          pip install --require-hashes -r requirements/build-backend.txt
+          pip install -e . --no-deps --no-build-isolation
       - name: Check what the documentation claims
         env:
           GH_TOKEN: ${{ github.token }}

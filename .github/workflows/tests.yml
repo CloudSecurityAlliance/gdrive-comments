@@ -113,3 +113,29 @@ jobs:
         run: pip-audit --skip-editable
       - name: Static security analysis (bandit)
         run: bandit -r src
+
+  # RR-004. Every other install here is hash-pinned, which is right and leaves one gap: the
+  # `[mcp]` extra is a RANGE (`mcp>=2.1`), and it is the dependency that IS the server. A future
+  # SDK release inside that range could break the shipped artifact while the pinned matrix above
+  # stays green — and MCP protocol compatibility is part of what this package promises.
+  #
+  # So this job resolves FREELY and on purpose, the same carve-out the `security` job makes, for
+  # the same reason: the free resolution is the signal. It installs non-editably, from the built
+  # tree rather than `-e .`, so what it exercises is what a user gets.
+  #
+  # `scripts/mcp_smoke.py` deliberately imports nothing from this repository — no pytest, no
+  # `src/` on the path — so it cannot accidentally test the working tree instead of the install.
+  mcp-extra:
+    name: "[mcp] extra, freely resolved"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install as a user does (unpinned on purpose)
+        run: pip install ".[mcp]"
+      - name: Report what the range resolved to
+        run: pip show mcp | grep -i '^version' || true
+      - name: MCP stdio smoke against the installed package
+        run: python scripts/mcp_smoke.py --verbose
