@@ -12,7 +12,7 @@ direction.
 
 **And the server told the model about a control that did not exist.** `INSTRUCTIONS` said
 `destination="file"` works *"only if the operator enabled it"*. There is no such enablement:
-`ALL_CAPABILITIES` is ten Drive-side names and none of them gates a filesystem write, so
+`ALL_CAPABILITIES` is Drive-side names and none of them gates a filesystem write, so
 `PROFILE=reader` with `READ_ONLY=1` and both allowlists empty still left the path live.
 
 That is worse than a missing feature. A model reading it will reason that the path is gated, and
@@ -92,22 +92,52 @@ class TestNothingThatWritesClaimsToBeReadOnly:
 
 class TestTheInstructionsDoNotInventControls:
     CAPABILITY_SHAPED = re.compile(r"\b([a-z]+\.[a-z_]+)\b")
+    # `foo.bar`-shaped tokens that could be a capability. Filenames, hostnames and mime types
+    # are the same shape, so the first segment has to look like one of ours.
+    NAMESPACES = {"comment", "content", "file", "export", "account", "policy"}
 
-    def test_every_capability_named_in_the_instructions_exists(self):
-        named = set(self.CAPABILITY_SHAPED.findall(INSTRUCTIONS))
-        # `foo.bar`-shaped tokens that are not capabilities: filenames, hostnames, mime types.
-        plausible = {t for t in named if t.split(".")[0] in
-                     {"comment", "content", "file", "export", "account", "policy"}}
-        unknown = plausible - set(ALL_CAPABILITIES)
+    def model_facing_capability_tokens(self, tools) -> set[str]:
+        """Every capability-shaped token in anything the model reads.
+
+        **Widened 2026-09-01.** This guard used to read `INSTRUCTIONS` alone, and by the time
+        audit `2026-09-01-02` looked (#320) there were ZERO dotted tokens left in it - so the
+        input set was empty and the assertion passed without checking anything.
+
+        Widening it is not just about restoring an input. It is the same lesson as #332, where
+        the default-posture claims MOVED from `INSTRUCTIONS` to the tool descriptions and the
+        guard aimed at `INSTRUCTIONS` never saw them. The claims live in the descriptions; a
+        guard that reads only the preamble is looking at the wrong surface.
+        """
+        texts = [t.description or "" for t in tools.values()] + [INSTRUCTIONS]
+        named = {t for text in texts for t in self.CAPABILITY_SHAPED.findall(text)}
+        return {t for t in named if t.split(".")[0] in self.NAMESPACES}
+
+    def test_the_guard_has_something_to_check(self, tools):
+        """Asserted separately so a future emptying fails HERE, naming the cause, rather than
+        turning the test below into a green no-op.
+
+        Note what is NOT asserted: that any particular capability is mentioned. Requiring that
+        would push a count or a name into prose that a constant controls, which is the drift
+        this repository keeps fixing. The claim is only that the guard is still looking at
+        something."""
+        assert self.model_facing_capability_tokens(tools), (
+            "no capability-shaped token appears in any tool description or in INSTRUCTIONS, so "
+            "the check below cannot fail. Either the model-facing text stopped naming "
+            "capabilities - which is a real change worth noticing - or this guard is reading "
+            "the wrong surface, as it was before #320.")
+
+    def test_every_capability_named_in_model_facing_text_exists(self, tools):
+        unknown = self.model_facing_capability_tokens(tools) - set(ALL_CAPABILITIES)
         assert unknown == set(), (
-            f"the instructions name capabilities that do not exist: {sorted(unknown)}. A model "
-            f"reading this will reason the path is gated when it is not.")
+            f"model-facing text names capabilities that do not exist: {sorted(unknown)}. A "
+            f"model reading this will reason the path is gated when it is not.")
 
     def test_it_does_not_claim_an_operator_gate_on_writing_a_file(self):
         """The specific false claim. Kept as its own assertion because the phrasing is what a
         model acts on, and a generic capability check would not have caught prose."""
         assert "only if the operator enabled it" not in INSTRUCTIONS, (
-            "no capability gates a filesystem write - ALL_CAPABILITIES is ten Drive-side names")
+            "no capability gates a filesystem write - every name in ALL_CAPABILITIES is "
+            "Drive-side")
 
     def test_it_still_explains_where_the_file_goes(self):
         """Removing the false claim must not remove the useful half: a model needs to know the

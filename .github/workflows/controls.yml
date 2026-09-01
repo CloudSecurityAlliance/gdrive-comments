@@ -46,6 +46,13 @@ jobs:
           # repository is a real cost, and it should not be paid silently for one check.
           GITHUB_TOKEN: ${{ secrets.CONTROLS_TOKEN }}
         run: |
+          # `pipefail` is load-bearing, not tidiness. Without it this step reports `tee`'s
+          # status, which is always 0 - so the ONE scheduled job whose whole purpose is
+          # noticing that an externally-enforced control drifted between releases reported
+          # success unconditionally (#316). release.yml runs the same script unpiped and did
+          # propagate, so a release would still have caught it; the dead detector was the
+          # weekly one.
+          set -o pipefail
           python scripts/check_controls.py | tee controls.txt
       - name: Publish the result to the run summary
         if: always()

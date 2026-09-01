@@ -32,7 +32,11 @@ from csa_google_workspace import Workspace, __version__
 from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
-from csa_google_workspace.policy import ALL_CAPABILITIES
+from csa_google_workspace.policy import (
+    ALL_CAPABILITIES,
+    DEFAULT_DISABLED,
+    IRREVERSIBLE,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -191,17 +195,86 @@ class TestNoDocumentSaysContentWritesAreMissing:
             f"{name} still says content writes are not exposed; they shipped in v0.13.0")
 
 
+# Spelled-out numbers, because that is how the stale claims were actually written. The original
+# guard matched `\d+` only, so `all ten capabilities` in CLAUDE.md - wrong from the day
+# `content.delete` made eleven - was invisible to the one test built to catch exactly that
+# (#320). A detector that cannot see the form the defect takes is not a detector.
+# `one` is deliberately absent. "one capability off an otherwise-right profile" and "how much of
+# one capability lives in a single method" are determiners, not claims about the total - three of
+# the six matches in this repository, and a detector nobody trusts is a detector nobody runs. A
+# total of exactly one is not a state this policy model can reach.
+_NUMBER_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+                 "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+_COUNT_CLAIM = re.compile(
+    r"\b(\d+|" + "|".join(_NUMBER_WORDS) + r")\s+(?:\w+\s+)?capabilit", re.I)
+
+
+# NOT every count of capabilities is a count of ALL of them. "Four capabilities are irreversible"
+# is correct and always will be, and a detector that read it as a claim about the total would
+# report a true sentence as drift - which is how a checker gets switched off. So the number is
+# compared against the set the SENTENCE names, taken from the words that follow it.
+_SUBSETS = (("irreversible", lambda: len(IRREVERSIBLE)),
+            ("off by default", lambda: len(DEFAULT_DISABLED)),
+            ("disabled by default", lambda: len(DEFAULT_DISABLED)))
+
+
+def _claimed_counts(text: str) -> list[tuple[str, int, int]]:
+    """Every "<N> capabilities" claim, as (what was written, the number, what it should be)."""
+    found = []
+    for match in _COUNT_CLAIM.finditer(text):
+        written = match.group(1)
+        number = int(written) if written.isdigit() else _NUMBER_WORDS[written.lower()]
+        # The clause the count belongs to, normalised - a claim can wrap across a line.
+        context = " ".join(text[match.start():match.end() + 90].split()).lower()
+        expected = len(ALL_CAPABILITIES)
+        for word, size in _SUBSETS:
+            if word in context:
+                expected = size(); break
+        found.append((match.group(0).strip(), number, expected))
+    return found
+
+
 class TestTheCapabilityCountIsRight:
     @pytest.mark.parametrize("name", DOCS)
     def test_no_doc_miscounts_the_capabilities(self, name):
         path = ROOT / name
         if not path.exists():
             pytest.skip(f"{name} is not in this tree")
-        text = path.read_text(encoding="utf-8")
-        for match in re.finditer(r"\b(\d+)\s+capabilit", text, re.I):
-            assert int(match.group(1)) == len(ALL_CAPABILITIES), (
-                f"{name} claims {match.group(1)} capabilities; there are "
-                f"{len(ALL_CAPABILITIES)}")
+        text = without_historical_notes(path.read_text(encoding="utf-8"))
+        for written, number, expected in _claimed_counts(text):
+            assert number == expected, (
+                f"{name} says {written!r} -> {number}, but the set that sentence names has "
+                f"{expected}. Prefer removing the number - a count in prose that a constant "
+                f"controls will drift again - unless the sentence genuinely needs it.")
+
+    def test_the_detector_fires_on_a_planted_claim(self):
+        """**This is how a guard with no input proves it is alive.**
+
+        The property "no doc miscounts" is satisfied trivially when no doc states a count, and
+        that is the preferred state - a number in prose that a constant controls is drift
+        waiting to happen. So the fix for the vacuity is NOT to require a count somewhere; it
+        is to test the DETECTOR against synthetic input, which holds whether or not any real
+        document says anything.
+        """
+        wrong = len(ALL_CAPABILITIES) + 1
+        for planted in (f"all {wrong} capabilities are on",
+                        "all ten capabilities are on",      # the form that actually shipped
+                        f"the {wrong} capability names"):
+            found = _claimed_counts(planted)
+            assert found, f"the detector missed {planted!r} entirely"
+            assert any(n != e for _, n, e in found), (
+                f"the detector read {planted!r} but did not see the number as wrong")
+
+    def test_the_detector_does_not_fire_on_a_correct_claim(self):
+        """The counterweight: a detector that flags everything gets switched off."""
+        for fine in (f"all {len(ALL_CAPABILITIES)} capabilities are on",
+                     # A SUBSET count, which is the false positive that would have retired this
+                     # guard - README's "Four capabilities are irreversible" is simply true.
+                     f"{len(IRREVERSIBLE)} capabilities are irreversible and flagged as such",
+                     # And a determiner, which is why `one` is not a number word here.
+                     "one capability off an otherwise-right profile"):
+            assert all(n == e for _, n, e in _claimed_counts(fine)), (
+                f"the detector wrongly flagged {fine!r}")
 
 
 class TestEveryConfigVariableIsDocumented:
