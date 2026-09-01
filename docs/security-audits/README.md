@@ -28,6 +28,7 @@ Newest first.
 <!-- BEGIN GENERATED INDEX -->
 | audit | date | tool | model | interaction | automation | depth | findings | remediation |
 |---|---|---|---|---|---|---|---|---|
+| [2026-09-01 · ChatGPT Codex / GPT-5](2026-09-01-chatgpt-codex-gpt5/) | 2026-09-01 | codex + chatgpt-codex-local-repository | gpt-5 | light | assisted | standard | 3 total · 0 exploitable · 2 hardening | not started — audit record only |
 | [2026-08-27 · defending-code-reference-harness / claude](2026-08-27-defending-code-reference-harness-claude/) | 2026-08-27 | claude-code + anthropics/defending-code-reference-harness | claude-opus-5 | heavy | assisted | adversarial | 35 total · 1 exploitable · 15 hardening | in progress — see [REMEDIATION.md](2026-08-27-defending-code-reference-harness-claude/REMEDIATION.md) |
 | [2026-07-22 · Code audit, security-lensed](../AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code | — | moderate | assisted | standard | 29 (#1…#29) | findings-only |
 | [2026-07-22 · Security audit](../SECURITY-AUDIT-2026-07-22.md) † | 2026-07-22 | claude-code + pip-audit, bandit, defusedxml fuzzing | — | moderate | assisted | standard | 4 (SEC-1…SEC-4) | findings-only |
@@ -50,15 +51,15 @@ looked for, which is the reason this table exists.
 <!-- BEGIN GENERATED COVERAGE -->
 | group | first covered by |
 |---|---|
-| `src/csa_google_workspace/` — top level | **partial** — 20/22 at 2026-08-27 |
+| `src/csa_google_workspace/` — top level | 2026-09-01 · codex |
 | `documents/` — per-type content | 2026-07-22 · claude-code |
-| `mcp/` — server, auth flow, config, resources | **partial** — 13/15 at 2026-08-27 |
+| `mcp/` — server, auth flow, config, resources | 2026-09-01 · codex |
 | `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
 | `demo/` | 2026-08-27 · claude-code |
-| `tests/` as code | **not yet audited** |
-| `.github/workflows/` | **partial** — 3/6 at 2026-08-27 |
+| `tests/` as code | **partial** — 6/116 at 2026-09-01 |
+| `.github/workflows/` | 2026-09-01 · codex |
 | packaging and secret-scanning config | 2026-08-27 · claude-code |
-| `scripts/` | **not yet audited** |
+| `scripts/` | 2026-09-01 · codex |
 | `experiments/` | **not yet audited** |
 | `research/` | **not yet audited** |
 <!-- END GENERATED COVERAGE -->
