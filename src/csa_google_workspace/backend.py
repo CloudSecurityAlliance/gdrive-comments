@@ -732,7 +732,8 @@ class ApiBackend:
 
     def create_permission(self, file_id, *, email, role, permission_type="user", notify=True):
         # The one call in this backend that can move data OUT of the organisation, so it is
-        # gated by its own capability, off by default, and file-scoped. See policy._GATES.
+        # gated by its own capability - on by default since v0.31.0 - and file-scoped.
+        # See policy._GATES.
         #
         # sendNotificationEmail defaults to True on purpose: a share the recipient is told
         # about is a share somebody can notice and question. Silent grants are how access

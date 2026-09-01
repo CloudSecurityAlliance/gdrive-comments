@@ -387,7 +387,8 @@ def per_type(kind: str) -> list[Step]:
                                                "sendNotification": False},
              "Share it",
              "The only step here that can move data OUT of the organisation, which is why it "
-             "is off unless somebody enabled it. Notification is suppressed for the demo; in "
+             "is ON BY DEFAULT, so this step is reachable on an unconfigured install. "
+             "Notification is suppressed for the demo; in "
              "real use, telling the recipient is the point.",
              captures=lambda s, out, k=kind: s.update({f"perm_{k}": out.get("id")}),
              requires="file.share", optional=True, group=kind),

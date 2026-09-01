@@ -50,8 +50,8 @@ REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text
 #                    the blank one has to stay "I did not decide" - otherwise every untouched
 #                    row would reopen every resolved thread.
 #   delete_comment   TRUE removes it. For spam. The sharpest action here: Drive's soft delete
-#                    strips the content AND the author, permanently, and `comment.delete` is
-#                    off in every profile but `full`.
+#                    strips the content AND the author, permanently. `comment.delete` is ON by
+#                    default, and on the profile ladder it arrives at `fileOrganizer`.
 ACTIONS = ("reply_comment", "resolve_comment", "delete_comment")
 COMPLETED = ("reply_comment_completed", "resolve_comment_completed",
              "delete_comment_completed")

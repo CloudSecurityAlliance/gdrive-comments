@@ -146,8 +146,13 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
 
     # ── File lifecycle ────────────────────────────────────────────────────────────────
     #
-    # All three are OFF by default and refuse unless an operator names the capability AND
-    # lists the file for modify. They are separated from the create/read tools above because
+    # All three are ON by default since v0.31.0 - narrowing is what an operator configures -
+    # and each still refuses unless its capability is enabled AND the file is listed for
+    # modify. Those two bounds are unchanged; only the default moved.
+    # (These said "OFF by default" for eleven releases after the reversal. Model-facing text,
+    # so a model read them as a reason not to warn. CODX-2026-09-01-01.)
+    #
+    # They are separated from the create/read tools above because
     # what they risk is different in kind: the tools above cannot damage anything that already
     # exists, and these three can.
 
@@ -171,7 +176,8 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
         Works on ANY file, folders included - it goes through the account axis rather than
         through `open()`, which MIME-dispatches to a document type and refuses everything else.
 
-        Requires the `file.update` capability, which is off unless an operator enables it."""
+        Requires the `file.update` capability, which is **on by default** - an operator
+        narrows it - and the file must be in the modify allowlist."""
         if name is None and parentId is None and removeParentId is None:
             raise ValueError("nothing to change: pass name, parentId or removeParentId")
         ref = get_workspace().files.update(fileId, name=name, parent_id=parentId,
@@ -198,7 +204,8 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
         is inside it - the children are left loose in My Drive - so tidying up means removing
         the children first.
 
-        Requires the `file.trash` capability, which is off unless an operator enables it."""
+        Requires the `file.trash` capability, which is **on by default** - an operator
+        narrows it - and the file must be in the modify allowlist."""
         result = get_workspace().files.trash(fileId, untrash=untrash)
         return {"id": result.get("id", fileId), "name": result.get("name"),
                 "trashed": bool(result.get("trashed", not untrash))}
@@ -221,7 +228,8 @@ def register_file_tools(app: MCPServer, get_workspace: WorkspaceProviderT) -> No
 
         Ownership transfer is refused. Use `writer` for full edit access.
 
-        Requires the `file.share` capability, which is off unless an operator enables it, AND
+        Requires the `file.share` capability - **on by default**, and the one capability that
+        moves data out of the organisation, so it is the first thing to narrow - AND
         the file must be listed for modify."""
         return permission_out(get_workspace().files.share(
             fileId, emailAddress, role, notify=sendNotification))

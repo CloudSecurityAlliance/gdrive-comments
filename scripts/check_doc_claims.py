@@ -55,6 +55,13 @@ DOCS = [
 ]
 DOC_GLOBS = ["research/*.md", "docs/superpowers/specs/*.md"]
 
+# Source files are scanned for DEFAULT-POSTURE CLAIMS only (see `_posture_problems`), not for the
+# name and count checks. Docstrings and MCP tool descriptions are documentation that a MODEL reads
+# as operational context, and the drift that mattered most lived there rather than in any `.md`:
+# an external audit found thirteen such claims surviving eleven releases after the default
+# reversed (CODX-2026-09-01-01). A sweep that only opens Markdown cannot see them.
+SOURCE_ROOT = "src/csa_google_workspace"
+
 # THREAT_MODEL.md is excluded from the COUNT checks but not the name checks: its threat text is
 # frozen as the audit wrote it, so "34 tools" there is a quotation rather than a claim about now.
 FROZEN_COUNTS = {"THREAT_MODEL.md"}
@@ -141,6 +148,78 @@ _HISTORICAL_ASIDE = re.compile(r"\*\(.*?\)\*", re.DOTALL)
 def without_historical_notes(text: str) -> str:
     """`text` with `*( ... )*` asides removed, so a quoted mistake is not read as a live claim."""
     return _HISTORICAL_ASIDE.sub(" ", text)
+
+
+# Phrases that assert a capability or scope is CLOSED by default. Checked against the actual
+# constants, because this exact sentence outlived its truth in eighteen places across three
+# separate review passes - and it is neither a name nor a count, so nothing else here catches it.
+#
+# The check is one-directional on purpose: a text claiming "off by default" when nothing is off is
+# a false sense of safety, which is the dangerous direction. The reverse (failing to mention a
+# default) is a gap, not a lie, and is left to human review.
+CLOSED_POSTURE_CLAIMS = (
+    "off by default",
+    "off unless an operator",
+    "off unless named",
+    "disabled by default",
+    "fails closed when nothing is configured",
+    "fails closed when unset",
+    "unset means nothing is permitted",
+)
+
+# The phrase alone is far too blunt: of thirteen matches on the first run, TWELVE were correct —
+# negations ("nothing is off by default"), past tense ("capabilities that WERE off by default"),
+# and three about **caching**, which genuinely is off by default. A checker with a 92% false
+# positive rate is one nobody runs, so two filters narrow it to the claim that actually drifts.
+#
+# 1. The claim must sit near a CAPABILITY or a lifecycle tool name. That is what excludes caching
+#    and every other subject the phrase legitimately describes.
+# 2. It must not be negated or in the past tense.
+#
+# The one real finding on that first run was in `CLAUDE.md` — the agent-facing guide — and neither
+# an external correctness report nor a security audit had caught it.
+_POSTURE_SUBJECTS = ("file.share", "file.trash", "file.update", "comment.delete", "comment.edit",
+                     "content.delete", "content.write", "file.create", "share_file",
+                     "trash_file", "update_file", "delete_comment", "edit_comment",
+                     "capabilit", "allowlist")
+_POSTURE_NEGATIONS = ("nothing is", "no longer", "whatever is", "were", "used to", "once nothing",
+                      "these said", "said", "not ", "stopped", "any more", "until v0", "wrong by")
+
+
+def _posture_problems(paths, anything_disabled: bool, unset_is_everything: bool) -> list[str]:
+    """Text asserting a closed default that the constants contradict.
+
+    Scans Markdown *and* source, because `--help` strings, docstrings and MCP tool descriptions
+    are read by operators and models as authoritative — and that is where this drift hid longest.
+    An external audit found thirteen such claims surviving eleven releases after the default
+    reversed; a sweep that only opens Markdown cannot see them (CODX-2026-09-01-01).
+
+    One-directional on purpose: text claiming "off by default" when nothing is off gives a false
+    sense of safety, which is the dangerous direction. Failing to mention a default is a gap, not
+    a lie, and is left to human review.
+    """
+    if anything_disabled and not unset_is_everything:
+        return []                                  # the claims would be true; nothing to check
+    problems = []
+    for path in paths:
+        flat = " ".join(without_historical_notes(
+            path.read_text(encoding="utf-8")).split()).lower()
+        for claim in CLOSED_POSTURE_CLAIMS:
+            start = 0
+            while (found := flat.find(claim, start)) != -1:
+                start = found + 1
+                before = flat[max(0, found - 70):found]
+                if any(negation in before for negation in _POSTURE_NEGATIONS):
+                    continue
+                window = flat[max(0, found - 160):found + 160]
+                if not any(subject in window for subject in _POSTURE_SUBJECTS):
+                    continue                       # about caching, or some other subject
+                problems.append(
+                    f"{path.name}: says {claim!r} of a capability, but nothing is disabled by "
+                    f"default and an unset allowlist permits every file. If the sentence is "
+                    f"historical, wrap it in *( ... )* so it reads as a quotation")
+    return problems
+
 
 def _test_count() -> int:
     """How many tests the offline suite collects.
@@ -267,6 +346,17 @@ def check() -> list[str]:
         if f"`{module.name}`" not in guide:
             problems.append(
                 f"CLAUDE.md: does not mention `{module.name}` in the code-layout section")
+
+    # The default-posture sweep: Markdown plus every source file, since model-facing text lives
+    # in docstrings and tool descriptions.
+    from csa_google_workspace.mcp._config import settings_from_env
+    from csa_google_workspace.policy import DEFAULT_DISABLED
+
+    sources = sorted((ROOT / SOURCE_ROOT).rglob("*.py"))
+    problems.extend(_posture_problems(
+        _docs() + sources,
+        anything_disabled=bool(DEFAULT_DISABLED),
+        unset_is_everything=settings_from_env({}).policy.modify.all_files))
 
     for profile in sorted(profiles):
         if f"`{profile}`" not in (ROOT / "README.md").read_text(encoding="utf-8"):
