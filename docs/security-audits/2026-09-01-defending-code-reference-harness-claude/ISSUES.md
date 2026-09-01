@@ -425,3 +425,44 @@ Issues #2, #3 and #4 are the ones I would put in a milestone together (#1 is don
 are one story — a deliberate posture change whose descriptions were not swept —
 and fixing #3 without #1 leaves the model still being misinformed, which is the
 half that matters most.
+
+---
+
+## Filed
+
+Added after the record merged — the issue trail, which is the one thing
+`SCHEMA.md` expects a completed record to gain. Findings and evidence above are
+unchanged.
+
+| # here | GitHub | finding | title |
+|---|---|---|---|
+| 1 | — **not filed** | F2 | Already fixed in `f8acda6` (#305) as `CODX-2026-09-01-01`, found independently by the concurrent audit |
+| 2 | [#308](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/308) | F1, F13 | `clear_cells` enforces `content.write`, and two tests certify the wrong wiring |
+| 3 | [#309](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/309) | F3, F5, F24 | Sweep the v0.31.0 defaults reversal through every description of the posture |
+| 4 | [#310](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/310) | F3, F11 | Adopt the re-scored threat model at root |
+| 5 | [#311](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/311) | F6 | A `writer` can change who has access, by reparenting a file |
+| 6 | [#312](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/312) | F8 | `request_message` reaches the model with no fence, no `one_line()`, no cap |
+| 7 | [#313](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/313) | F7 | Exception messages leak tab titles into the client's uncontrolled log |
+| 8 | [#314](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/314) | F9 | `apply_comment_actions` leaves a filesystem existence oracle when local reads are off |
+| 9 | [#315](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/315) | F4 | Announce the capability set at startup on a default install |
+| 10 | [#316](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/316) | F12 | The weekly controls drift detector always exits 0 |
+| 11 | [#317](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/317) | F10 | `check_doc_claims.py` never reads `THREAT_MODEL.md` |
+| 12 | [#318](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/318) | F11 | `test_threat_model.py` bounds §4 by column count, not by section |
+| 13 | [#319](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/319) | F14 | Derive `TOUCHES_STORAGE` instead of hand-listing it |
+| 14 | [#320](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/320) | F15 | Three guards from the prior remediation now assert nothing |
+| 15 | [#321](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/321) | F16 | `test_docs_do_not_drift.py` matches three literals across three files |
+| 16 | [#322](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/322) | F17 | The coverage table's unit is the file path, not the content |
+| 17 | [#323](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/323) | F18 | The release-workflow guard never reads the workflow-level `permissions:` |
+| 18 | [#324](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/324) | F21 | `test_all_writes_are_non_idempotent` covers 15 of 26 writes |
+| 19 | [#325](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/325) | F19 | The capability-reachability conformance test is asymmetric |
+| 20 | [#326](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/326) | F22 | Set `openWorldHint` on every tool returning Drive content |
+| 21 | [#327](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/327) | F20 | Invert `has_write_scope` to a subset check, and test it |
+| 22 | [#328](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/328) | F23 | `REMEDIATION.md` is stale |
+| 23 | [#329](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/329) | F24 | Version and module-inventory drift |
+| 24 | [#330](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/330) | F25 | Confirm whether three hardcoded Drive-shaped ids are real |
+| 25 | [#331](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/331) | — | `SCHEMA.md`: `audit_id` collides when two audits run the same day |
+| 26 | [#332](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/332) | F2 | Add the guard that would have caught the CODX-01 / F2 class permanently |
+
+**Start with #308.** It is the only live finding in this set that lets a profile
+do something the profile exists to prevent, and it ships with a test asserting
+the opposite.
