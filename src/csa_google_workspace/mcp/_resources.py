@@ -172,8 +172,19 @@ def render_config(settings: Settings) -> str:
         "",
         "## Mutation kinds",
         "",
+        # Renders the profile as ACTIVE only when it actually decided the capability set. With
+        # both CSA_GW_PROFILE and CSA_GW_CAPABILITIES set the explicit list wins and the profile
+        # is ignored - and this line used to say "Profile: **reader**" directly above
+        # "Available here: comment.create", which reader does not grant. Internally contradictory
+        # in exactly the case where an operator supplied two controls and needs a straight
+        # answer (RR-005).
         *([f"Profile: **{settings.profile}** (`CSA_GW_PROFILE`).", ""]
-          if settings.profile else []),
+          if settings.profile and settings.capability_source == "profile" else []),
+        *([f"`CSA_GW_PROFILE` is set to **{settings.profile}** and is being **IGNORED**: "
+           f"`CSA_GW_CAPABILITIES` is also set, and an explicit list wins over a profile. The "
+           f"capabilities below come from `CSA_GW_CAPABILITIES`. Unset that, or unset the "
+           f"profile, so this install has one answer.", ""]
+          if settings.profile and settings.capability_source == "explicit" else []),
         "Available here: " + (", ".join(f"`{c}`" for c in on) if on else "*none*"),
         "",
         "Refused: " + (", ".join(f"`{c}`" for c in off) if off else "*none*"),

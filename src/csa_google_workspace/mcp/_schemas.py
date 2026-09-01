@@ -235,7 +235,12 @@ class ConfigOut(TypedDict):
     modify_scope: str
     modify_unrestricted: bool
     modifiable_file_ids: list[str]
-    profile: str | None                # the CSA_GW_PROFILE name, if one is set
+    profile: str | None                # the CSA_GW_PROFILE name AS SET, if one is set
+    # Whether that profile actually decided anything. True when CSA_GW_CAPABILITIES also set,
+    # in which case the explicit list wins - and reporting only `profile` made this payload
+    # contradict its own capability list (RR-005).
+    profile_ignored: bool
+    capability_source: str             # "profile" | "explicit" | "default"
     capabilities_enabled: list[str]    # permitted by policy — includes the library's surface
     capabilities_reachable: list[str]  # ...and actually usable through a tool in THIS server
     capabilities_unreachable: list[str]  # enabled but no tool here uses them

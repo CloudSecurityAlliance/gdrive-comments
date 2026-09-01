@@ -61,7 +61,14 @@ def register_config_tools(app: MCPServer, settings: Settings,
             "modify_scope": policy.modify.describe(),
             "modify_unrestricted": policy.modify.all_files,
             "modifiable_file_ids": sorted(policy.modify.ids),
+            # `profile` is what was SET; `capability_source` is what DECIDED. They differ when
+            # CSA_GW_CAPABILITIES overrides a profile, and reporting only the first made this
+            # payload contradict itself (RR-005). Both are reported: "you set this and it did
+            # nothing" is the useful thing to say.
             "profile": settings.profile,
+            "profile_ignored": bool(settings.profile
+                                    and settings.capability_source != "profile"),
+            "capability_source": settings.capability_source,
             "capabilities_enabled": sorted(policy.enabled),
             "capabilities_reachable": sorted(policy.enabled & reachable),
             "capabilities_unreachable": sorted(policy.enabled - reachable),
