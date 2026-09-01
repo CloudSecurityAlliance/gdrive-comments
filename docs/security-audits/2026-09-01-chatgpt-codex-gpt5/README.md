@@ -45,8 +45,8 @@ findings_exploitable: 0
 findings_hardening: 2
 findings_informational: 1
 
-remediation_status: not-started
-remediation_context: "separate session recommended"
+remediation_status: complete
+remediation_context: "remediated in a separate session, 2026-09-01 — see REMEDIATION.md. The threat-model action from both hardening findings is deferred by decision and tracked in TODO.md."
 supersedes: null
 
 index_label: "2026-09-01 · ChatGPT Codex / GPT-5"
@@ -139,7 +139,7 @@ modules_covered:
   - "tests/test_mcp_capabilities.py"
 
 findings_summary: "3 total · 0 exploitable · 2 hardening"
-remediation_summary: "not started — audit record only"
+remediation_summary: "complete — see [REMEDIATION.md](2026-09-01-chatgpt-codex-gpt5/REMEDIATION.md); threat-model rows deferred by decision"
 ---
 
 # ChatGPT Codex security audit, 2026-09-01
