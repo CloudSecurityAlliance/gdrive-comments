@@ -22,8 +22,23 @@ So this file does the two things a session cannot:
    against both. This is the property the control exists for, and the one no `*`-scoped run can
    reach.
 
+3. **Keep both tables complete.** Added 2026-09-01, after audit `2026-09-01-02` found that the
+   hand-written tables had quietly stopped covering the code. Writing them by hand is what
+   makes them a second opinion, and the cost is that a GAP in them is silent: `content.delete`
+   had no row at all from v0.36.0, and eight gated methods appeared in no lambda, so nothing
+   in this file could see them. `TestTheTablesAreComplete` asserts the tables cover every
+   capability and every gated method - without deriving what the rows SAY, which would undo
+   point 1.
+
 Both are offline and take milliseconds, which is the argument for having them: the run that
 found the gap needed a real account, a human, and five minutes.
+
+**One limit worth stating.** This file covers the POLICY layer. `mcp/_capabilities.py` holds a
+second, independent map - MCP tool name to capability - which feeds tool descriptions and
+`demonstration_plan`, and nothing yet checks that the capability a tool DECLARES is the one
+enforcement actually applies. That is where the divergence this file was extended for lived:
+`clear_cells` declared one capability while `_GATES` enforced another, and the demo test agreed
+with itself because both sides read the same map. Tracked as #325.
 """
 from __future__ import annotations
 
@@ -32,7 +47,7 @@ import pytest
 from csa_google_workspace import exceptions as exc
 from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.mcp._config import policy_from_env
-from csa_google_workspace.policy import ALL_CAPABILITIES, PolicyBackend
+from csa_google_workspace.policy import _GATES, ALL_CAPABILITIES, PolicyBackend
 
 IN = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
 OUT = "1ZZ2CN6VqHDjxvl9kMKXvpv5CFDf6JOkJ9U7sHoBk9y9"
@@ -48,12 +63,27 @@ EXPECTED: dict[str, set[str]] = {
     "comment.delete": {"delete_comment", "delete_reply"},
     "content.write": {"docs_batch_update", "sheets_values_update", "sheets_values_append",
                       "sheets_values_clear", "sheets_batch_update", "slides_batch_update",
-                      "accept_suggestion"},
+                      "accept_suggestion", "docs_add_tab", "sheets_add_tab"},
+    # Structural destruction, as against editing. `sheets_values_clear` is deliberately NOT
+    # here - blanking a range is content.write, decided 2026-09-01 and pinned by
+    # tests/test_cell_destruction_is_content_write.py, which carries the reasoning.
+    "content.delete": {"docs_delete_range", "docs_delete_tab", "sheets_delete_tab"},
     "file.create": {"create_file", "copy_file"},
     "file.update": {"update_file_metadata"},
     "file.trash": {"trash_file"},
-    "file.share": {"create_permission"},
+    "file.share": {"create_permission", "update_permission", "delete_permission",
+                   "resolve_access_proposal"},
 }
+
+# A row may legitimately be empty - but only one is, and it has to say so out loud. The old
+# filter (`if EXPECTED.get(c)`) skipped every empty row, which meant it could not tell "nothing
+# to test here, on purpose" from "nobody wrote this down" - and `content.delete` had no row at
+# all from v0.36.0 until 2026-09-01 without a single test noticing.
+DELIBERATELY_EMPTY = frozenset({
+    # `comment.resolve` gates no Backend method of its own. Resolving is an action-reply, so it
+    # is reached through `create_reply`'s dynamic gate; tests/test_policy.py covers that path.
+    "comment.resolve",
+})
 
 # How to call each gated method with arguments that would succeed if the policy allowed it.
 CALLS = {
@@ -76,6 +106,14 @@ CALLS = {
     "update_file_metadata": lambda b, f: b.update_file_metadata(f, name="n"),
     "trash_file": lambda b, f: b.trash_file(f),
     "create_permission": lambda b, f: b.create_permission(f, email="a@b.com", role="reader"),
+    "update_permission": lambda b, f: b.update_permission(f, "p1", role="reader"),
+    "delete_permission": lambda b, f: b.delete_permission(f, "p1"),
+    "resolve_access_proposal": lambda b, f: b.resolve_access_proposal(f, "p1", action="deny"),
+    "docs_add_tab": lambda b, f: b.docs_add_tab(f, "t"),
+    "sheets_add_tab": lambda b, f: b.sheets_add_tab(f, "t"),
+    "docs_delete_range": lambda b, f: b.docs_delete_range(f, 1, 2),
+    "docs_delete_tab": lambda b, f: b.docs_delete_tab(f, "t1"),
+    "sheets_delete_tab": lambda b, f: b.sheets_delete_tab(f, 0),
 }
 
 
@@ -115,11 +153,102 @@ def permitted(guarded: PolicyBackend, file_id: str = IN) -> set[str]:
     return allowed
 
 
+GATED = {method for method, gate in _GATES.items() if gate.capability}
+
+# `Gate.capability` may be a CALLABLE - `create_reply` is two operations wearing one method
+# name, so which capability applies is decided per call. A static table cannot express that, so
+# these methods are excluded from the row-vs-gate comparison and covered by EXECUTION instead
+# (which is the stronger check anyway). Naming them here rather than filtering on `callable()`
+# alone is the point: a SECOND dynamic gate should have to be added to this set deliberately,
+# not disappear into an exclusion somebody wrote for the first one.
+DYNAMICALLY_GATED = frozenset({"create_reply"})
+
+
+class TestTheTablesAreComplete:
+    """The tables above are hand-written on purpose - that is what makes them a second opinion
+    rather than a mirror of `_GATES`. The cost is that a gap in them is silent, and three gaps
+    accumulated: `content.delete` had no row from v0.36.0, and eight gated methods were in no
+    lambda, so no test in this file could see them.
+
+    These guards close that without deriving the expectations themselves. They assert the
+    tables are COMPLETE; what each row SAYS is still written by hand and still has to agree.
+    """
+
+    def test_every_capability_has_a_row(self):
+        """A capability with no row was skipped by the old `if EXPECTED.get(c)` filter, so
+        adding one to `ALL_CAPABILITIES` silently added nothing to this file."""
+        missing = set(ALL_CAPABILITIES) - set(EXPECTED)
+        assert missing == set(), (
+            f"no row in EXPECTED for {sorted(missing)}. Add one saying which operations the "
+            f"capability should permit - if the answer is genuinely none, add it to "
+            f"DELIBERATELY_EMPTY with the reason, so the next reader knows it was decided.")
+        assert set(EXPECTED) <= set(ALL_CAPABILITIES), (
+            f"EXPECTED names capabilities that no longer exist: "
+            f"{sorted(set(EXPECTED) - set(ALL_CAPABILITIES))}")
+
+    def test_only_declared_capabilities_are_empty(self):
+        """An empty row is a claim that a capability gates nothing directly. That can be true,
+        and is for `comment.resolve` - but it must be stated, not inferred from a blank."""
+        empty = {c for c, ops in EXPECTED.items() if not ops}
+        assert empty == DELIBERATELY_EMPTY, (
+            f"empty rows are {sorted(empty)} but only {sorted(DELIBERATELY_EMPTY)} are declared "
+            f"deliberate. An undeclared empty row tests nothing while looking like it does.")
+
+    def test_every_gated_backend_method_is_exercised(self):
+        """The one that would have caught all eight. `permitted()` iterates CALLS, so a gated
+        method with no lambda is invisible to every test here - including
+        `test_everything_is_permitted_with_all`, which compares against `set(CALLS)` and so
+        was measuring the table against itself."""
+        missing = GATED - set(CALLS)
+        assert missing == set(), (
+            f"these Backend methods are gated but never called here, so nothing checks which "
+            f"capability they are wired to: {sorted(missing)}. Add a lambda to CALLS and the "
+            f"method to its capability's row in EXPECTED.")
+
+    def test_calls_does_not_name_an_ungated_method(self):
+        """The other direction: a method that lost its gate should fail loudly here rather than
+        keep passing as 'permitted' because nothing refuses it any more."""
+        extra = set(CALLS) - GATED
+        assert extra == set(), (
+            f"CALLS exercises {sorted(extra)}, which policy._GATES does not gate. Either the "
+            f"gate was dropped - a real regression - or the entry is stale.")
+
+    def test_every_row_names_only_gated_methods(self):
+        """A typo in a row would otherwise show up as a confusing inequality in the
+        per-capability test rather than as the spelling mistake it is."""
+        named = {m for ops in EXPECTED.values() for m in ops}
+        assert named <= GATED, f"EXPECTED names non-gated methods: {sorted(named - GATED)}"
+
+    def test_the_dynamic_gates_are_the_declared_ones(self):
+        """An exclusion nobody re-reads is how a real gap hides. If a new method gets a callable
+        capability, this fails and somebody decides whether it belongs in the exclusion."""
+        dynamic = {m for m, g in _GATES.items() if callable(g.capability)}
+        assert dynamic == DYNAMICALLY_GATED, (
+            f"policy._GATES gates {sorted(dynamic)} dynamically but this file declares "
+            f"{sorted(DYNAMICALLY_GATED)}. A dynamically-gated method is invisible to the "
+            f"static row comparison, so it must be listed - and covered by execution.")
+
+    def test_each_row_matches_the_capability_gates_assign(self):
+        """`_GATES` and EXPECTED are two independent statements of the same wiring. This is the
+        cheap comparison; the per-capability tests below prove it by EXECUTION, which is what
+        catches a gate that is right in the table and wrong in the closure."""
+        from collections import defaultdict
+        by_capability: dict[str, set[str]] = defaultdict(set)
+        for method in GATED - DYNAMICALLY_GATED:
+            by_capability[_GATES[method].capability].add(method)
+        for capability, expected in EXPECTED.items():
+            assert expected - DYNAMICALLY_GATED == by_capability[capability], (
+                f"for {capability}, EXPECTED says {sorted(expected - DYNAMICALLY_GATED)} but "
+                f"policy._GATES says "
+                f"{sorted(by_capability[capability])}. Which one is wrong is a DECISION - if "
+                f"the gate moved on purpose, the row moves with it and the reason gets written "
+                f"down; if not, the gate is the bug.")
+
+
 class TestOneCapabilityAtATime:
     """The gap the end-to-end run named: is each operation wired to the RIGHT capability?"""
 
-    @pytest.mark.parametrize("capability", [c for c in ALL_CAPABILITIES
-                                            if EXPECTED.get(c)])
+    @pytest.mark.parametrize("capability", sorted(set(ALL_CAPABILITIES) - DELIBERATELY_EMPTY))
     def test_exactly_the_expected_operations_become_possible(self, capability):
         allowed = permitted(backend(capability))
         expected = EXPECTED[capability]
