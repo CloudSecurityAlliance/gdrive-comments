@@ -10,6 +10,97 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-01 — v0.38.0 (the configuration contract, told one way) — not released
+
+Opens remediation for the correctness review in
+[`docs/correctness-reports/2026-09-01-release-readiness-02.md`](docs/correctness-reports/2026-09-01-release-readiness-02.md),
+which committed alongside these fixes. Its verdict was `not-ready-for-1.0.0` on one P0, and the P0
+was **not a code defect** — it was that the public contract around configuration and defaults told
+several different stories.
+
+### RR-003 — the old default model survived in five places
+
+v0.31.0 opened the defaults. Eleven releases later these still described the closed model:
+
+| where | said | reality |
+|---|---|---|
+| `README.md`, **opening bullets** | destructive capabilities **off** until named; allowlists **fail closed** | everything on; unset means every file |
+| `README.md` | *963 offline tests*, *34 tools* | 1661, 50 |
+| `README.md`, allowlist section | *"Unset means nothing is permitted"*, *"It fails closed"* | as above |
+| **`--help`** | profiles `editor \| full`, *"Default: editor"*, *"Both FAIL CLOSED"* | Drive's role names; no default profile |
+| **`configure`'s printed output** | *"nothing is reachable until you set CSA_GW_ALLOWLIST_READ"* | said to an operator **during setup** |
+| `_config.py` docstring | the opposite of the function it documents | — |
+
+**The `configure` line was the worst, not the README.** A wrong sentence in a file nobody opens is
+a defect; a wrong sentence printed while somebody sets the server up is them believing they are
+scoped when they have full-Drive reach.
+
+The correct distinction is now drawn wherever it appears: **unset is somebody who has not narrowed
+anything; malformed is somebody who tried and failed** — and only the second can be detected, so
+only the second fails closed.
+
+**Why the earlier sweep missed it, since it generalises.** `--help` and `configure` output are
+documentation that lives in `.py` files, and that sweep treated drift as a docs task. And
+`check_doc_claims.py` had excluded `README.md` from tool-count checks to quiet the README's
+*competitor* comparisons — which is exactly what hid *"34 tools"* in its own introduction.
+**Suppressing a false positive by excluding a whole file excludes its true positives too.** The
+checker now excludes the sentence rather than the document, matches whitespace-normalised (the
+README's own `**50\ntools**` wrapped across a line and slipped past), and checks test counts as a
+floor with a staleness band. That change immediately found one the review had not:
+`research/server-landscape.md` claimed this project has 40 tools.
+
+### RR-005 — the ignored profile was reported as active
+
+With both `CSA_GW_PROFILE` and `CSA_GW_CAPABILITIES` set the explicit list wins and the profile is
+ignored. The log said so; every reporting surface then rendered the ignored profile as active,
+directly above a capability list it does not grant.
+
+`Settings.capability_source` (`profile` | `explicit` | `default`) now records **what decided**,
+resolved alongside the policy so the two cannot disagree, while `Settings.profile` still holds
+what was *set* — *"you set this and it did nothing"* is the useful thing to say.
+`describe_configuration` gains **`profile_ignored`** and **`capability_source`**.
+
+### RR-006 — the wire is pinned, not just the objects
+
+Everything else in the suite runs **in process**. `serverInfo.version` shipped empty for 34
+releases, and the test written for that fix reads a Python attribute — it would still pass if the
+value never reached the wire.
+
+13 subprocess tests now drive real stdio: the modern `server/discover` handshake, the legacy
+`initialize` path, `tools/list`, `inputSchema` under its wire name, and — the bug this project has
+actually had — that **every stdout line parses as JSON** even with `DEBUG` logging on.
+
+Four attempts were needed to write the first probe, and the module records why: `server/discover`
+before `initialize` is `Method not found`; `params.protocolVersion` is the **legacy** channel, so
+asking it for `2026-07-28` negotiates *down* to `2025-11-25` and gates discovery off; and the
+modern envelope needs `params._meta` with **both** `…/protocolVersion` and
+`…/clientCapabilities`.
+
+### RR-004, RR-007, RR-008
+
+- **A freely-resolved `[mcp]` install is now in CI.** Every other install here is hash-pinned,
+  which left the one dependency that *is* the server resolving inside a range nothing tested.
+  `scripts/mcp_smoke.py` imports nothing from this repository, so it cannot test the working tree
+  by accident.
+- **`docs/correctness-reports/`** is an entry point with conventions written down — stable `RR-NNN`
+  ids, status in the newest report, remediation in the commits that cite the id.
+- **`doc-claims.yml`** claimed the pinned posture without `--no-build-isolation`; the
+  `test_lockfiles.py` guard now covers it so it cannot drift from the others.
+
+### Notes
+
+`THREAT_MODEL.md` carries the same stale claim in §3/§4 and is **deliberately not edited** — that
+is the audit's frozen text and the only baseline this repository cannot change, which is what makes
+it a check on claims of progress. Recorded as a `TODO.md` item with the two real options.
+
+Writing that TODO tripped both the checker and the new guards, because **quoting** a stale sentence
+is byte-identical to asserting it; resolved with the `*( … )*` historical-aside convention, now
+honoured by the checker as well as the tests.
+
+One flake found and fixed rather than re-run: the wire tests used `communicate()`, which closes
+stdin immediately, so the server could reach EOF before draining a queued request. It passed on
+four Python versions and failed on 3.12. They now read until every request id has an answer.
+
 ## 2026-08-31 — v0.37.0 (a comment says which tab, and the register arrives formatted)
 
 Two gaps closed, both measured against live Google before any code was written.
