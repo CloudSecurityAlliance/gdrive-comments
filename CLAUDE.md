@@ -95,7 +95,22 @@ These are the things no test will catch for you unless you add one.
 7. **A new `Backend` method needs a `policy._GATES` entry.** `PolicyBackend` fails *closed* — an unlisted method raises rather than delegating — so forgetting one turns the method off rather than leaving it unguarded. `tests/test_policy.py::test_every_backend_method_has_a_declared_gate` catches it, but the decision (which capability? or `None` for a read?) is yours.
 8. **A `Comment`/`Reply` built via `from_api()` is detached** and raises `DetachedError` on mutation. Models obtained through a `Workspace` carry the backend; hand-built ones don't.
 9. **Never `str(value or "")` on user data that can legitimately be `False` or `0`.** A spreadsheet cell is *typed*: `openpyxl` returns a TRUE/FALSE cell as Python `True`/`False`, and `False or ""` is `""` — so an instruction silently became an absence, and a boolean `FALSE` meant the opposite of a typed one (#161). What hid it for a whole release is the **asymmetry**: `True or ""` is `True`, so the truthy branch worked *by accident* and only half the behaviour was broken — half your tests pass, which reads as "mostly fine". Any three-state field with a falsy member has this shape, and it is not only spreadsheets: JSON `false`, form values, and a `0` from anywhere do it too. `_apply._norm` now handles `bool` **before** `int`, because `bool` subclasses `int` and an `isinstance(x, int)` check catches booleans first otherwise.
-10. **A guard at one layer does not protect the layers above or below it.** `_apply.decision()` is deliberately three-state so "not decided" cannot be confused with "no" — the module docstring records why. The hazard then came back **twice anyway**: once *below* it in `_norm`, which discarded the value before `decision()` ever saw it (#161), and once *above* it in the tool docstring, which told a model that `false` meant "leave it" (#162) — inviting through the front door the exact input the type was built to reject. When you defend against something, ask what reads the value **before** your guard, and what tells the caller **what to send**. A type is not a contract with the model; the description is.
+10. **Untrusted strings are neutralised at the BOUNDARY, not per field.** `mcp/_untrusted.py`
+    runs inside `_tools._base._errors`, which every tool passes through, and walks the whole
+    returned structure removing terminal control sequences. Do **not** add a per-field
+    sanitiser — a hand-maintained list of fields to clean is the defect shape this repository
+    keeps finding (#308, #332), and the untrusted strings here are not one field: a file `name`
+    and a tab `title` come from anybody with write access, `display_name` on a permission or an
+    access proposal comes from the **external** person it describes, and `request_message` comes
+    from somebody with no access at all. Two facts to know before editing it: JSON escaping
+    already prevents a value forging a sibling field, so `one_line()`-style fencing buys nothing
+    on the structured path (it is `_inline.py`'s job on the flat one); and **`\r` is exempt on
+    purpose** because `ExportOut.csv` is RFC 4180, which mandates CRLF — the residual is
+    documented in the module and asserted by
+    `tests/test_terminal_controls_neutralised.py`. The only per-field judgement is the length
+    cap on `request_message`, which is capped because that field is short by nature, while a
+    comment body or a document is legitimately long.
+11. **A guard at one layer does not protect the layers above or below it.** `_apply.decision()` is deliberately three-state so "not decided" cannot be confused with "no" — the module docstring records why. The hazard then came back **twice anyway**: once *below* it in `_norm`, which discarded the value before `decision()` ever saw it (#161), and once *above* it in the tool docstring, which told a model that `false` meant "leave it" (#162) — inviting through the front door the exact input the type was built to reject. When you defend against something, ask what reads the value **before** your guard, and what tells the caller **what to send**. A type is not a contract with the model; the description is.
 
 ## Commands
 
