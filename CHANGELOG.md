@@ -10,6 +10,87 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-02 — v0.40.0 (where is their work, and what is in it) — not released *(yet — flipped once PyPI confirms)*
+
+One feature, and the two search gaps that made it unbuildable. Spec:
+[`docs/superpowers/specs/2026-09-02-work-handoff-inventory.md`](docs/superpowers/specs/2026-09-02-work-handoff-inventory.md).
+
+### `export_file_inventory` — the work-handoff question
+
+Somebody is unavailable — away for a month, or handing work over — and something arrives that
+cannot wait for them. **Where is their work, and what is in it?** One call produces a dated table
+of every file that person edited or commented on, with empty columns for your own summary and tags.
+
+Drive's own UI cannot answer this, and it is not a convenience: three of its parts are **absent by
+construction** from Drive rather than merely missing. `lastModifyingUser` is readable but has no
+`q` predicate, so "files they edited but do not own" can only be query-then-filter-locally. There
+is no `/comments` collection and no comment predicate at all, so cross-file commentary requires
+iterating files and joining. And Drive prunes revisions, so a two-year window may outlive what it
+kept.
+
+**Three properties carry the feature, and each is a failure that would otherwise look like a
+success:**
+
+**What could not be reached is reported, never dropped.** This server runs as the signed-in user,
+while the list of ids may come from an administrator's audit tool. If 500 ids arrive and 340 are
+readable, that is the boundary working — but a table of 340 rows *lies by omission*, and somebody
+handing over work would conclude the other 160 files do not exist. Every id comes back in
+`unreachable` with a reason, and the first caveat says *"do not present this as a complete
+footprint"* in words, because a count alone does not stop somebody doing exactly that. The reason
+also declines to guess: Drive answers 404 both for "no such file" and "you cannot see it", so the
+detail says both rather than picking the flattering one.
+
+**Edited and commented are separate signals.** `edited_last_by_subject` is Drive's **last** editor
+only — a file the subject genuinely worked on reads `FALSE` the moment anybody else touches it. It
+answers *"did they touch it last"*, never *"did they ever touch it"*. Said in the field comment,
+the schema, the tool description, a caveat and a test named for the scenario, because a reader who
+takes `FALSE` for the second builds a wrong sweep. `comments_by_subject` is exact.
+
+**Blank is not zero and not FALSE.** Comments not gathered is blank; no subject to compare against
+is blank. The same three-state discipline `_apply.decision()` exists for.
+
+**Identity is recorded, not resolved.** Matched on email where Drive supplies one and on display
+name otherwise, with `matched_on` on every row — an email match is an identity and a display-name
+match is a guess, and a reader who cannot tell which happened cannot judge the row.
+
+**This is not the no-caching decision reopening.** That was reasoned from the *live* multi-reviewer
+case, where staleness lands in exactly the sessions this tool is for. Here the subject is not
+editing, so a frozen view is *correct* and should not drift while a colleague works through it. The
+snapshot is a **deliverable** — a dated Sheet or CSV, the shape `export_comments` already ships —
+and it is **never an access path**: reading content still goes through the normal authorized call.
+
+Scope held deliberately: `fileIds` is the seam an administrator's tool drives this through, so
+there is no `driveactivity` client; derived columns stay the caller's, because a library embedded
+in tooling that already holds a model should not acquire an API key of its own; and there is no
+read-back path, because a comment register is a set of intended *actions* while this is a
+*description* of somebody's work.
+
+### Search reports who owns a file and when it was made
+
+Both prerequisites, and both the same shape of gap: **Drive would have returned the fact for free
+in the same call, and we did not ask.** `_SEARCH_FIELDS` requested five fields, so an inventory
+over hundreds of files would have paid one extra `files.get` per row.
+
+- **`created_time`, `owners`, `last_modifying_user`, `drive_id`** now come back from `search_files`,
+  `list_recent_files` and `get_file_metadata`. `drive_id` closes the reported half of #338, which
+  the spec reclassified from enhancement to *correctness dependency* — a sweep that cannot say
+  which shared drive a file is in silently mis-attributes work.
+- **`orderBy` accepts any of Drive's eleven keys, with a direction.** It held three, all descending.
+  `createdTime` was *filterable* through the query string all along and **not sortable**, so "things
+  made after January" was reachable while "the oldest thing they made" was not.
+
+Two distinctions that matter more than the fields. **`None` and `[]` are different answers for
+`owners`**: a file in a shared drive genuinely has none, because the drive owns it, so an empty list
+is a real fact and `None` means the call did not ask. And **`owners` is sub-selected** to name,
+email and `me` rather than taken whole — Drive's full `User` also carries `photoLink` and
+`permissionId`, which nothing here reads and which would be a third party's personal data
+travelling into a model's context for no reason.
+
+One collision, found by the change's own parametrized test: **`recency` is both a legacy alias
+meaning `recency desc` and a real Drive key**, whose bare form Drive reads as *ascending*. The alias
+wins, because letting the key win would silently reverse every existing caller's results.
+`recency asc` is the escape hatch.
+
 ## 2026-09-01 — v0.39.0 (the guards that were not guarding)
 
 Opens remediation for security audit `2026-09-01-02`
