@@ -155,6 +155,10 @@ def _env_vars() -> set[str]:
 _HISTORICAL_ASIDE = re.compile(r"\*\(.*?\)\*", re.DOTALL)
 
 
+# Markdown emphasis and code ticks, removed before any claim matching. See `_posture_problems`.
+_EMPHASIS = re.compile(r"[*_`]")
+
+
 def without_historical_notes(text: str) -> str:
     """`text` with `*( ... )*` asides removed, so a quoted mistake is not read as a live claim."""
     return _HISTORICAL_ASIDE.sub(" ", text)
@@ -167,15 +171,29 @@ def without_historical_notes(text: str) -> str:
 # The check is one-directional on purpose: a text claiming "off by default" when nothing is off is
 # a false sense of safety, which is the dangerous direction. The reverse (failing to mention a
 # default) is a gap, not a lie, and is left to human review.
-CLOSED_POSTURE_CLAIMS = (
-    "off by default",
-    "off unless an operator",
-    "off unless named",
-    "disabled by default",
-    "fails closed when nothing is configured",
-    "fails closed when unset",
-    "unset means nothing is permitted",
-)
+# REGEXES, not literal phrases (#321). The literal list missed a variant the moment one was
+# tried: it held the singular "fails closed when unset", and the sentence `SECURITY.md` actually
+# shipped wrong was the PLURAL - "Both fail closed in the MCP server: unset means nothing is
+# permitted". A list of spellings is a guard against those spellings, which is the same defect
+# this check exists to catch, one level down.
+#
+# Matched against whitespace-normalised text, so a claim straddling a line break is still seen.
+CLOSED_POSTURE_CLAIMS = tuple(re.compile(p) for p in (
+    r"off by default",
+    r"off unless (an operator|named|somebody|the operator)",
+    r"disabled by default",
+    # `fail`/`fails`, and any words between it and the condition: "both file allowlists fail
+    # closed when unset" has three.
+    r"fails? closed (when|unless|if) (nothing is |not )?(configured|unset|set)",
+    r"(unset|absent|empty)[^.]{0,40}means (nothing|no file)",
+    # NOT a bare "both ... fail closed". `_resources.py` says "The last two are errors rather
+    # than dropped entries on purpose. Both would fail closed, so nothing gets over-permitted"
+    # - which is TRUE, and is the true half of the exact distinction this check protects: a
+    # MALFORMED list fails closed, an UNSET one permits everything. The false claim always
+    # carries the unset condition, and the pattern above already catches the form that shipped
+    # wrong ("Both fail closed in the MCP server: unset means nothing is permitted").
+    r"a default install cannot reach",
+))
 
 # The phrase alone is far too blunt: of thirteen matches on the first run, TWELVE were correct —
 # negations ("nothing is off by default"), past tense ("capabilities that WERE off by default"),
@@ -193,7 +211,10 @@ _POSTURE_SUBJECTS = ("file.share", "file.trash", "file.update", "comment.delete"
                      "trash_file", "update_file", "delete_comment", "edit_comment",
                      "capabilit", "allowlist")
 _POSTURE_NEGATIONS = ("nothing is", "no longer", "whatever is", "were", "used to", "once nothing",
-                      "these said", "said", "not ", "stopped", "any more", "until v0", "wrong by")
+                      "these said", "said", "not ", "stopped", "any more", "until v0", "wrong by",
+                      # The TRUE half of the distinction: a list somebody *tried* to write, or a
+                      # malformed one, does fail closed. Only the UNSET case does not.
+                      "malformed", "tried to write", "errors rather than")
 
 
 def _posture_problems(paths, anything_disabled: bool, unset_is_everything: bool) -> list[str]:
@@ -212,12 +233,17 @@ def _posture_problems(paths, anything_disabled: bool, unset_is_everything: bool)
         return []                                  # the claims would be true; nothing to check
     problems = []
     for path in paths:
-        flat = " ".join(without_historical_notes(
-            path.read_text(encoding="utf-8")).split()).lower()
+        # EMPHASIS STRIPPED before matching, and this is not tidiness. `policy.py` says
+        # "it does **not** fail closed when nothing is configured" - the correct statement - and
+        # the negation check looked for "not " while the text held "not**". A guard defeated by
+        # markdown is a guard defeated by ordinary editing; this repository already learned that
+        # when "are **not** exposed through MCP yet" survived a literal search
+        # (tests/test_docs_do_not_drift.py), and the lesson had not reached here.
+        flat = _EMPHASIS.sub("", " ".join(without_historical_notes(
+            path.read_text(encoding="utf-8")).split()).lower())
         for claim in CLOSED_POSTURE_CLAIMS:
-            start = 0
-            while (found := flat.find(claim, start)) != -1:
-                start = found + 1
+            for match in claim.finditer(flat):
+                found = match.start()
                 before = flat[max(0, found - 70):found]
                 if any(negation in before for negation in _POSTURE_NEGATIONS):
                     continue
@@ -225,9 +251,9 @@ def _posture_problems(paths, anything_disabled: bool, unset_is_everything: bool)
                 if not any(subject in window for subject in _POSTURE_SUBJECTS):
                     continue                       # about caching, or some other subject
                 problems.append(
-                    f"{path.name}: says {claim!r} of a capability, but nothing is disabled by "
-                    f"default and an unset allowlist permits every file. If the sentence is "
-                    f"historical, wrap it in *( ... )* so it reads as a quotation")
+                    f"{path.name}: says {match.group(0)!r} of a capability, but nothing is "
+                    f"disabled by default and an unset allowlist permits every file. If the "
+                    f"sentence is historical, wrap it in *( ... )* so it reads as a quotation")
     return problems
 
 

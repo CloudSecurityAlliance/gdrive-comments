@@ -211,7 +211,7 @@ T7 stays `partially_mitigated` and the audit-trail gap stays real. It is an R0 p
 ## 3. Therefore: no `everything` profile
 
 An `everything` profile earns its place only if something exists outside the ladder for it to
-cover. After §2, nothing does. `organizer` grants all ten capabilities, so "everything" and "top
+cover. After §2, nothing does. `organizer` grants every capability, so "everything" and "top
 of the ladder" are the same set and one name is enough.
 
 Recording the near-miss, because it was nearly built: the argument *for* it was that once
@@ -224,7 +224,7 @@ auto-absorbing `everything` that logs what it resolved to. Not needed today.
 
 ## 3a. Defaults: on, not closed
 
-**Decided 2026-08-28 by the CINO.** Out of the box: **all ten capabilities enabled, both
+**Decided 2026-08-28 by the CINO.** Out of the box: **every capability enabled, both
 allowlists `*`.** The documentation's job becomes *how to narrow this*, not *how to switch it on*.
 
 This reverses the #82 posture, and the case for reversing it is mostly already written down in
@@ -386,7 +386,7 @@ Everything here is additive or aliased. Nothing an existing configuration says c
 
 - `reader` and `commenter` are unchanged.
 - `editor` → alias of `writer`, **identical capability set**.
-- `full` → alias of `organizer`, **identical capability set** (all ten).
+- `full` → alias of `organizer`, **identical capability set** (every capability).
 - `fileOrganizer` is a genuinely new rung and grants strictly less than `full`.
 - `local.read` / `local.write` default on, matching today's behaviour.
 - **The defaults reversal (§3a) is a real behaviour change, not an alias.** An install that

@@ -750,11 +750,20 @@ is a much better problem than a silent grant.
 None of that is built. The questions above are the work.
 - [x] **A5** `update_file`, `trash_file`, `share_file` — **done 2026-08-25** (v0.15.0), behind
       A4 as planned. Each has its **own** capability (`file.update`, `file.trash`,
-      `file.share`), none is in any profile but `full`, and each also requires the file in the
-      modify allowlist — so a default install cannot reach any of them. `update_file` is
+      `file.share`), and each also requires the file in the modify allowlist. `update_file` is
       metadata only; `trash_file` is recoverable and there is no permanent delete anywhere in
       this library; `share_file` is the one call that can move data out of the organisation,
-      which is why Google's own server declines to offer it. All three go through the **account
+      which is why Google's own server declines to offer it.
+
+      *(**Corrected 2026-09-02, #309.** As written on 2026-08-25 this entry added *"none is in
+      any profile but `full`, so a default install cannot reach any of them"*. True then;
+      **false since v0.31.0**, which enabled every capability by default and set both
+      allowlists to `*`. The record of what was built stands; the claim about the default
+      posture does not, and it understated the reach — the dangerous direction. What did NOT
+      change is the other half of the sentence: each still needs its capability **and** the file
+      in the modify allowlist.)*
+
+      All three go through the **account
       axis** rather than `open()`, so they work on folders too. → **completed Claude's 11.**
 
       Two policy questions this raised, **both answered in v0.21.0** by regrouping the profiles
