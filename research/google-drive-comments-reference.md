@@ -201,6 +201,60 @@ Because the anchor's `range` is opaque, the reliable way to answer "which cell i
 
 This matches tanaikech's [DocsServiceApp](https://github.com/tanaikech/DocsServiceApp) ("there are no methods for retrieving the comments with the cell coordinate in the existing … Sheets API"). See also [How to map Google Sheet Comments to an A1 range](https://support.google.com/docs/thread/234205749).
 
+### What a real DOCS anchor looks like (MEASURED 2026-09-02)
+
+The section above is about Sheets. Docs was unmeasured until
+[`experiments/docs-anchor-states`](../experiments/docs-anchor-states/RESULTS.md) placed six
+comments through the editor by keyboard automation. A comment on a text selection returned:
+
+```
+anchor : kix.ce7ypxwipivp        <- an opaque string, NOT JSON
+```
+
+**Google's only published Docs example is wrong about the real format.** The guide shows
+
+```python
+anchor = {"region": {"kind": "drive#commentRegion", "line": <n>, "rev": "head"}}
+```
+
+— which carries a **position**. The editor produces an opaque `kix.*` id instead. So Docs is in
+exactly the same position as Sheets: the anchor is a **key, not a coordinate**, and a comment
+cannot be located from it.
+
+`kix.XXXX` is listed below as a still-unobserved *Sheets* format, and that remains true — it is
+the **Docs** namespace, and for Docs it is the whole story.
+
+### Three behaviours that make the opaque Docs anchor survivable (MEASURED 2026-09-02)
+
+These matter more than the anchor format, because together they mean the missing coordinate costs
+nothing:
+
+1. **A caret with nothing selected snaps to the enclosing word.** A comment placed with no
+   selection came back quoting `"paragraph"` — the word the cursor sat in. So *"anchored but
+   nothing selected"* does not exist for text in Docs.
+2. **Docs refuses to comment on an empty paragraph.** `Cmd+Alt+M` opens no comment box at all;
+   the editor requires something to anchor to.
+3. **`quotedFileContent.mimeType` is `text/html`, but the value is PLAIN TEXT.** Verified on a run
+   confirmed bold through the Docs API: the value carried no markup. So a stored quote can be
+   matched directly against extracted plain text — which is what staleness detection depends on.
+
+Consequently the only anchored comments **without** quoted text are those on **non-text objects**:
+a comment on an inline image returned `anchor: kix.y1h574n5va9q` with `quotedFileContent` **absent**.
+
+### The three anchor states, and how to tell them apart (MEASURED 2026-09-02)
+
+`quoted_text` alone cannot distinguish them; **`anchor` presence** can:
+
+| state | `anchor` | `quotedFileContent` |
+|---|---|---|
+| file-level (no anchor at all) | key **absent** | key **absent** |
+| anchored to a non-text object (image) | present | key **absent** |
+| anchored to text (including a bare caret) | present | present |
+
+Drive **omits** absent fields rather than returning them as `null`, so "key absent" is the only
+form absence takes — a `""`-versus-`None` distinction would be one a consumer invented, not one
+Drive draws.
+
 ### ⚠️ Still-unobserved formats
 These circulated in earlier drafts and were **not** seen in the probe. Do not rely on them:
 - `R1C2` as a comment anchor — *R1C1 is real, but as Sheets API **range** notation (`Sheet1!R1C1:R2C2`), not a comment anchor.*
