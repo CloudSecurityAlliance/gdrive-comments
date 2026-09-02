@@ -42,11 +42,33 @@ regardless of which file a reader has open.
 
 ---
 
+## `audit_id` when two audits run the same day
+
+**The tie-break rule (#331):** the suffix is assigned by **`date_completed`, earliest first**.
+The audit that finishes first is `-01`.
+
+This is not an edge case. The corpus is deliberately designed so that parallel audits never share
+a file — each writes only its own directory — so **same-day audits are expected rather than
+exceptional**, and two happened on 2026-09-01 against the same commit. Both front matters claimed
+`-01`, which is the one ambiguity this design does not otherwise have, because `audit_id` is what a
+`REMEDIATION.md`, an issue trail and a threat-model baseline all point at.
+
+Completion order rather than start order, for a practical reason: an audit's findings are written
+at the end, so the one that completed first is the one a later record can already cite.
+
+**Renumbering is a front-matter change, not a rewrite.** When a collision is found after the fact,
+the later record's `audit_id` changes and its `README.md` says why — as
+`2026-09-01-defending-code-reference-harness-claude` does. Frozen findings and threat text are
+**left as written**, including any self-citation of the old id: a baseline nobody may amend is the
+point of freezing it, and the mapping belongs in the record that moved rather than in edits
+scattered through the text. `tests/test_audit_index.py` fails on a duplicate id, so the collision
+is caught at the next commit instead of at the next audit.
+
 ## Required YAML front matter (`README.md`)
 
 ```yaml
 ---
-audit_id: 2026-08-27-01                  # unique, sortable
+audit_id: 2026-08-27-01                  # unique, sortable — see the tie-break rule below
 date_started: 2026-08-27T14:50Z          # ISO 8601, UTC
 date_completed: 2026-08-27T16:55Z
 target: csa-google-workspace

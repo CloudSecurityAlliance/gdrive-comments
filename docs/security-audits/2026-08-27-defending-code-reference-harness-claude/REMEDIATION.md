@@ -1,11 +1,26 @@
 ---
 audit_id: 2026-08-27-01
 remediation_started: 2026-08-27T19:20Z
-remediation_status: in-progress
-fixed_in_version: 0.30.0, 0.30.1, 0.30.2, 0.30.3, 0.30.4
+remediation_completed: 2026-09-02
+remediation_status: complete
+fixed_in_version: 0.30.0 – 0.30.14, 0.31.0, 0.31.1
 ---
 
 # Remediation — audit 2026-08-27-01
+
+> **Closed 2026-09-02 (#328).** This file said `in-progress` at `0.30.0…0.30.4` for a month after
+> the work finished, which is the wrong direction to be stale in: this is the document somebody
+> opens to check whether an audit's findings were addressed, so *"unfinished"* is what it reported
+> about work that was done.
+>
+> **All nineteen findings were independently re-verified as holding** by audit `2026-09-01-01`,
+> which reviewed the same tree and reported 0 exploitable issues. That is a stronger closure than
+> our own say-so, and it is the reason this heading can be flipped rather than merely asserted.
+>
+> The two threat-model actions this audit's findings ended with are **also done**, later than
+> intended: the register was re-scored by audit `2026-09-01-02` and adopted at the repository root
+> on 2026-09-02 (#310), which is where T19's and T29's stale mitigations were corrected. This
+> record's own frozen snapshot stays as it was — it is that audit's baseline, not a live document.
 
 The fix trail, kept separate from the flaw trail by design: this file carries the reasoning that
 produced each fix, written after the audit and in a different session, so neither can quietly

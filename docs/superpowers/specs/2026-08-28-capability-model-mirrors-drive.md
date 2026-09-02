@@ -104,8 +104,21 @@ configuration breaks.
 
 **`file.update` and `file.trash` stay in `writer`.** A strict reading of Drive would move them up
 to `fileOrganizer`: Drive's Writer cannot reorganize a shared drive or delete from it. That
-constraint exists because Drive folders have owners and hierarchy; our "move" is a rename and our
-"trash" is the user's own bin.
+constraint exists because Drive folders have owners and hierarchy, and our "trash" is the user's
+own bin.
+
+*(**Corrected 2026-09-02, #311.** This sentence also claimed *"our 'move' is a rename"*. That was
+**false**, and it was the one counterexample to the ladder claim the rest of this model reasons
+from: `update_file` forwards `addParents`/`removeParents`, so relocating a file changes which
+folder ACL it inherits — granting or revoking access with no `file.share` and no permission change
+visible on the file itself. The finding exists **because this document made a falsifiable claim**,
+which is what a design document is for.*
+
+*The decision was to correct the sentence, not the gate. Inheriting the destination folder's
+permissions is what Drive itself does, and a human `writer` can already do it through the UI — so
+splitting parent mutation into its own capability would make this model **diverge from Drive**,
+which is the one thing the mirroring design exists to avoid. Drive's folder ACLs are the control.
+Recorded as `risk_accepted` in `THREAT_MODEL.md` T38.)*
 
 More importantly, moving them would undo a decision made on evidence. v0.21.0 put `file.trash` in
 the default profile because **without it an agent that creates a working file cannot clean up

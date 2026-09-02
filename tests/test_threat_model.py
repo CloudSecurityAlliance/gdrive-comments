@@ -1,13 +1,20 @@
 """The living threat model agrees with the frozen snapshot, except where it says it does not.
 
-**#197.** Audit `2026-08-27-01` produced a 35-threat model inside its own directory, because an
-audit commits only its own directory. Adopting it as the living `THREAT_MODEL.md` at the
-repository root is what this covers.
+**#197, then #310.** An audit commits only its own directory, so each produces a register
+inside it. Adopting one as the living `THREAT_MODEL.md` at the repository root is what this
+covers. The baseline is now the **re-scored `2026-09-01-02`** register (43 threats); the
+`2026-08-27-01` one it replaced stays in the tree as that audit's own baseline.
 
-Adoption was not a copy. The audit ran against `95c6afa` (v0.28.0); by adoption the tree was
-v0.30.10 and **thirteen threats had moved status**. A living threat model that lists fixed
-threats as `unmitigated` is not cautious, it is unusable — nobody trusts a document that is
-wrong about the things they can check, and then nobody reads the rows about things they cannot.
+Adoption is never a copy. The 2026-09-01 audit ran against `d33034b` (v0.38.0), and by adoption
+two releases had shipped — so two threats moved to `risk_accepted` and three gained evidence. A
+living threat model that lists fixed threats as `unmitigated` is not cautious, it is unusable —
+nobody trusts a document that is wrong about the things they can check, and then nobody reads the
+rows about things they cannot.
+
+**Why moving the baseline does not destroy the property it exists for.** The check on a claim of
+progress is that somebody *else* froze the thing we are measured against. The new snapshot was
+written by an independent audit, so that survives; rewriting the old baseline ourselves would not
+have.
 
 So the root model carries the audit's threat text verbatim and a **current** `status` column,
 with §0 accounting for the difference. These tests make that accounting load-bearing rather
@@ -32,7 +39,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 LIVING = ROOT / "THREAT_MODEL.md"
-AUDIT = ROOT / "docs/security-audits/2026-08-27-defending-code-reference-harness-claude"
+# The BASELINE the living model is diffed against. Moved 2026-09-02 from `2026-08-27-01` to
+# the re-scored `2026-09-01-02` register (#310). Moving it is legitimate precisely because the
+# new snapshot was written by an INDEPENDENT audit rather than by us - the property that makes
+# a claim of progress checkable is that somebody else froze the thing we are compared to, and
+# that survives. Rewriting the old baseline ourselves would have destroyed it.
+#
+# The 2026-08-27 snapshot stays in the tree as that audit's own baseline; it is simply no
+# longer what the living model is measured against.
+AUDIT = ROOT / "docs/security-audits/2026-09-01-defending-code-reference-harness-claude"
 SNAPSHOT = AUDIT / "THREAT_MODEL.md"
 
 # The audit's own vocabulary. Closed on purpose: "addressed", "fixed" or "resolved" would each
@@ -42,23 +57,41 @@ STATUSES = {"unmitigated", "partially_mitigated", "mitigated", "risk_accepted"}
 THREAT_ROW = re.compile(r"^\| (T\d+) \|")
 
 
-def statuses(path: Path) -> dict[str, str]:
-    """id -> status, from the §4 threat table only.
+def _section(text: str, start: str, end: str | None) -> str:
+    """The text between two headings. Raises if `start` is missing, deliberately: a silent
+    empty slice would make every test that reads it pass vacuously."""
+    begin = text.index(start)
+    return text[begin:text.index(end, begin)] if end else text[begin:]
 
-    §0's delta table also has rows starting `| T…`, so it is skipped by requiring the ten-column
-    shape of the threat table. Counting §0's rows as threats would make every test here compare
-    the document against itself.
+
+def statuses(path: Path) -> dict[str, str]:
+    """id -> status, from §4 **and only** §4.
+
+    **Bounded by SECTION, not by column count (#318).** The previous version filtered on the
+    ten-column shape of the threat table and called that "the §4 table only" - but column count
+    is not section membership, and T36's row in §0b happened to carry twelve fields. So it was
+    parsed as a §4 threat: the parser saw 36 threats where §4 held 35, and `SECURITY.md`'s
+    "36 enumerated threats" agreed with the test **for the wrong reason** - both counted a row
+    from the delta table.
+
+    The column-count filter is KEPT as well as the slice, because §4 is not guaranteed to hold
+    only threat rows and a five-column row inside it would otherwise be read as one.
     """
+    text = path.read_text(encoding="utf-8")
+    section = _section(text, "## 4. Threats", "## 5.")
     found = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in section.splitlines():
         match = THREAT_ROW.match(line)
         if not match:
             continue
-        fields = line.split("|")
-        if len(fields) < 11:          # §0's five-column delta table
+        if len(line.split("|")) < 11:      # a bookkeeping row, not a threat
             continue
-        found[match.group(1)] = fields[8].strip()
+        found[match.group(1)] = fields_status(line)
     return found
+
+
+def fields_status(line: str) -> str:
+    return line.split("|")[8].strip()
 
 
 def _five_column_ids(text: str, start: str, end: str) -> set[str]:
@@ -69,8 +102,7 @@ def _five_column_ids(text: str, start: str, end: str) -> set[str]:
     would swallow §0b and read "this threat was added" as "this status moved" — two different
     claims, and only one of them is about a threat the snapshot contains.
     """
-    section = text[text.index(start):text.index(end)]
-    return {m.group(1) for line in section.splitlines()
+    return {m.group(1) for line in _section(text, start, end).splitlines()
             if (m := THREAT_ROW.match(line)) and len(line.split("|")) < 11}
 
 
@@ -109,7 +141,7 @@ def snapshot():
 class TestAdoptionDroppedNothing:
     def test_the_snapshot_has_the_threats_we_think_it_does(self, snapshot):
         """A parser that silently matched nothing would make every test below vacuous."""
-        assert len(snapshot) == 35, f"expected 35 threats in the snapshot, parsed {len(snapshot)}"
+        assert len(snapshot) == 43, f"expected 43 threats in the snapshot, parsed {len(snapshot)}"
 
     def test_every_snapshot_threat_survives_in_the_living_model(self, living, snapshot):
         lost = sorted(set(snapshot) - set(living), key=lambda t: int(t[1:]))
@@ -138,6 +170,28 @@ class TestAdoptionDroppedNothing:
         whole mechanism exists to prevent."""
         overlap = sorted(added_ids() & set(snapshot), key=lambda t: int(t[1:]))
         assert overlap == [], f"§0b claims to add {overlap}, which the audit already had"
+
+
+class TestTheParserReadsTheRightSection:
+    """#318. The parser claimed to read §4 and read the whole file, which is a different thing
+    that agreed with it for years because nothing above §4 happened to have eleven columns."""
+
+    def test_no_bookkeeping_row_is_counted_as_a_threat(self, living):
+        """The concrete regression: a §0/§0b row with enough columns was parsed as a threat.
+        Asserted by comparing against the ids §0 and §0b declare - any threat id that appears
+        ONLY in a bookkeeping table must not be in the register's status map."""
+        text = LIVING.read_text(encoding="utf-8")
+        register = _section(text, "## 4. Threats", "## 5.")
+        for tid in living:
+            assert f"| {tid} |" in register, (
+                f"{tid} was parsed as a §4 threat but does not appear in §4 - the parser is "
+                f"reading a bookkeeping table again (#318)")
+
+    def test_the_section_slicer_refuses_to_match_nothing(self):
+        """A slicer that returned '' on a renamed heading would make every test above pass
+        while checking nothing. It raises instead."""
+        with pytest.raises(ValueError):
+            _section("no headings here", "## 4. Threats", "## 5.")
 
 
 class TestStatusesComeFromAClosedVocabulary:
@@ -194,7 +248,7 @@ class TestTheLivingModelReadsAsLiving:
 
     def test_it_says_which_audit_it_came_from(self):
         text = LIVING.read_text(encoding="utf-8")
-        assert "2026-08-27-01" in text and "95c6afa" in text, (
+        assert "2026-09-01-02" in text and "d33034b" in text, (
             "a threat model with no stated provenance cannot be compared to anything")
 
     def test_relative_links_resolve_from_the_repository_root(self):

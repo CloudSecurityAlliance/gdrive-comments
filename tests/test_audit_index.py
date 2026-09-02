@@ -157,6 +157,31 @@ class TestEveryRecordCarriesWhatTheIndexNeeds:
             missing = [k for k in self.REQUIRED if audit.meta.get(k) in (None, "")]
             assert missing == [], f"{audit.path.name} is missing {missing}"
 
+    def test_no_two_records_share_an_audit_id(self, gen):
+        """#331. Two audits ran against `d33034b` on 2026-09-01 and BOTH front matters claimed
+        `2026-09-01-01`.
+
+        Not an edge case: the corpus is designed so parallel audits never share a file, which
+        makes same-day audits expected rather than exceptional - and `audit_id` is what a
+        `REMEDIATION.md`, an issue trail and the threat-model baseline all point at. Two records
+        disagreeing about which is `-01` is the one ambiguity this design does not otherwise
+        have, and nothing detected it; the collision was found by reading.
+
+        `SCHEMA.md` now states the tie-break (earliest `date_completed` takes the lower suffix)
+        and this asserts it was applied.
+        """
+        seen: dict[str, str] = {}
+        clashes = []
+        for audit in gen.load_audits():
+            key = str(audit.meta.get("audit_id"))
+            if key in seen:
+                clashes.append(f"{key}: {seen[key]} and {audit.path.parent.name}")
+            seen[key] = audit.path.parent.name
+        assert clashes == [], (
+            f"duplicate audit_id(s): {clashes}. SCHEMA.md's tie-break rule assigns the lower "
+            f"suffix by earliest date_completed - renumber the later record and say why in its "
+            f"README, leaving its frozen findings as written.")
+
     def test_modules_covered_is_a_list_of_strings(self, gen):
         for audit in gen.load_audits():
             covered = audit.meta["modules_covered"]
