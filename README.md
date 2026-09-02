@@ -52,7 +52,7 @@ management, content read/write, Sheets comment→cell mapping, and Docs suggesti
 [`CHANGELOG.md`](./CHANGELOG.md); design and phased plans under
 [`docs/superpowers/`](./docs/superpowers/).
 
-**Built-in MCP server** (since 0.2.2) (`csa_google_workspace.mcp`): a local stdio server, **50
+**Built-in MCP server** (since 0.2.2) (`csa_google_workspace.mcp`): a local stdio server, **51
 tools**, so an AI client can read documents, triage and write comments, and edit content through
 the library. Content writes landed in 0.13.0 and Docs suggestions in 0.20.0, so the server now
 reaches everything the library does. Install with the `[mcp]` extra; see below.
@@ -537,12 +537,12 @@ guess — and so the model can explain a refusal instead of retrying it:
 Allowlist *reasons* are deliberately absent from all three: they are written for whoever
 reviews the configuration and may name people or unannounced work.
 
-**Tools** — 50, each with structured output and read-only/destructive annotations
+**Tools** — 51, each with structured output and read-only/destructive annotations
 (`tests/test_readme_tools.py` keeps this list equal to what the server actually registers):
 
 | | |
 |---|---|
-| **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` |
+| **Find** | `search_files` · `list_recent_files` · `get_file_metadata` · `get_file_permissions` · `export_file_inventory` — the last one is the *work-handoff* question: a dated table of every file one person edited or commented on |
 | **Read** | `read_file_content` · `read_range` · `download_file_content` · `list_slides` · `comments_by_cell` · `list_suggestions` |
 | **Comment** | `list_comments` · `get_comment` · `create_comment` · `reply_comment` · `resolve_comment` · `reopen_comment` · `edit_comment` · `delete_comment` · `export_comments` · `apply_comment_actions` |
 | **Write content** | `replace_text` · `append_text` · `insert_text` · `insert_slide_text` · `update_cells` · `append_rows` · `clear_cells` — all `content.write`, and **all destructive to what was there**; see above |
@@ -708,9 +708,9 @@ Counting rather than claiming, because the table below is long enough to be misc
 
 | | Google's server | Claude's connector | **csa-google-workspace** |
 |---|---|---|---|
-| MCP tools | 8 | 11 | **50** |
+| MCP tools | 8 | 11 | **51** |
 | **Of their tools, we have** | **8 of 8** | **11 of 11** | — |
-| Tools they do not have | — | — | **39** |
+| Tools they do not have | — | — | **40** |
 
 **Every tool either of them ships is here**, under the same name and the same argument shapes.
 The twenty-three they do not have: **eleven** comment tools, five content-write tools,
@@ -766,7 +766,7 @@ Hosted platforms — **Composio, Klavis AI, Pipedream, Zapier** — wrap the sam
 
 **Two of these are bigger than this project, and it is worth saying which.**
 `taylorwilsdon` covers 12+ Google services with 3095★ and enterprise auth (service accounts,
-Streamable HTTP). `piotr-agier` ships **115 tools** against this project's 50 — Shared Drives,
+Streamable HTTP). `piotr-agier` ships **115 tools** against this project's 51 — Shared Drives,
 revisions, Sheets formatting, Slides authoring, PDF ingestion, Calendar. If you want breadth,
 those are the answer and this is not.
 
@@ -867,6 +867,7 @@ accepting a share URL, which neither of theirs does.
 | `list_slides` | A deck's slides, with speaker notes and shape ids | ✗ | ✗ | ✅ |
 | `comments_by_cell` | Map a Sheets comment to **the cell it is about** | ✗ | ✗ | ✅ |
 | `export_comments` | Every comment as **flat rows for a spreadsheet or another tool** — with the passage or the cell's contents | ✗ | ✗ | ✅ |
+| `export_file_inventory` | A **dated snapshot of one person's document footprint** for a work handoff — every file they edited or commented on, with empty columns for your own summary and tags | ✗ | ✗ | ✅ |
 | `apply_comment_actions` | Fill the register in and **apply it back** — bulk replies and resolves, safe to re-run | ✗ | ✗ | ✅ |
 | `read_file_content(includeComments)` | Fold threads into the text where they were left | ✗ | ✅ | ✅ |
 | `replace_text` · `append_text` · `update_cells` · `append_rows` · `insert_slide_text` | **Edit an existing** Doc, Sheet or deck | ✗ | ✗ | ✅ |

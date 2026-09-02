@@ -148,6 +148,34 @@ class AccessProposalOut(TypedDict):
     request_message: str | None
 
 
+class UnreachableOut(TypedDict):
+    """An id that went in and produced no row. **Never omitted** — a table of only the
+    readable files reads as a complete footprint, and somebody handing over work would
+    conclude the missing files do not exist."""
+    file_id: str
+    reason: str               # no_access | not_found | trashed | failed
+    detail: str
+
+
+class InventoryOut(TypedDict):
+    """A dated snapshot of one person's document footprint. `rows` is what was reached;
+    `unreachable` is what was not, and why."""
+    columns: list[str]
+    rows: list[dict[str, str]]
+    unreachable: list[UnreachableOut]
+    caveats: list[str]
+    generated_at: str
+    subject: str | None
+    reached: int
+    row_count: int
+    destination: str
+    csv: str | None
+    sheet_id: str | None
+    sheet_url: str | None
+    written_path: str | None
+    detail: str
+
+
 class TabOut(TypedDict):
     """A spreadsheet tab. `hidden` is the one that matters — a hidden tab still exists, still
     holds data, and still occupies its name."""
@@ -513,6 +541,21 @@ def access_proposal_out(p: Any) -> AccessProposalOut:
 def access_proposals_out(proposals: list) -> AccessProposalsOut:
     return {"proposals": [access_proposal_out(p) for p in proposals],
             "pending": len(proposals)}
+
+
+def inventory_out(inv: Any, *, destination: str) -> InventoryOut:
+    """Everything but the payload. The destination-specific fields are filled by the tool."""
+    return {"columns": inv.columns,
+            # `rows` ONLY for destination="rows", the same lesson `export_comments` learned the
+            # hard way: a file destination that also returned every row blew the response limit
+            # AFTER writing the file correctly, so the call failed on work that had succeeded.
+            "rows": inv.rows if destination == "rows" else [],
+            "unreachable": [{"file_id": u["file_id"], "reason": u["reason"],
+                             "detail": u.get("detail", "")} for u in inv.unreachable],
+            "caveats": inv.caveats, "generated_at": inv.generated_at, "subject": inv.subject,
+            "reached": inv.reached, "row_count": len(inv.rows), "destination": destination,
+            "csv": None, "sheet_id": None, "sheet_url": None, "written_path": None,
+            "detail": ""}
 
 
 def tabs_out(details: list) -> TabsOut:

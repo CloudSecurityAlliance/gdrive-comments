@@ -104,7 +104,9 @@ def create_server(get_workspace: WorkspaceProviderT, *, name: str = "csa-google-
     app = MCPServer(name=name, version=__version__,
                     instructions=INSTRUCTIONS + _flavours.instruction_note(flavour))
     register_content_tools(app, get_workspace)
-    register_file_tools(app, get_workspace)
+    register_file_tools(app, get_workspace,
+                        export_dir=settings.export_dir if settings else None,
+                        local_write=settings.local_write if settings else True)
     register_content_write_tools(app, get_workspace)
     register_comment_tools(app, get_workspace,
                            export_dir=settings.export_dir if settings else None,

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from . import _inventory
 from . import exceptions as exc
 from .backend import Backend
 from .base import MIME_TO_TYPE
@@ -238,6 +239,79 @@ class FileCollection:
     def recent(self, *, limit: int = 10, order_by: str = "recency") -> list[FileRef]:
         """Recently touched files. `order_by` is `recency`, `lastModified` or `lastModifiedByMe`."""
         return self._page("trashed = false", limit, self._order(order_by) or ORDER_BY["recency"])
+
+    def inventory(self, *, query: str | None = None, file_ids: list[str] | None = None,
+                  subject: str | None = None, limit: int = 500,
+                  include_comments: bool = True,
+                  order_by: str | None = None) -> _inventory.Inventory:
+        """A dated snapshot of a person's document footprint, for a work handoff.
+
+        Exactly one of `query` (Drive's `q` syntax) or `file_ids` must be given.
+
+        **`file_ids` is the composability seam, and it is why this is not query-only.** The
+        authoritative answer to *"what did this person touch"* is an administrator's question,
+        answered by an audit-scoped tool, because this library runs as a USER and only does
+        what the Drive and Docs APIs support. So the list may arrive from elsewhere; this
+        enriches it with what is in each file and who can see it.
+
+        Which means the account running this may not be able to read every id handed to it.
+        **That is the boundary working, not a failure** — and every unreachable id comes back
+        in `unreachable` with a reason rather than being dropped, because a table of only the
+        readable files reads as a complete footprint.
+
+        `subject` is the person whose footprint this is, matched on email when Drive supplies
+        one and on display name otherwise; each row records which. `include_comments` fetches
+        each file's comments to count the subject's own — the only cross-file view of somebody's
+        commentary that exists, since Drive has no comment predicate at all.
+
+        Revisions are NOT consulted, so the edited signal is Drive's last-editor only. See
+        `_inventory` for what that can and cannot answer.
+        """
+        if (query is None) == (file_ids is None):
+            raise ValueError("pass exactly one of query= or file_ids=")
+
+        refs: list[FileRef] = []
+        unreachable: list[dict[str, str]] = []
+
+        if query is not None:
+            refs = self.search(query, limit=limit, order_by=order_by)
+        else:
+            for raw_id in (file_ids or [])[:limit]:
+                try:
+                    refs.append(self.get(raw_id))
+                except exc.NotFoundError:
+                    # Drive answers 404 both for "no such file" and for "you cannot see it",
+                    # and this library cannot tell them apart - so the reason says so rather
+                    # than picking the flattering one. Guessing "no_access" would imply the
+                    # file exists; guessing "not_found" would imply it does not.
+                    unreachable.append({"file_id": raw_id, "reason": _inventory.NOT_FOUND,
+                                        "detail": "no such file, or not visible to this account"})
+                except exc.AccessError:
+                    unreachable.append({"file_id": raw_id, "reason": _inventory.NO_ACCESS,
+                                        "detail": "this account is not permitted to read it"})
+                except exc.ApiError as e:
+                    # Recorded rather than raised: one bad id must not lose the other 499
+                    # rows. `_export`/`_apply` take the same line for the same reason.
+                    unreachable.append({"file_id": raw_id, "reason": _inventory.FAILED,
+                                        "detail": str(e)[:200]})
+
+        comments_by_file: dict[str, list[Any]] | None = None
+        if include_comments and subject:
+            comments_by_file = {}
+            from .workspace import Workspace
+            workspace = Workspace(self._backend, read_only=self._read_only)
+            for ref in refs:
+                if not ref.openable:
+                    continue           # a PDF or a folder has no Drive comments to read
+                try:
+                    comments_by_file[ref.id] = list(workspace.open(ref.id).comments.all())
+                except (exc.NotFoundError, exc.AccessError, exc.ApiError):
+                    # The file was listable and its comments were not. Not unreachable - the
+                    # row is real - so the count stays blank and the caveat explains blank.
+                    continue
+
+        return _inventory.build(refs, subject=subject, comments_by_file=comments_by_file,
+                                unreachable=unreachable)
 
     def get(self, file_id_or_url: str) -> FileRef:
         """One file, WHATEVER its type — a Doc, a folder, a PDF, a .docx.
