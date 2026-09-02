@@ -144,7 +144,21 @@ CAPABILITY_NOTES: dict[str, tuple[str, str]] = {
     CONTENT_WRITE:   ("edit content, INCLUDING blanking cells and overwriting what was there",
                       "yes - Drive revision history, which a human can restore from"),
     FILE_CREATE:     ("create a new file", "n/a - nothing that exists is touched"),
-    FILE_UPDATE:     ("rename or move a file", "yes - rename or move it back"),
+    # MOVING A FILE CHANGES WHO CAN SEE IT, and an operator granting `writer` should not have to
+    # derive that from Drive's documentation (#311, T38). `update_file_metadata` forwards
+    # `addParents`/`removeParents`, and a file inherits the ACL of the folder it sits in - so a
+    # move grants or revokes access with no `file.share` and no permission change visible on the
+    # file itself.
+    #
+    # Accepted rather than gated separately, because it is what Drive does and a human `writer`
+    # can already do it through the UI; splitting it out would make this ladder diverge from the
+    # Drive roles it deliberately mirrors. Drive's folder ACLs are the control.
+    #
+    # The reversibility answer is qualified for the same reason: moving it back restores the
+    # parent, but it does not un-happen the access somebody had while it sat elsewhere.
+    FILE_UPDATE:     ("rename or move a file - and MOVING IT CHANGES WHICH FOLDER'S SHARING IT "
+                      "INHERITS, so it can grant or revoke access without touching permissions",
+                      "the move, yes - move it back. The access it granted meanwhile, no"),
     FILE_TRASH:      ("put a file in the trash", "yes, 30 days - the owner can restore it"),
     COMMENT_EDIT:    ("edit an existing comment", "NO - Google keeps no visible edit history"),
     COMMENT_DELETE:  ("delete a comment", "NO - the soft delete strips content and author"),

@@ -52,6 +52,11 @@ sys.path.insert(0, str(ROOT / "src"))
 DOCS = [
     "README.md", "CLAUDE.md", "SECURITY.md", "TODO.md", "RELEASING.md",
     "INTERFACE-RESOURCES.md", "API-STABILITY.md", "CONTRIBUTING.md",
+    # Added 2026-09-02 (#317). It was absent, which made `FROZEN_COUNTS` below DEAD CODE - the
+    # file never entered the loop that consults it - so the comment there was false in both
+    # halves. The surveyor built to "enumerate reality and compare against it" was skipping the
+    # document `SECURITY.md` explicitly delegates the register to.
+    "THREAT_MODEL.md",
 ]
 DOC_GLOBS = ["research/*.md", "docs/superpowers/specs/*.md"]
 
@@ -62,8 +67,13 @@ DOC_GLOBS = ["research/*.md", "docs/superpowers/specs/*.md"]
 # reversed (CODX-2026-09-01-01). A sweep that only opens Markdown cannot see them.
 SOURCE_ROOT = "src/csa_google_workspace"
 
-# THREAT_MODEL.md is excluded from the COUNT checks but not the name checks: its threat text is
-# frozen as the audit wrote it, so "34 tools" there is a quotation rather than a claim about now.
+# Exempt from the COUNT checks and nothing else. The register's threat text is carried verbatim
+# as the audit wrote it, so a number inside a threat or its evidence is a QUOTATION of what was
+# true when that audit looked - not a claim about now. Its name checks and posture checks do
+# apply, which is the half worth having: a threat citing a capability that no longer exists, or
+# a mitigation describing the old default posture, is a real defect in a live document.
+#
+# This was dead code until #317 added the file to DOCS above; the exemption is now real.
 FROZEN_COUNTS = {"THREAT_MODEL.md"}
 
 # A tool count belongs to somebody else when one of these appears just before it - the README
