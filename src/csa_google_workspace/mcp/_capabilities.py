@@ -54,6 +54,11 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     # has no endpoint for either, so there is nothing to gate.
     "list_suggestions": None,
     "export_comments": None,
+    # Also `None`, for the same reason and with the same lossiness: reading is ungated,
+    # but destination="sheet" creates a Drive file and so needs `file.create`. A
+    # one-capability-per-tool map cannot say "depends on the argument" - see
+    # tests/test_mcp_capabilities.py::test_the_reverse_is_deliberately_not_asserted.
+    "export_file_inventory": None,
     # Declares comment.reply; resolving is gated independently at the Backend wrapper, so
     # an operator who granted only one of the two gets exactly that one - the tool cannot
     # smuggle the other through. Declared rather than left None because it is a WRITE.

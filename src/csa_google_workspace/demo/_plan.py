@@ -431,6 +431,16 @@ def account_closing() -> list[Step]:
         Step("list_recent_files", lambda s: {"limit": 5},
              "List recently touched files",
              "What a person means by 'the thing I was just working on'.", group="account"),
+        Step("export_file_inventory",
+             lambda s: {"query": f"name contains '{s['prefix']}'", "subject": s.get("whoami"),
+                        "limit": 10},
+             "Take a dated inventory of one person's work",
+             "The work-handoff question: somebody is away for a month and something arrives "
+             "that cannot wait. One table of every file they edited or commented on, with "
+             "empty columns for your own summary and tags. Note that `unreachable` is part of "
+             "the answer - this runs as you, so ids you cannot read are reported with a reason "
+             "rather than dropped, because a table of only the readable files reads as a "
+             "complete footprint.", group="account"),
         Step("read_server_resource", lambda s: {},
              "Read the server's own documentation",
              "Published as an MCP resource, and also as a tool - because several clients "

@@ -50,6 +50,10 @@ ARGS: dict[str, dict] = {
     "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
     "list_suggestions":      {"fileId": DOC},
     "export_comments":       {"fileId": DOC},
+    # `query=` rather than `fileIds=`, because the query path is the one a caller
+    # reaches for first; the id path is covered in test_work_handoff_inventory.py
+    # where the unreachable-reporting it exists for can be asserted.
+    "export_file_inventory": {"query": "name contains 'x'"},
     # A DRY RUN over a real but empty register: it reads the file, finds nothing filled in,
     # and reports that. Passing apply=true here would mutate the shared fake mid-suite.
     "apply_comment_actions": {"fileId": DOC, "path": str(_REGISTER)},
