@@ -10,6 +10,75 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-02 — v0.40.1 (the register says what is true) — not released *(yet — flipped once PyPI confirms)*
+
+Remediation from security audit `2026-09-01-02`, continuing the batch v0.39.0 opened. Nothing a
+caller can notice: one capability description is clearer, and everything else is the register and
+its guards.
+
+**The re-scored threat model is adopted at the repository root** (#310) — 43 threats across 25
+entry points, replacing 35 across 19. It removes an actively false claim: **T20 read `mitigated`
+on a control that no longer exists.** The baseline `tests/test_threat_model.py` diffs against
+moves to the `2026-09-01-02` snapshot; the `2026-08-27-01` one stays in the tree as that audit's
+own baseline. Moving it is legitimate precisely because the new snapshot was written by an
+**independent** audit — the property that makes a claim of progress checkable is that somebody
+else froze the thing we are measured against, and that survives. Rewriting the old baseline
+ourselves would not have.
+
+**Two threats moved to `risk_accepted`, and that is a different thing from fixed.** Each was
+`unmitigated` because the audit found a *contradiction* — an artefact claiming a bound the code
+did not enforce — and each is resolved by deciding which side was wrong. Both times it was the
+artefact.
+
+- **T37**: `clear_cells` stays `content.write`, and the four artefacts that said `content.delete`
+  were corrected to agree with the gate. An agent that cannot blank a cell writes a junk value
+  instead, which is worse for the sheet and harder for a person to notice. The real control against
+  data destruction is Drive revision history and sheet-level protections (#336).
+- **T38**: relocating a file changes which folder ACL it inherits, so it can grant or revoke access
+  with no `file.share`. That is Drive's own behaviour and a human `writer` can already do it, so
+  this capability ladder — which is a ceiling *below* Drive's ACLs — accepts it rather than
+  diverging from the Drive roles it mirrors. The defect was the **sentence**: the spec claimed
+  *"our 'move' is a rename"*, which was false and was the one counterexample to the ladder claim
+  the rest of the model reasons from (#311). Corrected, and **`file.update`'s capability note now
+  says a move changes which folder's sharing it inherits** — an operator granting `writer` should
+  not have to derive that from Google's documentation. Its reversibility answer is qualified too:
+  moving it back restores the parent, not the access somebody had while it sat elsewhere.
+
+Three rows gained evidence without moving status — tool descriptions **are** now guarded (T8), the
+weekly controls detector **can** now fail (T19), and `request_message` is capped with control
+sequences neutralised at the boundary (T36). Each names what remains, so an unchanged status reads
+as a statement rather than an omission.
+
+### The guard that was hiding a real inconsistency (#318)
+
+`statuses()` claimed to read *"the §4 threat table only"* and bounded it **by column count**.
+Column count is not section membership: T36's row sat in §0b carrying twelve fields, so it was
+parsed as a §4 threat — the parser saw 36 threats where §4 held 35, and `SECURITY.md`'s *"36
+enumerated threats"* **agreed with the test for the wrong reason**, both counting a bookkeeping row.
+
+Bounding it by section immediately failed a *different* test: **§0b promised T36 and §4 never
+delivered it.** The miscount had been concealing that, which is the thing about a vacuous guard —
+it does not merely fail to check, it hides.
+
+### Also
+
+- **#317** — `check_doc_claims.py` now reads `THREAT_MODEL.md`. It was absent from `DOCS`, which
+  made `FROZEN_COUNTS` **dead code**: the file never entered the loop that consults it, so the
+  comment claiming it was *"excluded from the COUNT checks but not the name checks"* was false in
+  both halves. The exemption is now real and is **counts only** — a number inside frozen threat
+  text is a quotation, but a threat citing a capability that no longer exists is a live defect.
+- **#331** — `SCHEMA.md` states the `audit_id` tie-break (the lower suffix goes to the earliest
+  `date_completed`) and a test fails on a duplicate. Same-day collisions are **expected** rather
+  than exceptional, because the corpus is designed so parallel audits never share a file. Frozen
+  text is left as written, including the `-02` record's self-citation of `-01`: a baseline nobody
+  may amend is the point of freezing it, so the mapping lives in the record that moved.
+- **#328** — the 2026-08-27 remediation record said `in-progress` at `0.30.0…0.30.4` for a month
+  after the work finished. That is the wrong direction to be stale in, since it is the document
+  somebody opens to check whether findings were addressed. Closed on stronger evidence than our
+  own say-so: all nineteen findings were independently re-verified as holding by audit
+  `2026-09-01-01`.
+- `SECURITY.md`: 36 → 43 threats, 19 → 25 entry points.
+
 ## 2026-09-02 — v0.40.0 (where is their work, and what is in it)
 
 One feature, and the two search gaps that made it unbuildable. Spec:
