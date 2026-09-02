@@ -53,7 +53,7 @@ Three sources, in increasing cost and completeness. This matters because the che
 | source | gives | cost | limitation |
 |---|---|---|---|
 | `lastModifyingUser` | the **most recent** editor only | 1 field per file | if Alice edited and Bob edited after her, Alice is **invisible** |
-| `revisions.list` | `lastModifyingUser` per revision | N calls | complete for retained revisions; Drive prunes |
+| `revisions.list` | `lastModifyingUser` per revision | N calls, **opt-in** | complete for retained revisions; Drive prunes |
 | **external admin-reports server** | authoritative Drive audit events | not ours | see below |
 
 The middle row is the honest fallback and the top row must not be presented as an answer to *"did
@@ -80,26 +80,40 @@ Accepted for now, by decision. The inventory must therefore:
 - never silently merge two spellings of a name;
 - carry the email **when Drive does supply it**, since that is the stronger key when present.
 
-## The composability seam — this library does not answer "what did they touch"
+## The delineation is by PRINCIPAL, not by question — decided
 
-**Context, 2026-09-02:** a **separate MCP server for the Google Admin Reports API** (read-only) is
-under active development. It will supply the authoritative list of a user's documents and activity
-domain-wide. That is a strictly better source than anything this library can reach, because it does
-not require the person doing the sweep to have access to each file first.
+**Refined 2026-09-02.** An earlier draft split the two tools by which *question* each answers.
+That was close but wrong, and the correct line is sharper:
 
-So the division of labour is:
+> **This server does only what the Drive and Docs APIs support, and it runs AS A USER.
+> Administrators use the separate Google audit MCP server.**
 
-> **The admin-reports server answers *what did they touch*. This library answers *what is in it,
-> and who can see it*.**
+So the boundary is *whose authority is being exercised*, not which fact is being retrieved. A
+separate read-only **Google Admin Reports** MCP server is under active development; audit-scoped,
+domain-wide questions belong there because they need an administrator, and nothing in this library
+is domain-wide or ever should be.
 
-The design consequence is concrete and is the most important line in this spec:
+Three consequences, and the third is the one the earlier framing missed.
 
-**The inventory must accept a list of file ids as an input mode, not only a Drive query.** That is
-the seam through which the other server drives this one. Without it, the two tools cannot compose
-and this library's enumeration becomes a dead end the moment the better source exists.
+**1. The inventory must accept a list of file ids as an input mode**, not only a Drive query. That
+is the seam: an administrator produces the list from the audit server, and this tool is then run —
+by them or by a delegate — as a user, against it.
 
-It also means **`driveactivity` is deliberately NOT wired into this library.** Adding a sixth API
-client for a capability another server will supply better would be work we then have to keep.
+**2. `driveactivity` is deliberately NOT wired in.** A sixth API client for a capability the audit
+server supplies better, with the right authority, is work we would then have to keep.
+
+**3. THE INVENTORY MUST REPORT WHAT IT COULD NOT REACH.** This falls straight out of the
+principal split and is a hard requirement rather than a nicety. If an administrator hands over 500
+file ids and the user running this can see 340, that is **not a failure** — it is the boundary
+working exactly as designed. But an artifact that silently lists 340 rows is *lying by omission*:
+it reads as a complete footprint, and somebody handing over work would conclude those 160 files do
+not exist.
+
+So every id supplied and not reachable appears in the artifact **with the reason** —
+`no_access`, `trashed`, `not_found` — never dropped. This is the same asymmetry the labels code
+already applies: an unreachable label name is reported as `None` with a reason rather than omitted,
+*because reporting a classified document as unclassified is the dangerous direction.* The dangerous
+direction here is reporting a partial sweep as a whole one.
 
 ## Derived values live in the Sheet — decided
 
@@ -140,6 +154,12 @@ Recorded so nobody later proposes "just use a Drive query":
 
 ## Non-goals
 
+- **A read-back path.** Decided 2026-09-02: the artifact is **read and analyse, one-directional.**
+  There is no bulk upload and none is planned. Named explicitly because `_apply.py` gives the
+  *comment* register a read-back — replies and resolutions posted from a filled-in sheet — and the
+  obvious next thought is to generalise it. Do not: a comment register is a set of intended actions
+  on one file, while a handoff inventory is a description of somebody's work. Nothing in it is an
+  instruction, and treating derived columns as one would make an analyst's notes into Drive writes.
 - Live or continuously-updated views — the opposite of the point.
 - A local corpus, vector index, or embeddings. `TODO.md`'s value ladder is explicit: do not lead
   with step 3. This is step 1.
@@ -149,9 +169,15 @@ Recorded so nobody later proposes "just use a Drive query":
 
 ## Open questions
 
-1. **Where exactly does the boundary with the admin-reports server fall** once it exists — does it
-   hand over file ids only, or ids plus per-file activity that becomes inventory columns?
-2. **Revisions cost.** One `revisions.list` per file is the only in-library way to answer "did they
-   ever edit this". At what inventory size does that stop being acceptable, and is it opt-in?
-3. **Does the artifact need a read-back path**, as `_apply.py` gives the comment register? Plausibly
-   not — a handoff inventory is read to be acted on by a human, not posted back to Drive.
+All three of the original questions were answered on 2026-09-02 and are recorded above:
+the delineation is by **principal**; revisions cost is the **user's call**, so it is an explicit
+opt-in with the cost documented rather than an internal cap; and there is **no read-back path**.
+
+What genuinely remains open:
+
+1. **The handover format between the two servers.** Ids alone are enough to compose, but if the
+   audit server can also supply *per-action* detail — edited on this date, commented on that one —
+   those become inventory columns this library cannot otherwise fill, and the artifact gets better
+   without this tool gaining any authority. Worth settling once the audit server's shape is firm.
+2. **Whether `owners` in the artifact should be a display name, an email, or both.** Drive supplies
+   both on a permission but the identity caveat above applies to the name half.

@@ -139,11 +139,18 @@ inventory is the inverse: the subject is not editing, so a frozen view is *corre
 drift while somebody works through it. The snapshot is a **deliverable** — a dated Sheet, the same
 shape `export_comments` already ships — and it is **never an access path**.
 
-**The seam that matters.** A separate read-only Google Admin Reports MCP server is under active
-development and will answer *what did they touch* authoritatively, domain-wide, without the sweeper
-needing access to each file first. So the inventory must accept **a list of file ids** as an input
-mode and not only a Drive query — that is how the two tools compose — and `driveactivity` is
-deliberately not wired in here.
+**The seam that matters, and it is drawn by PRINCIPAL rather than by question** (refined
+2026-09-02): *this server does only what the Drive and Docs APIs support and runs AS A USER;
+administrators use the separate Google audit MCP server.* So the inventory must accept **a list of
+file ids** as an input mode and not only a Drive query — an administrator produces the list there,
+this runs as a user against it — and `driveactivity` is deliberately not wired in here.
+
+The consequence that falls out of that split: **the inventory reports what it could not reach.**
+If 500 ids come in and the user can see 340, that is the boundary working — but an artifact listing
+340 rows silently reads as a complete footprint, and somebody handing over work would conclude the
+other 160 do not exist. Unreachable ids appear with a reason, never dropped. Same asymmetry as the
+labels code, for the same reason: the dangerous direction is reporting a partial sweep as a whole
+one.
 
 ### Wave 4 — the Google-side controls · `0.42.0`
 
