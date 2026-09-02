@@ -159,6 +159,34 @@ def test_search_files_sends_the_query_and_shared_drive_flags():
     assert "nextPageToken" in files.calls["fields"]
 
 
+def test_search_asks_drive_for_the_facts_an_inventory_needs():
+    """The field list lives only in `ApiBackend`, so `FakeBackend` cannot cover it — it just
+    hands back whatever a fixture put in the dict. That is precisely the fake/real blind spot
+    CLAUDE.md invariant 4 names, and the cost of missing it here is silent: every field would
+    read as `None`, which this library defines as "not asked for", so an inventory would
+    report ownership as unknown for every file and look like it was working.
+    """
+    files = _FilesStub({"files": []})
+    ApiBackend(_ServicesWithFiles(files)).search_files("q")
+    fields = files.calls["fields"]
+    for wanted in ("createdTime", "owners(", "lastModifyingUser(", "driveId"):
+        assert wanted in fields, f"search does not ask Drive for {wanted}"
+
+
+def test_the_user_sub_selection_does_not_drag_in_unread_personal_data():
+    """`owners` and `lastModifyingUser` are sub-selected to three fields rather than taken
+    whole. Drive's full `User` also carries `photoLink` and `permissionId`, which nothing in
+    this library reads — so asking for them would move a third party's personal data into a
+    model's context for no reason. Asserted because `owners` (no parens) is the shorter thing
+    to write and would work.
+    """
+    files = _FilesStub({"files": []})
+    ApiBackend(_ServicesWithFiles(files)).search_files("q")
+    fields = files.calls["fields"]
+    assert "photoLink" not in fields and "permissionId" not in fields
+    assert "owners(displayName,emailAddress,me)" in fields.replace(" ", "")
+
+
 def test_search_files_omits_order_by_and_page_token_when_unset():
     """Sending orderBy=None is not the same as omitting it; Drive rejects the former."""
     files = _FilesStub({"files": []})

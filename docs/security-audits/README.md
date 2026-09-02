@@ -57,7 +57,7 @@ looked for, which is the reason this table exists.
 | `mcp/` — server, auth flow, config, resources | **partial** — 15/16 at 2026-09-01 |
 | `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code |
 | `demo/` | 2026-08-27 · claude-code |
-| `tests/` as code | **partial** — 13/120 at 2026-09-01 |
+| `tests/` as code | **partial** — 13/121 at 2026-09-01 |
 | `.github/workflows/` | 2026-09-01 · codex |
 | packaging and secret-scanning config | 2026-08-27 · claude-code |
 | `scripts/` | 2026-09-01 · codex |
