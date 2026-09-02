@@ -406,6 +406,94 @@ def without_historical_notes(text: str) -> str:
     return _HISTORICAL_ASIDE.sub(" ", text)
 
 
+class TestNoLiveDocumentAssertsTheOldClosedPosture:
+    """**#321.** The narrow version matched three literal phrases across three files -
+    `"unset means nothing is permitted"`, `"both allowlists fail closed"`, `"both fail closed"` -
+    and every surviving drift site used DIFFERENT wording, in a file not on the list. A guard
+    keyed to three spellings of a claim is a guard against those three spellings.
+
+    So this delegates to `check_doc_claims.py`'s detector rather than growing a second one. That
+    one already does the three things a literal search cannot:
+
+    * **normalises whitespace first**, because a claim straddling a line break is invisible to
+      line-based matching - `TODO.md` has *"capabilities that were\n off by default"*, where the
+      negation that makes it correct sits on the previous line;
+    * **requires a subject nearby**, so the three sentences about *caching* - which genuinely is
+      off by default - are not reported;
+    * **skips negations and past tense**, because *"nothing is off by default"* and *"these were
+      off by default"* are the true statements, and a detector with a 92% false-positive rate is
+      one nobody runs.
+
+    Moving it here makes it a REQUIRED check. The script is advisory by design - failing a PR
+    because a paragraph has not caught up trains people to write a hollow sentence to get green -
+    but this particular claim is the one that already shipped wrong for eleven releases, on the
+    surface a model reads as authority, so it earns a gate.
+
+    Frozen records are out of scope by construction rather than by exclusion: `DOCS` and
+    `DOC_GLOBS` never contained `docs/security-audits/` or `docs/correctness-reports/`, whose
+    whole job is to QUOTE the defect. That distinction matters - an exclusion list would have had
+    to be maintained, and would have hidden true positives the way excluding the README once hid
+    "34 tools" (RR-003).
+    """
+
+    def _detector(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "cdc", ROOT / "scripts" / "check_doc_claims.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_no_live_document_or_docstring_claims_a_closed_default(self):
+        from csa_google_workspace.policy import DEFAULT_DISABLED
+        cdc = self._detector()
+        sources = sorted((ROOT / cdc.SOURCE_ROOT).rglob("*.py"))
+        problems = cdc._posture_problems(
+            cdc._docs() + sources,
+            anything_disabled=bool(DEFAULT_DISABLED),
+            # Hardcoded rather than read from the environment: this asserts a property of the
+            # PROSE against the shipped default, and a test that consulted CSA_GW_* would
+            # change its mind based on the shell it ran in.
+            unset_is_everything=True)
+        assert problems == [], (
+            "these assert a closed default that the constants contradict:\n  "
+            + "\n  ".join(problems)
+            + "\n\nIf a sentence is deliberately historical, wrap it in *( ... )* so it reads "
+              "as a quotation rather than a claim.")
+
+    def test_the_detector_fires_on_a_planted_claim(self):
+        """A guard whose input can legitimately be empty is proved alive by running it against
+        synthetic input, not by demanding the input be non-empty. Same technique as the
+        capability-count detector; the lesson is #320's."""
+        cdc = self._detector()
+        planted = "The `file.share` capability is off by default and must be named explicitly."
+        assert cdc._posture_problems(
+            [_Planted(planted)], anything_disabled=False, unset_is_everything=True), (
+            "the detector did not flag a plain 'off by default' claim about a capability")
+
+    def test_the_detector_does_not_fire_on_history_or_on_caching(self):
+        """The counterweight, and the reason the narrow version was replaced rather than
+        widened: 12 of 13 bare-phrase matches in this repository were correct."""
+        cdc = self._detector()
+        for fine in ("Nothing is off by default since v0.31.0.",
+                     "These descriptions said `file.share` was off by default for eleven releases.",
+                     "Caching is off by default and there is no caching layer at all."):
+            assert cdc._posture_problems(
+                [_Planted(fine)], anything_disabled=False, unset_is_everything=True) == [], (
+                f"wrongly flagged: {fine!r}")
+
+
+class _Planted:
+    """A path-like carrying text, so the detector can be exercised without writing a file."""
+
+    def __init__(self, text: str):
+        self._text = text
+        self.name = "planted.md"
+
+    def read_text(self, encoding: str = "utf-8") -> str:
+        return self._text
+
+
 class TestSecurityMdDescribesTheACTUALDefaults:
     """The three claims `SECURITY.md` had backwards until 2026-08-31, all in the same direction.
 
