@@ -84,6 +84,14 @@ class DownloadOut(TypedDict):
     size_bytes: int
 
 
+class ActorOut(TypedDict):
+    """A person Drive names on a file. `email` is the key to match on when present; a display
+    name is neither unique nor stable, which is the same caveat comment authors carry."""
+    display_name: str | None
+    email: str | None
+    me: bool
+
+
 class FileRefOut(TypedDict):
     id: str
     name: str
@@ -91,6 +99,15 @@ class FileRefOut(TypedDict):
     mime_type: str
     url: str
     modified_time: str | None
+    created_time: str | None
+    # `[]` means Drive reported no owners, which is the normal state for a file in a SHARED
+    # DRIVE - the drive owns it. `null` means the call did not ask.
+    owners: list[ActorOut] | None
+    # The MOST RECENT editor only. It answers "who touched it last", never "did this person
+    # ever edit it" - if A edited and B edited after, A does not appear here.
+    last_modifying_user: ActorOut | None
+    # Which shared drive the file is in; null for My Drive.
+    drive_id: str | None
 
 
 class FilesOut(TypedDict):
@@ -532,9 +549,21 @@ def labels_out(labels: list) -> LabelsOut:
             "names_unavailable": any(not one.resolved for one in labels)}
 
 
+def _actor_out(actor: Any) -> ActorOut:
+    return {"display_name": actor.display_name, "email": actor.email, "me": actor.me}
+
+
 def file_ref_out(ref: Any) -> FileRefOut:
+    owners = getattr(ref, "owners", None)
+    modifier = getattr(ref, "last_modifying_user", None)
     return {"id": ref.id, "name": ref.name, "type": ref.type, "mime_type": ref.mime_type,
-            "url": ref.url, "modified_time": _iso(ref.modified_time)}
+            "url": ref.url, "modified_time": _iso(ref.modified_time),
+            "created_time": _iso(getattr(ref, "created_time", None)),
+            # `is not None` rather than truthiness: `()` is a real answer (a shared-drive
+            # file has no owners) and must not be reported as "not asked".
+            "owners": [_actor_out(o) for o in owners] if owners is not None else None,
+            "last_modifying_user": _actor_out(modifier) if modifier else None,
+            "drive_id": getattr(ref, "drive_id", None)}
 
 
 def file_ref_metadata_out(ref: Any, detail: str) -> FileMetadataOut:

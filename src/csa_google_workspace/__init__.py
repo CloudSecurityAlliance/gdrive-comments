@@ -9,7 +9,7 @@ from .documents.doc import Doc
 from .documents.sheet import Sheet
 from .documents.slides import Slide, Slides
 from .exceptions import DetachedError
-from .files import FileCollection, FileRef
+from .files import FileActor, FileCollection, FileRef
 from .labels import Label, LabelField
 from .permissions import Permission
 from .policy import Policy, PolicyBackend, Scope
@@ -22,7 +22,7 @@ __all__ = [
     "Suggestion", "Slide", "EXPORT_FORMATS",
     # load-bearing types for embedders / custom backends (audit #26)
     "Backend", "Document", "CommentCollection", "DetachedError",
-    "FileRef", "FileCollection", "Permission",
+    "FileRef", "FileActor", "FileCollection", "Permission",
     "AccessProposal", "RoleAndView", "Label", "LabelField",
     # policy / allowlisting (#82)
     "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",

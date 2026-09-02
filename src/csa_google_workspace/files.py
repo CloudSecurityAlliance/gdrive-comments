@@ -25,6 +25,22 @@ if TYPE_CHECKING:                                     # pragma: no cover
     from .permissions import Permission
 
 # What the connector and Google's server both accept, mapped to Drive `orderBy` values.
+# Drive's `orderBy` keys, verbatim. Validated rather than forwarded: an arbitrary string
+# reaches Google as a 400 whose body the caller never sees, so a typo would become
+# "Google rejected the request" with nothing to correct. See `_order`.
+#
+# Every one of these takes an optional direction, and Drive's own default is ASCENDING - which
+# is almost never what a person means by "order by modified time". The three legacy aliases
+# below therefore stay pinned to `desc`, while a bare key keeps Drive's default rather than
+# this library second-guessing it.
+ORDER_KEYS = frozenset({
+    "createdTime", "folder", "modifiedByMeTime", "modifiedTime", "name", "name_natural",
+    "quotaBytesUsed", "recency", "sharedWithMeTime", "starred", "viewedByMeTime",
+})
+
+# The three names this library shipped before it understood the rest. Kept as aliases, not
+# deprecated: `recent(order_by="recency")` is the documented default and `list_recent_files`
+# publishes all three to the model. Each carries `desc`, which is the behaviour callers have.
 ORDER_BY = {
     "recency": "recency desc",
     "lastModified": "modifiedTime desc",
@@ -67,6 +83,31 @@ def _parse_time(value: str | None) -> datetime | None:
 
 
 @dataclass(repr=False)
+class FileActor:
+    """A person Drive names on a file — an owner, or whoever changed it last.
+
+    `email` is separate from `display_name` because the identity caveat governing comments
+    governs this too: a display name is neither unique nor stable, so matching a person by one
+    is a guess. Drive DOES usually supply the email here, unlike on a comment author - so when
+    it is present it is the key to use, and when it is absent that is worth being able to see
+    rather than having it silently fall back to a name.
+    """
+    display_name: str | None = None
+    email: str | None = None
+    me: bool = False
+
+    @classmethod
+    def from_api(cls, d: dict[str, Any]) -> FileActor:
+        return cls(display_name=d.get("displayName"), email=d.get("emailAddress"),
+                   me=bool(d.get("me", False)))
+
+    def __repr__(self) -> str:
+        # Redacted like every other model here: an owner's email is personal data and
+        # embedders log these objects. `comments.py` sets the precedent and states the reason.
+        return f"FileActor(has_email={self.email is not None}, me={self.me})"
+
+
+@dataclass(repr=False)
 class FileRef:
     """A search hit: enough to decide whether to open it, and no more.
 
@@ -89,6 +130,24 @@ class FileRef:
     # they are exported. Reporting 0 would assert a fact never checked, and a size guard that
     # read 0 as "tiny" would wave through the very files it exists to stop.
     size_bytes: int | None = None
+    # `None` means NOT ASKED FOR throughout, exactly as `parents` and `size_bytes` above.
+    # Each of these is a fact Drive returns for free in the same call, so the alternative to
+    # asking is one extra request per file - which is what a handoff inventory over hundreds
+    # of files would have paid. See specs/2026-09-02-work-handoff-inventory.md.
+    created_time: datetime | None = None
+    # WHO OWNS IT. A tuple because Drive's `owners` is a list: a file in a shared drive has
+    # NONE (the drive owns it), and consumer accounts have historically reported more than
+    # one. An empty tuple is therefore a real answer rather than a failure - which is why
+    # this is `None` when unasked and `()` when asked and genuinely empty.
+    owners: tuple[FileActor, ...] | None = None
+    # WHO TOUCHED IT LAST, and read the caveat: this is the MOST RECENT editor only. If A
+    # edited and B edited after, A is invisible here. It answers "did they edit it last",
+    # never "did they ever edit it" - that needs revisions, and the difference is the whole
+    # reason the inventory spec treats edited and commented as separate signals.
+    last_modifying_user: FileActor | None = None
+    # Which SHARED DRIVE the file lives in; `None` for My Drive. Reported because an inventory
+    # that cannot say which drive a file is in will silently mis-attribute work (#338).
+    drive_id: str | None = None
     _backend: Backend | None = None
     _read_only: bool = False
 
@@ -146,9 +205,18 @@ class FileCollection:
         # `parents` only when the response carried the key at all - absent means the call did
         # not request it, which is not the same as a file with no parents.
         parents = tuple(raw["parents"]) if "parents" in raw else None
+        # `in raw` rather than `.get(...) or ()` for owners, for the reason the field comment
+        # gives: a shared-drive file has no owners, so `()` is a real answer and must not be
+        # collapsed into "the call did not ask".
+        owners = tuple(FileActor.from_api(o) for o in raw["owners"]) if "owners" in raw else None
+        modifier = raw.get("lastModifyingUser")
         return FileRef(id=raw["id"], name=raw.get("name", ""),
                        mime_type=raw.get("mimeType", ""), url=raw.get("webViewLink", ""),
                        modified_time=_parse_time(raw.get("modifiedTime")),
+                       created_time=_parse_time(raw.get("createdTime")),
+                       owners=owners,
+                       last_modifying_user=FileActor.from_api(modifier) if modifier else None,
+                       drive_id=raw.get("driveId"),
                        parents=parents, size_bytes=_parse_size(raw.get("size")),
                        _backend=self._backend, _read_only=self._read_only)
 
@@ -332,14 +400,45 @@ class FileCollection:
 
     @staticmethod
     def _order(order_by: str | None) -> str | None:
-        """Only the three documented keys. Forwarding an arbitrary string to Drive's
-        `orderBy` just converts a typo into a 400 the caller cannot read."""
+        """Validate an ordering and return Drive's `orderBy` string.
+
+        Accepts an alias (`recency`, `lastModified`, `lastModifiedByMe`), a bare Drive key
+        (`createdTime`), or a key with a direction (`createdTime desc`, `name asc`).
+
+        Still VALIDATED rather than forwarded, for the reason the narrower version gave: an
+        unknown string reaches Google as a 400 whose body the caller never sees, so a typo
+        would surface as "Google rejected the request" with nothing to act on. Widening the
+        accepted set does not weaken that argument - it only stops the set being wrong.
+
+        `asc` is accepted and then OMITTED, because ascending is Drive's own default and
+        echoing it back is noise. It is accepted because a caller writing `name asc` is being
+        explicit, and refusing explicitness to save four characters is a bad trade.
+
+        ONE NAME COLLIDES, and the alias wins: `recency` is both a legacy alias meaning
+        `recency desc` AND a real Drive key, whose bare form Drive reads as ASCENDING. The
+        alias takes precedence deliberately - `recent(order_by="recency")` is a documented
+        default and `list_recent_files` publishes it, so letting the bare key win would
+        silently reverse every existing caller's results, which is the dangerous direction.
+        Write `recency asc` for the other meaning; that escape hatch is tested.
+        """
         if order_by is None:
             return None
-        try:
+        if order_by in ORDER_BY:
             return ORDER_BY[order_by]
-        except KeyError:
-            raise ValueError(f"order_by must be one of {sorted(ORDER_BY)}") from None
+        parts = order_by.split()
+        key = parts[0] if parts else ""
+        if key not in ORDER_KEYS or len(parts) > 2:
+            raise ValueError(
+                f"order_by must be a Drive key from {sorted(ORDER_KEYS)}, optionally followed "
+                f"by 'asc' or 'desc', or one of the aliases {sorted(ORDER_BY)}; got "
+                f"{order_by!r}")
+        if len(parts) == 1:
+            return key
+        direction = parts[1].lower()
+        if direction not in ("asc", "desc"):
+            raise ValueError(
+                f"direction must be 'asc' or 'desc', not {parts[1]!r} (in {order_by!r})")
+        return key if direction == "asc" else f"{key} desc"
 
     def _page(self, query: str, limit: int, order_by: str | None) -> list[FileRef]:
         """Walk pages until `limit` hits or Drive runs out. Drive caps a page at 100."""

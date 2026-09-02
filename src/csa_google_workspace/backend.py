@@ -534,6 +534,11 @@ class FakeBackend:
         return {}
 
 
+# The `User` sub-fields worth carrying. See `_SEARCH_FIELDS` for why this is not `owners`
+# whole: `photoLink` and `permissionId` are a third party's personal data that nothing reads.
+_USER_FIELDS = "displayName,emailAddress,me"
+
+
 class ApiBackend:
     """Real backend over google-api-python-client. `services` is a ServiceRegistry (Task 4)."""
 
@@ -546,7 +551,9 @@ class ApiBackend:
         # nothing in the system ever notices the policy stopped covering anything.
         return _errors.call(
             self._services.drive.files()
-            .get(fileId=file_id, fields="id,name,mimeType,webViewLink,size,trashed",
+            .get(fileId=file_id,
+                 fields="id,name,mimeType,webViewLink,size,trashed,createdTime,modifiedTime,"
+                        f"driveId,owners({_USER_FIELDS}),lastModifyingUser({_USER_FIELDS})",
                  supportsAllDrives=True).execute)
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
@@ -666,7 +673,14 @@ class ApiBackend:
 
     # Requested fields are explicit: the default response omits webViewLink, and asking for
     # everything makes a search of 100 files needlessly large.
-    _SEARCH_FIELDS = "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime)"
+    # Asked for in ONE call because Drive charges the same for all of them, and the
+    # alternative is a `files.get` per hit. `owners`/`lastModifyingUser` are sub-selected to
+    # the three fields the model needs rather than taken whole: the full `User` also carries
+    # `photoLink` and `permissionId`, which nothing here reads and which would be a third
+    # party's personal data travelling into a model's context for no reason.
+    _SEARCH_FIELDS = (
+        "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime, createdTime, "
+        f"driveId, owners({_USER_FIELDS}), lastModifyingUser({_USER_FIELDS}))")
 
     _NEW_FILE_FIELDS = "id, name, mimeType, webViewLink, parents"
 
