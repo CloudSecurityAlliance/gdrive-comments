@@ -33,6 +33,131 @@ when picked up, follows the plan-then-execute rhythm (spec/plan under
 `docs/superpowers/`, then TDD via `FakeBackend`). `CHANGELOG.md` is the shipped-work
 ledger; the phase plans in `docs/superpowers/plans/` are the per-phase detail.
 
+## The current plan — five waves, agreed 2026-09-01
+
+Twenty-nine issues were open after v0.39.0, and they are **not twenty-nine problems**. Roughly a
+third are one recurring defect, six orbit the threat model, five are small real bugs, and four are
+the only group that adds capability. This section is the order to work them in and, more usefully,
+*why that order* — the dependency arguments are the part that would be expensive to re-derive.
+
+Ordering principle: **what removes future work**, not what looks most alarming. Both audits of
+2026-09-01 found **0 exploitable** issues, so nothing here is a race.
+
+### Wave 1 — adopt the re-scored threat model · `0.39.1`
+
+Issues: **#310** (anchor), then #318, #331, #317, #328, most of #309.
+
+The register is **already written** — 251 lines, 43 threats, 25 entry points, frozen in
+`docs/security-audits/2026-09-01-defending-code-reference-harness-claude/THREAT_MODEL.md`. Adopting
+is review-and-promote, not authoring, which is what makes this cheap enough to go first.
+
+**Why first, and it is not severity.** #317 and #318 are guards *on* the threat model. Fix them
+before adopting the new register and you do them twice.
+
+It removes an actively false claim: **T20 reads `mitigated` on a control that no longer exists.**
+
+Two things found while checking, both of which must happen *before* the promotion:
+
+1. **#318 first.** `test_threat_model.py` bounds §4 by *column count*, not section membership, so it
+   parses a §0 row as a §4 threat. Promoting while that holds means the adoption is validated by a
+   parser that miscounts — and the count is the thing being changed.
+2. **#331 next.** The frozen register's header and every provenance cell credit audit
+   `2026-09-01-01`, but the record was renumbered `-02` when the two same-day audits collided.
+   Promote as-is and the living register inherits wrong attribution — and provenance is the entire
+   point of §0b.
+
+**The snapshot is already one day stale**, frozen at `d33034b`/v0.38.0 while we are at v0.39.0 with
+five of its findings fixed — T8 still says *"tool DESCRIPTIONS are not guarded"*, which #332 made
+false. So adoption is **not** a copy: it needs a new §0 recording what moved since the freeze. That
+is the judgement-heavy step and the one that cannot be mechanised; it is also exactly what §0 is
+for.
+
+Then: repoint the test's baseline, reset §0b, `SECURITY.md` 36 → 43 threats and 19 → 25 entry
+points, and #317 so those counts cannot drift again (`FROZEN_COUNTS = {"THREAT_MODEL.md"}` is dead
+code today because the file never enters the loop it would filter).
+
+**Why the immutability property survives:** the register being promoted was authored by an
+*independent audit*, not by us. Moving the baseline to a newer independent snapshot keeps
+"a status cannot quietly improve" intact; rewriting it ourselves would not.
+
+### Wave 2 — the recurring defect, as one campaign · `0.39.2`
+
+Issues: #319, #321, #322, #323, #324, #325.
+
+All one shape: **a hand-maintained list that fell behind what it guards.** Three instances were
+already fixed on 2026-09-01 (#308, #320, #332), and two audits found eight more in a single day.
+Fixing instances is losing.
+
+So this wave fixes the six *and* adds one meta-check that flags a hand-maintained collection which
+has fallen behind a derivable source. That converts a class into a solved problem; otherwise the
+next audit files six more of the same.
+
+The general technique, learned in #320 and worth reusing: **self-test the detector.** A guard whose
+input can legitimately be empty cannot be repaired by asserting the input is non-empty — that
+forces drift-prone content into prose. Run the detector against synthetic input instead.
+
+### Wave 3 — the five small real bugs · `0.40.0`, deliberately not a patch
+
+Issues: #313, #314, #315, #326, #327, plus #334 (lockfiles) and #348.
+
+- **#313** tab titles into a client cache this server cannot rotate or purge — defeats the
+  "operation, never content" rule honoured everywhere else.
+- **#314** a filesystem existence oracle that leaks *when the local-read switch is off*, i.e. inside
+  the switch whose stated purpose is removing local exposure.
+- **#327** `has_write_scope` is an allowlist of four known write scopes, so `drive.file` — a write
+  scope this project does not request — passes the read-only check. Invert to a subset test.
+- **#326** `openWorldHint` on a server whose entire read surface returns third-party content.
+- **#315** a default install is told nothing about capabilities, so the operator hears about the two
+  axes that were always open and not the one that changed in v0.31.0.
+
+**A minor, not a patch**, even though it is audit remediation: #326 adds annotations, #315 changes
+startup output, and #327 can newly *refuse* a token that previously passed. All caller-observable.
+Better to bump the minor than ship a behaviour change as a patch.
+
+### Wave 4 — the Google-side controls · `0.41.0`
+
+Issues: #336 (Sheets protected ranges), #337 (`copyRequiresWriterPermission`, `writersCanShare`),
+#338 (no drives API at all — shared-drive restrictions unreachable, `driveId` unreported).
+
+The honest follow-through on the CINO's own point (2026-09-01): *if you actually want to prevent
+destruction of data, you use Drive's controls and the sheet-level controls, which exist.* Right now
+this tool cannot set any of them. Capability gating is a ceiling below Drive's ACLs — these are the
+layer that actually prevents the edit.
+
+This is the first wave that adds capability rather than hardening, and the largest.
+
+### Wave 5 — adoption · `0.42.0`
+
+Issues: #339 (`copy_file` should carry the comments across — Drive v3 drops every one), #340
+(document why comments are harder than they look), #286 (one place to read the controls, and a
+guided setup).
+
+#340 is the trust problem, and it is not a docs nicety: people do not believe this works with
+comments **because they built their own tool, used the API, did not understand anchor text versus
+cell identity, and never thought to export as XLSX and read them a second time.** Writing that down
+is what makes the difference credible.
+
+### Parked
+
+- **#297** prompt-injection research — got a real down payment in #312 (control-sequence
+  neutralisation at the boundary). Revisit as research, not as a fix.
+- **#113** the differential benchmark of ~18 AI security-audit tools into a CSA report. A
+  publication project in a different mode from this backlog; do not let it queue behind polish.
+
+### Decided, so it does not get re-litigated
+
+- **#311 — reparenting is not a bug** (CINO, 2026-09-01). Inheriting the destination folder's
+  permissions is what Drive does, and a human writer can already do it through the UI. Splitting
+  parent mutation into its own capability would make this model **diverge** from Drive, which is the
+  one thing the mirroring design exists to avoid. The defect is the sentence: spec line 107's *"our
+  'move' is a rename"* is false and gets corrected, and `file.update`'s note should say reparenting
+  changes inherited access. No gate change. Lands with wave 1 or 3, whichever moves first.
+- **#330 — the 44-char Drive id in the fixtures is real** (CINO, 2026-09-01): an old Circle News
+  file. Not a credential, not document content, and access is still governed entirely by Drive's
+  ACLs. Closed, no action.
+- **`clear_cells` stays `content.write`**, not `content.delete` — an agent that cannot blank a cell
+  writes a junk value instead, which is worse for the sheet and harder to spot.
+
 ## Phase 2 — the built-in MCP server — ✅ SHIPPED (v0.2.0–v0.2.3, 2026-08-24/25)
 
 `csa_google_workspace.mcp` is on PyPI: a local stdio server, **32 tools as of v0.22.0** on MCP revision `2026-07-28`
