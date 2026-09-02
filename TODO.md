@@ -114,7 +114,38 @@ Issues: #313, #314, #315, #326, #327, plus #334 (lockfiles) and #348.
 startup output, and #327 can newly *refuse* a token that previously passed. All caller-observable.
 Better to bump the minor than ship a behaviour change as a patch.
 
-### Wave 4 — the Google-side controls · `0.41.0`
+### Wave 3.5 — the account axis: work-handoff inventory · `0.41.0`
+
+Spec: `docs/superpowers/specs/2026-09-02-work-handoff-inventory.md`. Tracking: #350.
+
+Added 2026-09-02 from a real need: somebody unavailable for a month, a question that cannot wait,
+and *"where is their work and what is in it?"* Enumerate every file a person edited or commented
+on over a year or two, into a dated Sheet a colleague can work through.
+
+**This reorders #338.** It was an enhancement; it is now a **correctness dependency** — an
+inventory that cannot say which shared drive a file lives in will silently mis-attribute or omit
+work, which is worse than not offering the feature.
+
+Prerequisites, all small and all previously filed as search polish:
+
+- **#338** — `driveId` unreported (blocking, see above)
+- `owners`, `createdTime`, `lastModifyingUser` in `_SEARCH_FIELDS` — five fields are requested
+  today, so an inventory would spend an extra call per file on facts Drive returns for free
+- `orderBy` beyond its three descending keys — `createdTime` is filterable but not sortable
+
+**Why this is not the caching decision reopening.** That decision was reasoned from the live
+multi-reviewer case, where staleness lands in exactly the sessions this tool is for. A handoff
+inventory is the inverse: the subject is not editing, so a frozen view is *correct* and should not
+drift while somebody works through it. The snapshot is a **deliverable** — a dated Sheet, the same
+shape `export_comments` already ships — and it is **never an access path**.
+
+**The seam that matters.** A separate read-only Google Admin Reports MCP server is under active
+development and will answer *what did they touch* authoritatively, domain-wide, without the sweeper
+needing access to each file first. So the inventory must accept **a list of file ids** as an input
+mode and not only a Drive query — that is how the two tools compose — and `driveactivity` is
+deliberately not wired in here.
+
+### Wave 4 — the Google-side controls · `0.42.0`
 
 Issues: #336 (Sheets protected ranges), #337 (`copyRequiresWriterPermission`, `writersCanShare`),
 #338 (no drives API at all — shared-drive restrictions unreachable, `driveId` unreported).
@@ -126,7 +157,7 @@ layer that actually prevents the edit.
 
 This is the first wave that adds capability rather than hardening, and the largest.
 
-### Wave 5 — adoption · `0.42.0`
+### Wave 5 — adoption · `0.43.0`
 
 Issues: #339 (`copy_file` should carry the comments across — Drive v3 drops every one), #340
 (document why comments are harder than they look), #286 (one place to read the controls, and a
