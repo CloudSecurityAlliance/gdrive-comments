@@ -2,6 +2,17 @@
 
 A **Python library** for managing **comments** and **content** on Google **Docs, Sheets, and Slides**, via the Google APIs. Comments are handled uniformly across all three file types (a single Drive API v3 concern); content read/write and Sheets comment→cell mapping are the variant, per-API parts.
 
+> **Which comment API this uses, and why.** Comments go through the **Drive API v3**, which is
+> GA and works on any Drive file. Since mid-2026 the Docs, Sheets and Slides APIs have their own
+> **native** comment surfaces in Google's **Developer Preview** — with anchoring the Drive API
+> cannot reproduce (a character range in Docs, a cell coordinate in Sheets) and a stable author
+> identity the Drive API does not populate. We deliberately **stay on Drive for now**: support for
+> the native APIs is planned **post-1.0, before they reach general availability, and behind a
+> flag** — most people are not enrolled in the preview, so it cannot be the default. Google has
+> not announced deprecation of the Drive comments API and it remains the only option for
+> non-editor files, so this is **coexistence, not migration**. Background and measurements:
+> [`research/comments-apis-2026-09.md`](./research/comments-apis-2026-09.md).
+
 It's designed to be **embedded**: a clean, typed Python surface for building AI tooling on top of Google Workspace — **MCP servers, agent/LLM plugins, review bots, and automation services** that need to read documents, triage and reply to comments, and write edits back. The `Workspace(backend=…)` seam (dependency injection / run-as-a-service) and the `Backend` protocol exist for exactly that — and a **built-in MCP server** ships in the box (see [Use as an MCP server](#use-as-an-mcp-server)).
 
 ## Status: beta — pre-1.0.0, and moving fast
@@ -1161,7 +1172,7 @@ This library is a building block for MCP servers / agents / automations acting *
 
 ## Three things worth knowing
 
-1. **Comments are a Google Drive API v3 concern — not the Sheets/Docs/Slides APIs** (those handle content). One comment API serves all three file types. (Sheets *notes* are separate and out of scope.)
+1. **Comments are a Google Drive API v3 concern — not the Sheets/Docs/Slides APIs** (those handle content). One comment API serves all three file types. (Sheets *notes* are separate and out of scope.) *(As of 2026-09 the editor APIs **do** have native comment surfaces, in Developer Preview — see [`research/comments-apis-2026-09.md`](./research/comments-apis-2026-09.md). This statement describes what this library uses, which is Drive, deliberately.)*
 2. **You cannot anchor a comment to a specific Sheets cell via the API.** Google treats API-created anchors as unanchored; the real anchor is a `workbook-range` with an opaque id. Mapping a comment back to a cell requires exporting the sheet as XLSX and parsing the comment XML — the central hard problem, which the library solves (best-effort) via `comment.location` / `sheet.comments_by_cell()`.
 3. **The space isn't greenfield, so the value is in the hard parts** — reliable read-side cell mapping and clean Docs/Sheets/Slides coverage — not merely "supporting comments." See [`server-landscape.md`](./research/server-landscape.md).
 

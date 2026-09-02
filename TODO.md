@@ -175,6 +175,83 @@ comments **because they built their own tool, used the API, did not understand a
 cell identity, and never thought to export as XLSX and read them a second time.** Writing that down
 is what makes the difference credible.
 
+### Native editor comment APIs — post-1.0, behind a flag · decided 2026-09-02
+
+Google's Docs, Sheets and Slides APIs each gained a **native** comment surface in Developer
+Preview during mid-2026. Measured against the live API on 2026-09-02: all three exist, each anchors
+in its own model (a character `range` in Docs, a `coordinate` in Sheets, an `objectId` in Slides),
+and **all of it is gated** on enrolment in the Developer Preview Program. Background, measurements
+and the corrections it forces: [`research/comments-apis-2026-09.md`](research/comments-apis-2026-09.md).
+
+**Decision (CINO, 2026-09-02): stay on the Drive API. It works.**
+
+- **post-1.0, possibly post-2.0.** No rush.
+- Add it **before general availability**, so GA is not a scramble.
+- **Behind a flag.** Most people are not enrolled in the preview, and a default most callers cannot
+  use is not a default.
+- **Coexistence, not migration.** Google has not announced deprecation of the Drive comments API,
+  and it is the only option for non-editor files.
+
+Two things worth knowing before anyone starts:
+
+**It supersedes two "impossible" facts.** `insertComment.coordinate` is true cell-anchored comment
+creation, and `sheets.commentAnchors` returns the comment→cell mapping *as a field* — which is the
+entire job of `_cellmap.py` (XLSX export, `defusedxml` parse, three-hop relationship walk).
+`acceptSuggestion`/`rejectSuggestion` also now exist. **Do not build a `PlaywrightBackend`**: those
+two capabilities were its only stated justifications.
+
+**The open question is identity, not capability.** Google publishes no interoperability guarantee
+between the two surfaces, so *do native and Drive comments share an id space?* If not, reading both
+and deduplicating falls back to content + author + timestamp heuristics — the kind of guess this
+project refuses elsewhere. Unanswerable without enrolment, and it decides the shape of the work.
+
+The `Backend` protocol is already the seam this slots into.
+
+### A comprehensive comments reference — the resource that does not exist
+
+**Goal: 20–50 pages, written primarily for an AI to read while implementing**, and readable by a
+human who needs to understand what they are dealing with. Lives in this repository.
+
+The premise is that **this programming resource does not exist anywhere**. Comments in Google
+Workspace are genuinely hard, the knowledge is scattered across release notes, half-true
+documentation, folklore in other people's source, and behaviour you can only discover by probing —
+and the cost of not having it is visible: people build comment tooling, use the obvious API, get
+anchoring wrong, and conclude it cannot be done. #340 is that problem stated from the user's side.
+
+What it has to cover, at minimum:
+
+- **The three annotation types and why they are not interchangeable** — comment (authored,
+  threaded, repliable, resolvable), **note** (Sheets; no author, no thread, cannot be replied to or
+  resolved), **suggestion** (Docs; accept/reject). A reply-and-resolve workflow has no destination
+  for a note, which is worth stating before somebody discovers it.
+- **The web editor's model**, because it is what users actually see and what every expectation is
+  set by: what anchoring does when you select nothing, when you select across paragraphs, when you
+  comment on an image or a table cell.
+- **The Drive API v3 comments surface** — what it gives, what it does not, and the three anchor
+  states with how to tell them apart.
+- **The native editor APIs** — per-editor anchoring, `PostAuthor.user` as a stable identity, and
+  the preview gate.
+- **The XLSX-export detour in full** — export, unzip, parse `threadedComments`, walk
+  `workbook.xml` → `_rels` → per-sheet rels to recover *which tab*. Why `r:id` is not sequential
+  (a real export numbers the first sheet `rId5`), why targets are relative, why a sheet with no
+  comments has no relationship at all. This is the single most expensive thing this project
+  learned and it is written nowhere else.
+- **The measured quirks** — `resolved` absent on a never-resolved comment; soft delete stripping
+  *both* content and author; resolve/reopen as an action-reply rather than a PATCH;
+  `author.email` usually absent; `mentionedEmailAddresses` present but only if you ask for it.
+- **Every "you would guess this and be wrong"** — API-written anchors stored verbatim and then
+  ignored; `kix.*` opaque in Docs; `workbook-range` opaque in Sheets; Google's own published anchor
+  example matching nothing the editors produce.
+- **Decision guidance**: given what you are trying to do, which surface and which detour.
+
+Source material already in the tree: `research/google-drive-comments-reference.md`,
+`research/comments-apis-2026-09.md`, `research/docs-suggestions-reference.md`,
+`experiments/anchor-probe/`, `experiments/docs-anchor-states/`, `experiments/sheets-cellmap/`,
+`experiments/comment-lifecycle/`, and `_cellmap.py`'s own docstring. The work is largely
+**consolidation plus the gaps that consolidating exposes** — and every claim in it should carry
+whether it was documented, measured, or inferred, because that distinction is exactly what is
+missing from everything else written on the subject.
+
 ### Parked
 
 - **#297** prompt-injection research — got a real down payment in #312 (control-sequence
