@@ -144,9 +144,20 @@ def test_content_write_live():
     ws = _ws()
     with _throwaway(ws, "application/vnd.google-apps.document", "E2E-DocWrite-THROWAWAY") as fid:
         d = ws.open(fid)
-        d.append_text("written by the library")
-        assert "written by the library" in ws.open(fid).as_text()
-        d.replace_text("written by the library", "edited by the library")
+        # A leading marker, so POSITION is checked and not merely presence. The old assertion
+        # was `"..." in as_text()`, which is true whether the text lands at the end or the
+        # start - and #391 landed it at the start on every call for as long as
+        # `includeTabsContent` has been set. A containment check cannot see position, which is
+        # why this suite was green against live Google while the bug was real.
+        d.append_text("\nHEAD-MARKER written by the library")
+        text = ws.open(fid).as_text()
+        assert "HEAD-MARKER written by the library" in text
+        assert not text.lstrip().startswith("HEAD-MARKER"), (
+            "append_text wrote to the START of the document (#391)")
+        assert text.rstrip().endswith("HEAD-MARKER written by the library"), (
+            "appended text must be at the end")
+        d.replace_text("HEAD-MARKER written by the library",
+                       "edited by the library")
         assert "edited by the library" in ws.open(fid).as_text()
     with _throwaway(ws, "application/vnd.google-apps.spreadsheet", "E2E-SheetWrite-THROWAWAY") as sid:
         s = ws.open(sid)

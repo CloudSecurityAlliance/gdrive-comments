@@ -10,6 +10,56 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.45.0 (`append_text` was writing to the START of every Google Doc) — not released *(yet — flipped once PyPI confirms)*
+
+Two defects on one seam — **#391** found while investigating **#390** — and the cause of both is a
+single thing: **a response shape that only one function understood.**
+
+### `append_text` appended to the top. Every document, every call.
+
+Measured against live Google:
+
+```
+before: 'FIRST LINE.\nSECOND LINE.\n\n'
+after : '\n>>> APPENDED <<<FIRST LINE.\nSECOND LINE.\n\n'
+```
+
+`ApiBackend.get_document` passes `includeTabsContent=True`, which moves the content into
+`tabs[].documentTab.body` and leaves the top-level `body` **empty — even for a single-tab
+document**. `append_text` read `document["body"]["content"]` itself, got `[]`, fell through a
+default of index 1, and wrote to the beginning. A model asked to *"add a summary at the end"* put
+it at the top.
+
+The backend comment two lines from the flag **predicted this exact defect** — *"adding the flag
+while any consumer still read `body` would turn a silent truncation into a silent blank"* — and the
+fix was applied to `_content.doc_tab_bodies` and not here.
+
+**Why nothing caught it.** `FakeBackend` fixtures use the legacy `{"body": {...}}` shape, so every
+unit test exercised a shape the real API stopped returning. And the live suite asserted
+`"written by the library" in as_text()`, which is true whether the text lands at the end or the
+start — **a containment check cannot see position**. That test now asserts position.
+
+`_content.doc_tab_end_indices` now owns the shape knowledge, and it distinguishes *"this tab is
+empty"* (index 1, honest) from *"I could not find a body"* (refuse) — because the old default was
+wrong precisely for looking reasonable.
+
+### `insert_text` can name a tab (#390)
+
+`delete_range` has always taken a `tabId`; `insert_text` did not. With no `replace_range`, a
+replace is delete-then-insert — so a caller who correctly named the tab deleted from tab 3 and
+inserted into tab 1, with **no error from either call**.
+
+The docstring claimed this was *"a real limitation of index-addressed Docs requests, not a
+choice"*. **That was false**, measured by sending a bogus tab id and getting *"Cannot apply request
+to an invalid tab ID"* — parsed and validated. `insertText.location` takes a `tabId` exactly as
+`Range` does. Both `insert_text` and `append_text` now accept one, on the library and the MCP tool.
+
+### One deliberate behaviour change
+
+**`append_text` on a multi-tab document is now REFUSED without a `tab_id`**, rather than resolved
+to the first tab: *"the end of the document"* has no meaning when there are several ends. Nothing
+depended on the old behaviour, because the old behaviour was to write to the beginning.
+
 ## 2026-09-03 — v0.44.0 ("we looked and could not find it")
 
 Remedy 2 from #380, and the reasoning is the operator's: *"otherwise, is it missing, did the

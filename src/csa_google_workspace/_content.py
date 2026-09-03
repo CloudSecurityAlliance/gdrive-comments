@@ -62,6 +62,56 @@ def doc_tab_bodies(document: dict) -> list[tuple[str | None, list]]:
     return out
 
 
+def doc_tab_end_indices(document: dict) -> list[tuple[str | None, int]]:
+    """`[(tab_id, end_index), …]` per tab — where text would go to be APPENDED.
+
+    Lives beside `doc_tab_bodies` because it needs the identical two-shape knowledge, and
+    #391 is what happens when that knowledge is duplicated instead: `Doc.append_text` read
+    `document["body"]["content"]` directly, which `includeTabsContent=True` leaves **EMPTY**,
+    so it fell through to a default of index 1 and appended to the **START of every Google
+    Doc**. Silently, on every call, for as long as the flag has been set.
+
+    `end_index` is the body's own `endIndex` — one PAST the final newline — so a caller
+    appending inside the document inserts at `end_index - 1`. Returned raw rather than
+    pre-decremented, because a caller wanting the end for some other purpose should not have
+    to un-apply an offset it did not ask for.
+
+    **Returns `[]` when the shape yields no body at all**, which is the distinction that makes
+    the fix a fix. A tab whose content is genuinely empty comes back with an index; a response
+    this function cannot read comes back empty, so the caller can tell "the document is empty"
+    from "I could not find the document", and refuse rather than invent a plausible position.
+    That is the whole lesson of #391 — the old default was wrong precisely because it looked
+    reasonable.
+
+    `tab_id` is `None` in the legacy branch: that shape carries no tab id, and inventing
+    `"t.0"` would be a guess that later gets sent to the API as fact.
+    """
+    def end_of(content: list) -> int:
+        # An empty body still starts at index 1, so 1 is the honest answer for a genuinely
+        # empty tab - as against the old `else 2`, which was reached when the body could not
+        # be FOUND and is a different situation entirely.
+        return content[-1].get("endIndex", 1) if content else 1
+
+    tabs = document.get("tabs")
+    if not tabs:
+        if "body" not in document:
+            return []
+        return [(None, end_of(document.get("body", {}).get("content", [])))]
+
+    out: list[tuple[str | None, int]] = []
+
+    def walk(tab: dict) -> None:
+        props = tab.get("tabProperties") or {}
+        body = (tab.get("documentTab") or {}).get("body") or {}
+        out.append((props.get("tabId"), end_of(body.get("content", []))))
+        for child in tab.get("childTabs") or []:
+            walk(child)
+
+    for tab in tabs:
+        walk(tab)
+    return out
+
+
 def doc_text(document: dict) -> str:
     """Every tab's text, headed by tab name when there is more than one.
 

@@ -78,17 +78,22 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
 
     @app.tool(annotations=WRITE)
     @_errors
-    def append_text(fileId: str, text: str) -> EditOut:
-        """Add text to the end of a Google Doc's body.
+    def append_text(fileId: str, text: str, tabId: str | None = None) -> EditOut:
+        """Add text to the END of a Google Doc — or of one tab.
 
         Documents only. Include your own leading newline if you want a new paragraph — the
         text is inserted exactly as given.
 
+        `tabId` says which tab to append to. **On a document with more than one tab this is
+        REQUIRED and the call is refused without it**, because "the end of the document" has
+        no meaning when there are several ends. `list_document_tabs` lists them.
+
         Requires `content.write` and the file in the modify allowlist."""
         doc = get_workspace().open(fileId)
-        _require(doc, "append_text", "appending text")(text)
+        _require(doc, "append_text", "appending text")(text, tabId)
+        where = f" to tab {tabId}" if tabId else ""
         return {"file_id": doc.id, "type": doc.type, "occurrences_changed": None,
-                "detail": f"appended {len(text)} character(s)"}
+                "detail": f"appended {len(text)} character(s){where}"}
 
     @app.tool(annotations=WRITE)
     @_errors
@@ -330,7 +335,7 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
 
     @app.tool(annotations=WRITE)
     @_errors
-    def insert_text(fileId: str, text: str, index: int) -> EditOut:
+    def insert_text(fileId: str, text: str, index: int, tabId: str | None = None) -> EditOut:
         """Insert text into a GOOGLE DOC at a character index.
 
         Distinct from `append_text`, which always goes to the end, and from `replace_text`, which
@@ -340,15 +345,21 @@ def register_content_write_tools(app: MCPServer, get_workspace: WorkspaceProvide
         `list_suggestions`, or read the document and count — and note that index 1 is the start
         of the body, since 0 is the document itself.
 
-        In a MULTI-TAB document this applies to the FIRST tab. That is a real limitation of
-        index-addressed Docs requests, not a choice; `list_document_tabs` tells you whether the
-        document has more than one.
+        `tabId` says which tab the index is in. WITHOUT IT THE FIRST TAB IS USED, which on a
+        multi-tab document is a silent wrong answer — `list_document_tabs` tells you whether
+        the document has more than one.
+
+        **PASS IT WHEN COMPOSING A REPLACE.** There is no `replace_range`, so replacing a span
+        means `delete_range` then `insert_text` at the same index — and `delete_range` takes a
+        `tabId` too. Name the tab in both or the text is removed from one tab and inserted into
+        another, with no error from either call.
 
         Requires `content.write`."""
         doc = get_workspace().open(fileId)
-        _require(doc, "insert_text", "text insertion")(text, index)
+        _require(doc, "insert_text", "text insertion")(text, index, tabId)
+        where = f" in tab {tabId}" if tabId else ""
         return {"file_id": fileId, "type": doc.type, "occurrences_changed": 1,
-                "detail": f"inserted {len(text)} character(s) at index {index}"}
+                "detail": f"inserted {len(text)} character(s) at index {index}{where}"}
 
     @app.tool(annotations=DESTRUCTIVE)
     @_errors
