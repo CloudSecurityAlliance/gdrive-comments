@@ -9,7 +9,7 @@ surface lives.
 shaped, and the division of responsibility between the library and the embedder. It is prose,
 it is aimed at somebody deciding whether and how to embed this, and it changes rarely.
 
-[**`THREAT_MODEL.md`**](THREAT_MODEL.md) is the **register**: 43 enumerated threats across 25
+[**`THREAT_MODEL.md`**](THREAT_MODEL.md) is the **register**: 44 enumerated threats across 25
 entry points, each with an actor, a surface, an impact × likelihood rating, a current status and
 the evidence behind it, plus the deprioritised threats and why. It changes as the code does.
 

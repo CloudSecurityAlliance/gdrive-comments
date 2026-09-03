@@ -278,3 +278,49 @@ class TestItIsReachableFromWhereSomebodyWouldLook:
     def test_the_audit_index_no_longer_says_once_adopted(self):
         text = (ROOT / "docs/security-audits/README.md").read_text(encoding="utf-8")
         assert "once\nadopted" not in text and "once adopted" not in text
+
+
+class TestTheCountClaimsAgreeWithTheRegister:
+    """Every document that states *how many* threats there are agrees with §4.
+
+    **This guard exists because the claim was wrong by seven and nothing noticed.** `CLAUDE.md`
+    said *"36 enumerated threats"* from the adoption of the re-scored 43-threat register on
+    2026-09-02 until 2026-09-03, while `SECURITY.md` next to it said 43 — two files, one number,
+    disagreeing, and both advisory. `check_doc_claims.py` deliberately exempts `THREAT_MODEL.md`
+    from its count checks (a number inside a threat's text is a quotation of what the audit
+    wrote), and that exemption is why the count of the threats themselves went unchecked.
+
+    A stale count is not cosmetic here. It is the number a reader uses to decide whether the
+    register they are looking at is the current one, and CLAUDE.md is the file an agent reads
+    first — so it is the claim most likely to be believed without checking.
+    """
+
+    DOCS = ("CLAUDE.md", "SECURITY.md")
+    CLAIM = re.compile(r"(\d+) enumerated threats")
+
+    def test_the_register_is_the_size_we_think(self, living):
+        """Vacuity guard: a parser matching nothing would make the comparison below trivial."""
+        assert len(living) == 44, f"§4 holds {len(living)} threats"
+
+    @pytest.mark.parametrize("name", DOCS)
+    def test_the_claim_is_present_at_all(self, name):
+        """A count that quietly disappears would pass the agreement test below by absence."""
+        assert self.CLAIM.search((ROOT / name).read_text(encoding="utf-8")), (
+            f"{name} no longer states a threat count; this guard cannot check what is not said")
+
+    @pytest.mark.parametrize("name", DOCS)
+    def test_the_claim_matches_the_register(self, living, name):
+        claimed = {int(m.group(1))
+                   for m in self.CLAIM.finditer((ROOT / name).read_text(encoding="utf-8"))}
+        assert claimed == {len(living)}, (
+            f"{name} claims {sorted(claimed)} enumerated threats; §4 holds {len(living)}. "
+            f"This is the number a reader uses to tell whether the register is current.")
+
+    def test_the_snapshot_count_is_NOT_expected_to_match(self, living, snapshot):
+        """Stated as its own test so nobody 'fixes' the guard by pointing it at the snapshot.
+
+        The living model is SUPPOSED to exceed the baseline — that is what §0b is for. The two
+        agreeing would mean either no threat has been added since the audit, or one was added
+        without a provenance entry, and only the second is a problem.
+        """
+        assert len(living) == len(snapshot) + len(added_ids())
