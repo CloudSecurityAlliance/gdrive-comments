@@ -63,6 +63,18 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         of what the reviewer selected. It is `None` for a comment left on the file rather than
         on a passage ("looks good to me"), which is a different thing from an empty one.
 
+        `anchored` SAYS WHICH KIND OF `None` THAT IS, and the difference changes what you should
+        do:
+          anchored=false, quoted_text=null  the comment is about the WHOLE FILE. There is no
+                                            passage to look at, and "is this still current?" is
+                                            not a question that applies to it.
+          anchored=true,  quoted_text=null  it IS attached to a specific place, but to something
+                                            that is not text - an image, a drawing, a cell.
+                                            There is a location; there is just nothing to quote.
+          anchored=true,  quoted_text=set   the ordinary case.
+        Do not report the second as a file-level comment: it is the one where a reader most
+        needs to go and look, because the tool cannot show them what it points at.
+
         TO BUILD A COMMENT REGISTER - "put the open comments in a spreadsheet so we can work
         through them" - no other tool is needed: the columns are all here (`id`, `author`,
         `quoted_text`, `content`, `resolved`, `created_time`, and `replies` nested so a thread
@@ -145,6 +157,15 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         to tell which tab a comment is on. Instead `cell_text_by_tab` shows what that cell holds
         on EVERY tab - and the content almost always makes it obvious which tab was meant. Read
         `caveats` and pass that on; do not present a guess as the answer.
+
+        `row_header` and `column_header` are what makes a cell comment interpretable - "B11,
+        which reads 388000, in the row labelled Southwest, column Q3 actual". They are read from
+        column A and row 1, WHICH IS A GUESS, and `caveats` says so: a title block above the
+        table or a transposed layout will label a cell wrongly. Check them against `cell_text`
+        before quoting them as the meaning of a cell.
+
+        `anchored` distinguishes a file-level comment (false) from one attached to something
+        with no text to quote, such as an image or a cell (true, with `quoted_text` empty).
 
         `destination` decides WHERE IT GOES, and the last two are the ones that save somebody
         an afternoon:

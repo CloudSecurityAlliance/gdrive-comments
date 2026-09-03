@@ -125,6 +125,33 @@ class Comment:
     _file_id: str = field(default=cast(str, None), repr=False, compare=False)
     _read_only: bool = field(default=False, repr=False, compare=False)
 
+    @property
+    def anchored(self) -> bool:
+        """Whether Drive attached this comment to a REGION of the file, rather than the file.
+
+        This is the discriminator `quoted_text` cannot provide, and the reason it matters is
+        that three different situations arrive as a falsy `quoted_text` (#361):
+
+        | | `anchored` | `quoted_text` |
+        |---|---|---|
+        | file-level - about the document, not a passage | `False` | `None` |
+        | anchored to a NON-TEXT object, e.g. an image    | **`True`** | `None` |
+        | anchored to text                                | `True`  | the text |
+
+        All three MEASURED against live Docs, 2026-09-02
+        (`experiments/docs-anchor-states/RESULTS.md`). Two findings from that run are worth
+        knowing before using this:
+
+        **There is no "anchored but nothing selected" state for text.** The editor expands a
+        bare caret to its enclosing word, and refuses to comment on an empty paragraph at all.
+        So an anchored comment with no quoted text is anchored to something that is not text.
+
+        **The anchor itself is opaque** - `kix.…` in Docs, `workbook-range` in Sheets - so it
+        is a key, not a coordinate, and deliberately not exposed. `anchored` is the part of it
+        that carries information.
+        """
+        return self.anchor is not None
+
     @classmethod
     def from_api(cls, d: dict) -> Comment:
         quoted = (d.get("quotedFileContent") or {}).get("value")
