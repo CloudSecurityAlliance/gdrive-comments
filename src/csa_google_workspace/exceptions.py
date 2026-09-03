@@ -54,7 +54,32 @@ class RateLimitError(CsaWorkspaceError):
 
 
 class UnsupportedOperation(CsaWorkspaceError):
-    """The operation is impossible on this backend (e.g. accept a suggestion via the API)."""
+    """The operation cannot be performed — and the message MUST say **whose limit it is**.
+
+    **The governing principle (CINO, 2026-09-03): capability is never the constraint, policy
+    is.** *"The MCP server cannot do that"* must never be a technical answer. The answer should
+    always be shaped like *"that is risky, so it is gated off and disabled by default — and if
+    you want it on, it can be on."* Whether to let an AI do something is a **business and risk
+    decision**, and a missing implementation quietly makes that decision on somebody's behalf.
+
+    Which means there are exactly **two** legitimate reasons to raise this, and a message that
+    does not say which one it is has answered the wrong question:
+
+    * **UPSTREAM** — Google will not do it, or not yet. Legitimate, and it must cite the
+      MEASUREMENT and say what would unlock it (enrolment, a scope, a GA date). This is the
+      shape that stops a false *"impossible"* outliving the fact: the accept/reject-suggestion
+      message claimed a `PlaywrightBackend` was *required* for months after
+      `acceptSuggestion` was measured to exist in Developer Preview.
+    * **NOT ENABLED** — the operator has switched it off. Recoverable by configuration, and the
+      message must say which setting, so the reply can be *"we gated that"* rather than
+      *"that is unsupported"*.
+
+    A third use is a **bug** rather than a refusal — an undeclared gate, a file-scoped method
+    called without a file id — and those say "This is a bug" in the message on purpose.
+
+    `tests/test_refusals_name_their_kind.py` asserts the property, because a message is the
+    only place this distinction lives and prose rots.
+    """
 
 
 class DetachedError(CsaWorkspaceError):

@@ -79,6 +79,43 @@ Earlier drafts called this a *TypeScript* MCP server and *comments-only* — bot
   - `mcp/_logging.py` — a level, and nothing else. **Measured 2026-08-28:** a stdio server writing to stderr already has structured per-session logs on disk, written by the *client* (Claude Code keeps JSONL per connection, Desktop keeps its own), so a logging subsystem here would duplicate a better one — the parent capturing the child survives the server failing to start. States the rule the rest of the tree has to honour: **raising the verbosity raises detail about the OPERATION, never about the CONTENT** (T39).
 - `exceptions.py` — typed error hierarchy.
 
+## The governing principle: capability is never the constraint, policy is
+
+**Adopted 2026-09-03 (CINO), and it decides arguments the other rules do not reach.**
+
+*"The MCP server cannot do that"* must never be a technical answer. The answer should be shaped
+like **"that is extremely risky, so we gated it off and disabled it by default — and if you
+absolutely want those administrative functions on, we can turn them on."**
+
+The reason is not completeness for its own sake. This project exists to let AI do more of the
+work, and **whether to let an AI do a given thing is a business and risk decision.** A missing
+implementation makes that decision silently, on somebody else's behalf, and disguises it as a
+technical fact — so the operator never gets to weigh it.
+
+Three consequences that bind day-to-day work:
+
+1. **A refusal must say WHOSE limit it is.** `UnsupportedOperation` has exactly two legitimate
+   forms — **UPSTREAM** (Google will not, or not yet; cite the dated measurement and say what
+   would unlock it) and **NOT ENABLED** (the operator switched it off; name the setting). A third
+   form says *"This is a bug"*, because that is what an undeclared gate is.
+   `tests/test_refusals_name_their_kind.py` enforces it. This is not hypothetical: the
+   accept/reject-suggestion message claimed a `PlaywrightBackend` was **required** for two months
+   after `acceptSuggestion` was measured to exist in Developer Preview.
+2. **"Impossible by construction" is a design smell now, not a virtue** — where it is *our*
+   construction. It was the right call for `labels.py` and `restrictions.py` when the alternative
+   was an ungated write; it is the wrong call once a gate exists. The exception is scope: see
+   below.
+3. **A new scope is a bigger decision than a new capability, and the gate does not substitute
+   for it.** A capability gate binds this library's own calls and does **nothing** for a stolen
+   token. So where coverage needs a scope we do not request (`drive.labels` write,
+   `drive.activity.readonly`), *"off by default"* is not equivalent to *"not requested"* — the
+   token in the cache is the asset, and the gate lives in the process an attacker bypasses. The
+   answer there is **incremental authorization**: acquire the scope when the operator enables the
+   capability, so a default install stays narrow and *"we can enable that"* is still true.
+
+Programme and the three off-by-default capabilities it proposes:
+[`docs/superpowers/specs/2026-09-03-full-api-coverage-and-admin-capabilities.md`](docs/superpowers/specs/2026-09-03-full-api-coverage-and-admin-capabilities.md).
+
 ## Critical architectural facts
 
 1. **Comments are a Google Drive API v3 concern**, uniform across Docs/Sheets/Slides — one API for all three (the "uniform axis"). Content is the "variant axis" (three separate APIs: Docs v1, Sheets v4, Slides v1). Sheets *notes* are a different, out-of-scope thing. *(Since mid-2026 the editor APIs have their own **native** comment surfaces in Developer Preview; we deliberately stay on Drive — decision and measurements in `research/comments-apis-2026-09.md`.)*
