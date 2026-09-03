@@ -263,6 +263,48 @@ Source material already in the tree: `research/google-drive-comments-reference.m
 whether it was documented, measured, or inferred, because that distinction is exactly what is
 missing from everything else written on the subject.
 
+### The measurement gaps — what we do not know about comments, ranked
+
+From [`research/comments-knowledge-map.md`](research/comments-knowledge-map.md) (2026-09-03), which
+is the coverage map: every claim marked MEASURED / DOCUMENTED / INFERRED / UNKNOWN / UNTESTABLE.
+These are its UNKNOWNs, in the order worth closing them. **Read the map before picking one up** —
+it says what is already established, and roughly two thirds of the surface is.
+
+**1. Assigned comments are invisible (#398).** `mentionedEmailAddresses` and
+`assigneeEmailAddress` are real fields — a mask accepts them, an invented name is refused — and
+**`fields=*` omits them**, which is its own gotcha. Our mask omits them too, zero occurrences in
+`src/`. So *"which comments are assigned to me"*, the question a reviewer actually asks, cannot be
+answered, and an action item reads as an ordinary comment. **The only gap here that is functional
+rather than documentary**, which is why it is first. Decide the `__repr__` redaction at the same
+time (invariant 2): these are real people's email addresses.
+
+**2. Notification behaviour is completely unknown (#399).** Does a Drive-API comment email
+anybody? **Both answers are operationally serious.** If it notifies, an AI review pass could
+notify a whole team without intending to. If it does not, humans may never learn the comments
+exist — which compounds two measured findings: API-created comments render as *"Original content
+deleted"* and are **filtered out of the editor's default view** (#379). Needs a second Google
+account, which is the cheapest unlock in the whole list.
+
+**3. Slides comments have never been probed at all (#400).** We support them through the uniform
+Drive axis and have never looked at what an anchor on a shape, a slide or speaker notes actually
+contains. Everything we say about Slides comments is inference from the Docs and Sheets
+measurements — which is exactly the reasoning that produced the three-anchor-state table that
+turned out to have four members.
+
+**4. The editor states nobody has placed.** Cross-paragraph selection, a comment in a table cell,
+a resolved thread, an @mention, an assignment. Each needs a human in a browser — cheap, just not
+scriptable, and the reason the zoo (#388) and the reference (#340) should be built together.
+
+**5. Scale is unmeasured.** Everything here is measured on tens of comments; a consumer has run 90
+threads. Pagination, rate limits, and what the XLSX-export detour costs at hundreds of comments
+are all unknown.
+
+**What is UNTESTABLE rather than untested**, and should not be planned around: every behavioural
+question about the native comment APIs, including whether native and Drive comments share an
+identity — the question that gates the dedup design. That needs Developer Preview enrolment. The
+reference should ship that chapter **explicitly incomplete and marked UNTESTABLE** rather than
+filled in from Google's documentation, which is the failure mode the map exists to prevent.
+
 ### A PUBLIC "zoo" of Drive files — the official reference corpus
 
 **Goal: a public, link-shareable Google Drive folder holding one file per state this project has
