@@ -167,6 +167,11 @@ def per_type(kind: str) -> list[Step]:
         ]
     elif kind == "spreadsheet":
         steps += [
+            Step("list_notes", lambda s: {"fileId": s["spreadsheet_id"]},
+                 "List the cell NOTES on the Sheet",
+                 "Notes are NOT comments - no author, no thread, and they cannot be replied to "
+                 "or resolved. `list_comments` does not show them, so a survey that asks only "
+                 "for comments reports a sheet covered in notes as having none.", group=kind),
             Step("update_cells", lambda s: {"fileId": s["spreadsheet_id"], "a1Range": "A1:B2",
                                             "values": [["Item", "Count"], ["Widgets", "7"]]},
                  "Write cells into the Sheet",

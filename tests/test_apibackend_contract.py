@@ -159,6 +159,31 @@ def test_search_files_sends_the_query_and_shared_drive_flags():
     assert "nextPageToken" in files.calls["fields"]
 
 
+def test_get_sheet_notes_asks_for_notes_and_NOT_for_cell_values():
+    """The field mask is the whole reason this is a separate call, and it lives only in
+    `ApiBackend` — `FakeBackend` returns a fixture and cannot cover it.
+
+    `rowData(values(note))` fetches note text and **no cell values**, so counting notes on a
+    large sheet costs one small request. Asking for `rowData(values)` whole would pull the
+    entire grid, which is why `get_spreadsheet` was not simply widened: every `list_tabs` would
+    then pay for notes it never reads.
+    """
+    class _Sheets:
+        def __init__(self): self.calls = {}
+        def spreadsheets(self): return self
+        def get(self, **kw): self.calls = kw; return self
+        def execute(self): return {"sheets": []}
+    class _Services:
+        def __init__(self, s): self.sheets = s
+
+    sheets = _Sheets()
+    ApiBackend(_Services(sheets)).get_sheet_notes("f1")
+    fields = sheets.calls["fields"]
+    assert "rowData(values(note))" in fields.replace(" ", "")
+    assert "formattedValue" not in fields and "effectiveValue" not in fields, (
+        "the mask must not pull cell values - that is what makes counting notes cheap")
+
+
 def test_search_asks_drive_for_the_facts_an_inventory_needs():
     """The field list lives only in `ApiBackend`, so `FakeBackend` cannot cover it — it just
     hands back whatever a fixture put in the dict. That is precisely the fake/real blind spot

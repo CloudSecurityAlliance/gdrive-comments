@@ -403,6 +403,7 @@ _GATES: dict[str, Gate] = {
     "download_file": READS_FILE,
     "get_document": READS_FILE,
     "get_spreadsheet": READS_FILE,
+    "get_sheet_notes": READS_FILE,
     "get_values": READS_FILE,
     "get_presentation": READS_FILE,
     # creation: nothing existing to damage, so not file-scoped. `copy_file` is the exception —
