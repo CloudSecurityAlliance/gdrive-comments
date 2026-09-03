@@ -37,7 +37,10 @@ from typing import Any
 # could not be walked - those are three different reasons and none of them is "the first tab".
 REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
             "quoted_text", "anchored", "tab", "cell", "cell_text", "cell_text_by_tab",
-            "row_header", "column_header")
+            "row_header", "column_header",
+            # Off unless asked for, and dropped from the header by `used_columns` when empty —
+            # a register with five blank columns is harder to read than one without them.
+            "context", "context_kind", "context_note", "paragraph", "heading_path")
 
 # What somebody FILLS IN, and what the importer ticks. Always empty on export - they are the
 # point of the register being a worksheet rather than a printout.
@@ -87,6 +90,23 @@ def _cell_lookup(document: Any) -> tuple[dict[str, list[list[Any]]], list[str]]:
         except Exception:                       # noqa: BLE001 - a tab we cannot read is not
             grids[tab] = []                     # a reason to fail the whole export
     return grids, tabs
+
+
+def _context_cells(contexts: list | None, i: int) -> dict[str, Any]:
+    """The context columns for row `i`, or empty ones.
+
+    Flattened to text because a register is a spreadsheet: `heading_path` joins with ` > ` and
+    `paragraph` reads "6 of 9", which is what a person scanning a column wants. The structured
+    form stays on the MCP surface, where a consumer can branch on it.
+    """
+    ctx = contexts[i] if contexts and i < len(contexts) else None
+    if ctx is None:
+        return {}
+    return {"context": flatten(ctx.text), "context_kind": ctx.kind,
+            "context_note": ctx.note,
+            "paragraph": (f"{ctx.paragraph_index} of {ctx.paragraph_total}"
+                          if ctx.paragraph_index else ""),
+            "heading_path": " > ".join(ctx.heading_path)}
 
 
 def _note_count(document: Any) -> int:
@@ -142,7 +162,8 @@ def _at(grid: list[list[Any]], row: int, col: int) -> str:
     return "" if col > len(line) else str(line[col - 1])
 
 
-def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], list[str]]:
+def comment_rows(document: Any, comments: list,
+                 contexts: list | None = None) -> tuple[list[str], list[dict], list[str]]:
     """(columns, rows, caveats)."""
     grids, tabs = _cell_lookup(document)
     caveats: list[str] = []
@@ -150,7 +171,7 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
     rows: list[dict] = []
     anchored = 0                # comments that name a cell
     unplaced = 0                # ...of which, the ones whose tab could not be resolved
-    for comment in comments:
+    for i, comment in enumerate(comments):
         location = getattr(comment, "location", None)
         cell = getattr(location, "cell", None) if location else None
         tab = getattr(location, "tab", None) if location else None
@@ -186,7 +207,8 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
                          # state, and this one is genuinely known for every comment.
                          anchored="TRUE" if getattr(comment, "anchored", False) else "FALSE",
                          cell=cell, cell_text=cell_text, cell_text_by_tab=by_tab,
-                         row_header=row_header, column_header=column_header))
+                         row_header=row_header, column_header=column_header,
+                         **_context_cells(contexts, i)))
         for reply in (comment.replies or []):
             reply_author = (getattr(reply.author, "display_name", None)
                             if getattr(reply, "author", None) else None)
