@@ -181,6 +181,20 @@ class InventoryOut(TypedDict):
     detail: str
 
 
+class NoteOut(TypedDict):
+    """A Sheets cell note. NOT a comment: no author, no thread, and it cannot be replied to or
+    resolved — so nothing in a reply-and-resolve workflow applies to it."""
+    tab: str
+    cell: str
+    text: str
+
+
+class NotesOut(TypedDict):
+    notes: list[NoteOut]
+    count: int
+    detail: str
+
+
 class TabOut(TypedDict):
     """A spreadsheet tab. `hidden` is the one that matters — a hidden tab still exists, still
     holds data, and still occupies its name."""
@@ -562,6 +576,14 @@ def inventory_out(inv: Any, *, destination: str) -> InventoryOut:
             "reached": inv.reached, "row_count": len(inv.rows), "destination": destination,
             "csv": None, "sheet_id": None, "sheet_url": None, "written_path": None,
             "detail": ""}
+
+
+def notes_out(notes: list) -> NotesOut:
+    return {"notes": [{"tab": n.tab, "cell": n.cell, "text": n.text} for n in notes],
+            "count": len(notes),
+            "detail": (f"{len(notes)} cell note(s). Notes are NOT comments - they have no "
+                       f"author, no thread, and cannot be replied to or resolved."
+                       if notes else "No cell notes on this spreadsheet.")}
 
 
 def tabs_out(details: list) -> TabsOut:

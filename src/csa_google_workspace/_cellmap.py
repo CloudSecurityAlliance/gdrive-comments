@@ -54,6 +54,20 @@ def location_from_ref(ref: str, tab: str | None = None) -> Location:
     return Location(cell=ref, row=row, col=col, tab=tab)
 
 
+def column_letters(col: int) -> str:
+    """Column number -> A1 letters. The inverse of the loop in `location_from_ref`.
+
+    Base-26 **bijective**, not plain base-26: there is no zero digit, so 26 is `Z` and 27 is
+    `AA`. Writing it as ordinary base-26 gives `A@` for 26 and is the classic way to get this
+    wrong — hence `divmod(col - 1, 26)` rather than `divmod(col, 26)`.
+    """
+    out = ""
+    while col > 0:
+        col, rem = divmod(col - 1, 26)
+        out = chr(ord("A") + rem) + out
+    return out
+
+
 def _resolve(base_dir: str, target: str) -> str:
     """An OPC relationship Target resolved to a zip member path.
 

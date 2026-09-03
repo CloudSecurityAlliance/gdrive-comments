@@ -66,6 +66,7 @@ class Backend(Protocol):
                   parent_id: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
     def get_spreadsheet(self, file_id: str) -> JsonDict: ...
+    def get_sheet_notes(self, file_id: str) -> JsonDict: ...
     def get_values(self, file_id: str, a1_range: str) -> list[list[Any]]: ...
     def get_presentation(self, file_id: str) -> JsonDict: ...
     def docs_batch_update(self, file_id: str, requests: list[JsonDict]) -> JsonDict: ...
@@ -475,6 +476,11 @@ class FakeBackend:
         return self._fixture(self._documents, file_id, "document")
 
     def get_spreadsheet(self, file_id):
+        return self._fixture(self._spreadsheets, file_id, "spreadsheet")
+
+    def get_sheet_notes(self, file_id):
+        # Same fixture as `get_spreadsheet`: a note lives inside the sheet resource, so a
+        # separate store would let a test set up a spreadsheet whose notes disagree with it.
         return self._fixture(self._spreadsheets, file_id, "spreadsheet")
 
     def get_values(self, file_id, a1_range):
@@ -941,6 +947,24 @@ class ApiBackend:
                                  # build trips over, and `index` is why `Title` can be first.
                                  fields="sheets(properties(sheetId,title,index,hidden,"
                                         "sheetType))").execute)
+
+    def get_sheet_notes(self, file_id):
+        """Cell NOTES, which are not comments and are invisible to the comments API.
+
+        A separate call from `get_spreadsheet` because the field mask is what makes it cheap:
+        `rowData(values(note))` fetches the note text and **no cell values**, so counting notes
+        on a large sheet costs one small request. `get_spreadsheet` asks only for sheet
+        properties, and widening it would make every `list_tabs` pay for notes.
+
+        MEASURED 2026-09-02 (`experiments/docs-anchor-states/probe_notes.py`): a file carrying a
+        note returns ZERO comments from the Drive comments API. They are different objects, and
+        a workflow built on reply-and-resolve has no destination for a note - it has no author,
+        no thread, and cannot be replied to or resolved.
+        """
+        return _errors.call(self._services.sheets.spreadsheets()
+                            .get(spreadsheetId=file_id,
+                                 fields="sheets(properties(sheetId,title),"
+                                        "data(rowData(values(note))))").execute)
 
     def get_values(self, file_id, a1_range):
         resp = _errors.call(self._services.sheets.spreadsheets().values()

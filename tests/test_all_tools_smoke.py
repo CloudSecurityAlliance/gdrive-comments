@@ -49,6 +49,7 @@ ARGS: dict[str, dict] = {
     "list_slides":           {"fileId": DECK},
     "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
     "list_suggestions":      {"fileId": DOC},
+    "list_notes":            {"fileId": SHEET},
     "export_comments":       {"fileId": DOC},
     # `query=` rather than `fileIds=`, because the query path is the one a caller
     # reaches for first; the id path is covered in test_work_handoff_inventory.py

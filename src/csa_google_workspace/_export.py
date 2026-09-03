@@ -89,6 +89,22 @@ def _cell_lookup(document: Any) -> tuple[dict[str, list[list[Any]]], list[str]]:
     return grids, tabs
 
 
+def _note_count(document: Any) -> int:
+    """How many cell notes this file has, or 0 — never an exception.
+
+    Best-effort on purpose. This runs while building a register, and a notes lookup that failed
+    must not lose the comments: the caveat is a courtesy, the register is the deliverable. A
+    document type with no `notes` (a Doc, a deck) simply has none.
+    """
+    notes = getattr(document, "notes", None)
+    if notes is None:
+        return 0
+    try:
+        return len(list(notes))
+    except Exception:                      # noqa: BLE001 - see the docstring
+        return 0
+
+
 def _headers(grid: list[list[Any]], row: int, col: int) -> tuple[str | None, str | None]:
     """The row and column labels for a cell — `(row_header, column_header)`.
 
@@ -195,6 +211,19 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
             "empty on every row. Either these are file-level comments, which have no anchor at "
             "all, or the XLSX export that cell mapping depends on was unavailable for this "
             "file. The comments themselves are complete either way.")
+    # THE SILENT-ZERO GUARD, and the reason it is a caveat rather than a column: notes are a
+    # different object with no place in a reply-and-resolve register, so they do not belong in
+    # the rows - but a register that omits them without saying so reports a sheet covered in
+    # notes as having nothing to look at. #358 names this as the expensive failure, from
+    # experience: a `resolved` field parsed against the wrong vocabulary once turned 17 closed
+    # threads into 0 while every test stayed green.
+    notes = _note_count(document)
+    if notes:
+        caveats.append(
+            f"This spreadsheet also has {notes} cell NOTE(s), which are NOT in this register. A "
+            f"note is a different kind of annotation: no author, no thread, and it cannot be "
+            f"replied to or resolved - so nothing in a comment workflow applies to it. Use "
+            f"`list_notes` to read them.")
     if any(r.get("row_header") or r.get("column_header") for r in rows):
         caveats.append(
             "`row_header` and `column_header` are a GUESS: they read column A and row 1, which "

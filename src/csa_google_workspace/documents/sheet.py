@@ -1,5 +1,6 @@
 import logging
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .. import _cellmap
@@ -15,6 +16,28 @@ _DEFAULT_RANGE = "A1:Z1000"   # fallback for as_text() when no tab metadata is a
 log = logging.getLogger(__name__)
 
 
+@dataclass(repr=False)
+class Note:
+    """A Sheets cell note. NOT a comment, and the difference is the point.
+
+    | | author | threaded | repliable | resolvable |
+    |---|---|---|---|---|
+    | comment | yes | yes | yes | yes |
+    | **note** | **no** | **no** | **no** | **no** |
+
+    So a note has no place in a reply-and-resolve workflow, and code that treats the two
+    interchangeably will offer actions that cannot be taken. It is reported rather than acted
+    on.
+    """
+    tab: str
+    cell: str
+    text: str
+
+    def __repr__(self) -> str:
+        # Redacted like every model here: a note is document content and embedders log these.
+        return f"Note(tab={self.tab!r}, cell={self.cell!r}, text_chars={len(self.text)})"
+
+
 class Sheet(Document):
     """Google Sheets. Comment->A1 cell mapping is best-effort (XLSX export + match)."""
 
@@ -27,6 +50,33 @@ class Sheet(Document):
         """Tab titles, in sheet order. Kept returning plain strings - it is public API and the
         commonest question is "what are they called". `tab_details` has the rest."""
         return [tab["title"] for tab in self.tab_details]
+
+    @property
+    def notes(self) -> list[Note]:
+        """Cell NOTES — a different annotation type from comments, and easy to miss entirely.
+
+        A note has **no author, no thread, and cannot be replied to or resolved.** So a
+        reply-and-resolve workflow has no destination for one, and a register built only from
+        comments silently omits them.
+
+        That omission is the reason this exists rather than being left to the caller. MEASURED
+        2026-09-02: a file carrying a note returns **zero comments** from the Drive comments
+        API — the two are different objects and the comments API does not see notes at all. A
+        tool that reported "0 comments" on a sheet covered in notes would be telling the truth
+        and giving the wrong impression.
+        """
+        raw = self._backend.get_sheet_notes(self.id)
+        out: list[Note] = []
+        for sheet in raw.get("sheets", []):
+            title = sheet.get("properties", {}).get("title", "")
+            for data in sheet.get("data", []) or []:
+                for r, row in enumerate(data.get("rowData", []) or [], start=1):
+                    for c, cell in enumerate(row.get("values", []) or [], start=1):
+                        text = cell.get("note")
+                        if text:
+                            out.append(Note(tab=title, cell=f"{_cellmap.column_letters(c)}{r}",
+                                            text=text))
+        return out
 
     @property
     def tab_details(self) -> list[dict]:

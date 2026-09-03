@@ -58,7 +58,7 @@ it means installing it and importing it.
   csa-google-workspace-mcp login          # once, interactive: browser consent
   claude mcp add csa-google-workspace -- csa-google-workspace-mcp
   ```
-- **Surface:** 51 tools, each with structured output (`outputSchema`) and
+- **Surface:** 52 tools, each with structured output (`outputSchema`) and
   read-only/destructive annotations, across five groups.
 
   Discovery, file lifecycle and access — `search_files`, `list_recent_files`,
@@ -78,6 +78,9 @@ it means installing it and importing it.
   Comments — `list_comments`, `get_comment`, `comments_by_cell`,
   `create_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`,
   `edit_comment`, `delete_comment`, `export_comments`, `apply_comment_actions`.
+
+  Notes — `list_notes` (Sheets cell notes; a different annotation type from
+  comments — no author, no thread, not repliable, not resolvable).
 
   Account-wide — `search_files`, `list_recent_files`, `export_file_inventory`
   (the work-handoff snapshot: every file one person edited or commented on, as a
@@ -113,7 +116,7 @@ it means installing it and importing it.
   ```bash
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{},"io.modelcontextprotocol/clientInfo":{"name":"healthcheck","version":"0"}}}}' | csa-google-workspace-mcp
   ```
-  Expect a JSON-RPC result listing 51 tools — or 14 / 11 under
+  Expect a JSON-RPC result listing 52 tools — or 14 / 11 under
   `CSA_GW_FLAVOUR=claude` / `google`, which is the point of that variable: it changes
   what the server *advertises*, not only what it permits.
 - **Owner:** Kurt Seifried
