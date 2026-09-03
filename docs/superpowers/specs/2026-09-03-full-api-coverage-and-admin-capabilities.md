@@ -4,6 +4,24 @@
 **reverses four recorded decisions** and **widens the OAuth token**, and both should happen
 deliberately.
 
+## The governing principle this serves
+
+**"The MCP server cannot do that" must never be a technical answer.** The answer should be
+*"that is extremely risky, so we gated it off and disabled it by default — and if you absolutely
+want those administrative functions on, we can turn them on."*
+
+Whether to let an AI do a given thing is a **business and risk decision**. A missing
+implementation makes that decision silently and disguises it as a technical fact, so the operator
+never gets to weigh it. That is what this programme is for — not completeness for its own sake.
+
+**The one place the principle has a real, ongoing cost is scope**, and §2 is about that. The
+resolution proposed here is **incremental authorization**: request an additional OAuth scope at
+the moment an operator *enables* the capability that needs it, rather than at install. A default
+install then holds a narrow token, the answer *"we can enable that"* stays true, and the token
+never carries authority for a capability nobody switched on. Without that, "no technical
+blockers" would mean permanently widening the token for capabilities that are off — which the
+capability system cannot protect, because a stolen token never reaches it.
+
 ## The ask
 
 1. 100% API coverage.

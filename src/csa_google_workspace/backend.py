@@ -128,10 +128,16 @@ class FakeBackend:
         return self._fixture(self._drives, drive_id, "shared drive")
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
-        raise exc.UnsupportedOperation("accept_suggestion is not supported by FakeBackend")
+        raise exc.UnsupportedOperation(
+            "FAKE BACKEND: accept_suggestion is not implemented by the in-memory double. "
+            "This says nothing about whether Google supports it - see ApiBackend for the "
+            "measured answer. A test asserting 'unsupported' against this fake would be "
+            "asserting the double's limits, not the product's.")
 
     def create_cell_anchored_comment(self, file_id: str, cell: str, text: str) -> None:
-        raise exc.UnsupportedOperation("cell-anchored comments are not creatable")
+        raise exc.UnsupportedOperation(
+            "FAKE BACKEND: cell-anchored comment creation is not implemented by the in-memory "
+            "double, matching ApiBackend - which refuses for an UPSTREAM reason. See there.")
 
     def _new_id(self, prefix):
         self._seq += 1
@@ -595,14 +601,29 @@ class ApiBackend:
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
         raise exc.UnsupportedOperation(
-            "The Google Docs API has no accept/reject-suggestion endpoint "
-            "(verified by probe). A PlaywrightBackend is required."
+            "UPSTREAM: accepting or rejecting a suggestion is not on the GA Docs API. "
+            "MEASURED 2026-09-02: `acceptSuggestion` and `rejectSuggestion` DO exist and are "
+            "gated behind Google's Developer Preview Program - a fully-formed request returns "
+            "'No request set', which means the name was accepted and dispatch is disabled for "
+            "callers who are not enrolled. So this is not impossible, it is not yet reachable: "
+            "enrolment unlocks it, and no setting here does. "
+            "(This message previously said a PlaywrightBackend was REQUIRED, which was true of "
+            "the published surface when written and became false without anybody noticing - "
+            "see research/comments-apis-2026-09.md, which retires that plan.)"
         )
 
     def create_cell_anchored_comment(self, file_id: str, cell: str, text: str) -> None:
         raise exc.UnsupportedOperation(
-            "Cell-anchored comments cannot be created via the API; use a file-level "
-            "comment with a #range deep-link instead."
+            "UPSTREAM: the GA Drive comments API cannot anchor a comment to a cell. "
+            "MEASURED 2026-07-09: an anchor sent through Drive is stored verbatim and then "
+            "treated as UN-ANCHORED by the editors, so it appears to work and does not. "
+            "MEASURED 2026-09-02: Sheets `insertComment.coordinate` IS cell-anchored creation "
+            "and is gated behind Google's Developer Preview Program. "
+            "MEASURED 2026-09-03: a DOCS comment reusing a REAL `kix.*` anchor from an "
+            "existing comment IS honoured - so anchor REUSE works where minting does not, "
+            "which does not help a cell but bounds the claim honestly. "
+            "Workaround available now: a file-level comment with a #range deep-link, which "
+            "`create_comment(cell=)` does. Nothing configurable here changes this."
         )
 
     # `mentionedEmailAddresses` and `assigneeEmailAddress` must be NAMED (#398). They are
