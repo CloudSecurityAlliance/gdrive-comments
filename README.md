@@ -1130,19 +1130,64 @@ user than you are) rather than as a fence, and where the industry-level gap sits
 today authenticates *identity* and authorizes *actions*, and has no concept of *intention* or of
 *which tool is acting*.
 
-## Capability boundaries
+## What "full API coverage" means here — and where it stops
 
-The limits below are genuine — the Google APIs cannot do these things at all, proven by
-enumeration and by probe — with one deliberate exclusion marked as such.
+**The commitment: 100% of the API endpoints we can *see and test* from our own Google tenant.**
+That tenant is not an enterprise-tier account, so **some things will be missing** — and rather
+than leave that as a vague disclaimer, the rest of this section says exactly what kind of missing.
 
-- **Suggestions are read/preview only.** `Doc.suggestions` reads suggesting-mode edits and `as_text(suggestions="accepted"|"rejected")` previews the outcome, but **accepting/rejecting is impossible via the API** (`UnsupportedOperation`) — Google exposes no endpoint. Reserved for a future `PlaywrightBackend`.
-- **Drive's access-settings menu is deliberately not exposed** — "Allow editors to change
-  permissions and share" (`writersCanShare`) and "Limit access to…" (`inheritedPermissionsDisabled`).
-  These are *meta-permissions*: policy about who may set policy, rather than use of the file. The
-  second is the only action in this area that **removes** access, silently, from people who are
-  not in the room — Google's own dialog warns *"Some people may lose access."* Governance
-  decisions belong in Drive's UI with a human.
-- **Sheets cell-anchored comments can't be created via the API** — `sheet.create_comment(text, cell=…)` posts a file-level comment with a `#gid=…&range=…` deep-link instead.
+**"This cannot do that" should never be a technical answer.** The intended answer is *"that is
+risky, so it is gated off and disabled by default — and it can be switched on."* Whether to let
+an AI do something is a business and risk decision, and a missing implementation makes that
+decision silently, on your behalf, while looking like a fact about the world.
+
+### Coverage has layers, and only one of them is knowable from here
+
+| layer | how you would find out |
+|---|---|
+| **published** | the discovery document — **static**, byte-identical with and without credentials, so it describes the API and never *your* account |
+| **reachable by us** | try it and read the refusal. This is what we cover |
+| **exists but invisible to us** | only by clearing the layer above first |
+
+The third is real: Google's **native comment APIs are absent from every discovery document** and
+were found only by sending candidate request names and reading the difference between *"No
+request set"* (accepted, dispatch disabled) and *"Unknown name"* (not a field).
+
+And **the first barrier masks the rest.** `driveactivity`, `admin.directory`, `vault` and
+`cloudidentity` all refuse identically — `403 PERMISSION_DENIED, insufficient authentication
+scopes` — so whether an **admin** or an **edition** is *also* required cannot be known until the
+scope is held. We therefore do not claim to know which gaps are enterprise-only. We know what we
+can reach.
+
+### Want enterprise-tier coverage? Please open an issue — and here is how to make it actionable
+
+We cannot write coverage we cannot verify, and the blocker is **verification, not code**.
+
+1. **[Open an issue](https://github.com/CloudSecurityAlliance/csa-google-workspace/issues/new)**
+   saying what you need and what tier you are on.
+2. **Run `python scripts/report_api_reach.py` and paste the output.** It reports what *your*
+   tenant can reach — method names and refusal codes only. **No file ids, no titles, no email
+   addresses, no paths**, the same rule `report_a_problem` follows, because it is written to be
+   pasted into a public tracker.
+3. If you can run a probe against your own tenant, that measurement is worth more than any
+   amount of our reasoning — this project has been wrong three times about what Google's
+   documentation says, and right every time it measured.
+
+Untested coverage may also ship **explicitly marked as untested**, rather than being withheld:
+not working, not broken, *unknown* — and never reported as the first.
+
+### The genuine limits today, and whose they are
+
+| | |
+|---|---|
+| **Accepting or rejecting a suggestion** | **Google's, and gated rather than impossible.** `acceptSuggestion` / `rejectSuggestion` exist and are gated behind Google's **Developer Preview Program** (measured 2026-09-02). We are not enrolled. `Doc.suggestions` and `as_text(suggestions=…)` read and preview. *(This README previously said Google exposed no endpoint and a `PlaywrightBackend` was required. That was true of the published surface when written and stopped being true without anybody noticing.)* |
+| **Cell-anchored comment creation** | **Google's, on the GA surface.** An anchor sent through Drive is stored verbatim and then treated as *un-anchored* by the editors — it appears to work and does not (measured 2026-07-09). Sheets `insertComment.coordinate` is real and preview-gated. `create_comment(cell=…)` posts a file-level comment with a `#gid=…&range=…` deep link. **Nuance measured 2026-09-03:** a Docs comment *reusing* a real `kix.*` anchor from an existing comment **is** honoured — minting fails, reuse works. |
+| **Changing a file's or drive's access settings** | **Ours, and being reconsidered.** `writersCanShare`, `copyRequiresWriterPermission` and shared-drive restrictions are now **readable** (`get_file_restrictions`, `get_shared_drive`) and not writable. These are *meta-permissions* — policy about who may set policy — and the write side is **proposed** to arrive behind a `drive.admin` capability that would ship switched off, because a mistake there is not recoverable by Drive's trash or its revision history. Not built yet. |
+| **Making something public** | **Ours, deliberately, today.** `type="anyone"` is unreachable — `permissions.py` requires an email address — as a control against inducing a permission grant to an attacker-chosen address. **Proposed** to become a `share.public` capability that would ship switched off, because *re-restricting is not un-publishing*. Not built yet. |
+| **Writing Drive labels** | **Ours, and structural.** The `drive.labels` write scope is never requested, so no configuration permits relabelling. Unlike the rows above, a capability gate would **not** be equivalent: a gate binds this library's calls and does nothing for a stolen token, so the narrow scope is the control. |
+
+The programme, its sequencing and the reversals it involves:
+[`docs/superpowers/specs/2026-09-03-full-api-coverage-and-admin-capabilities.md`](docs/superpowers/specs/2026-09-03-full-api-coverage-and-admin-capabilities.md).
 
 ## Using it on a user's behalf (production)
 
