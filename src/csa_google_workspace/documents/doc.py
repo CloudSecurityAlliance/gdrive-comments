@@ -11,16 +11,20 @@ class Doc(Document):
     offered — no API endpoint exists."""
 
     def comment_contexts(self, comments: list, *, paragraphs: int = 0) -> list:
-        """The passage around each comment's anchor — `[Context | None, …]`, aligned to input.
+        """The passage around each comment's anchor — one `Context` per comment, aligned to input.
 
         Takes the WHOLE LIST on purpose. Locating a quote needs the document, so this is **one**
         fetch for ninety comments where a per-comment call would be ninety — and accessors
         re-fetch by design (no caching layer, settled 2026-08-30), so the loop genuinely
         re-downloads it each time. Making the batch the API is how that cost stays visible.
 
-        `None` for a comment with no quoted text: that is file-level or anchored to a non-text
-        object, and neither has a passage. See `_context` for why the anchor itself cannot be
-        used and why quoted text is nevertheless almost always present.
+        **Never `None`, and never a silent gap.** A comment with no quoted text — file-level,
+        or anchored to a non-text object — comes back as `KIND_NO_QUOTE` with a note saying so,
+        rather than as an absence a caller has to interpret. "We looked and there was nothing
+        to look for" and "we never looked" must not arrive as the same value.
+
+        See `_context` for why the anchor itself cannot be used, and why quoted text is
+        nevertheless almost always present.
         """
         raw = self._backend.get_document(self.id)
         return [_context.build(raw, getattr(c, "quoted_text", None), paragraphs=paragraphs)

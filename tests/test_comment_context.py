@@ -22,6 +22,8 @@ is the unit throughout, and for a table cell that element is the whole table.
 """
 from __future__ import annotations
 
+import pytest
+
 from csa_google_workspace import _context
 
 
@@ -69,17 +71,49 @@ class TestTheOrdinaryCase:
 
 
 class TestNoPassageToGive:
-    def test_no_quoted_text_returns_None_rather_than_a_kind(self):
-        """A file-level comment, or one on an image, has no passage — that is not a failure, so
-        reporting a `kind` would imply a question where there is none."""
-        assert _context.build(doc(para("x\n")), None) is None
-        assert _context.build(doc(para("x\n")), "") is None
-        assert _context.build(doc(para("x\n")), "   ") is None
+    """Every outcome explains itself, so a bare absence means only "nobody asked".
 
-    def test_a_quote_that_is_gone_says_so(self):
+    This class used to assert the opposite — that no quoted text returns `None`, on the
+    reasoning that a `kind` "would imply a question where there is none". The first half was
+    right and the conclusion was wrong: `None` was ALSO what a caller got for an unsupported
+    file type and for not requesting context, so one value carried "no question", "not
+    supported" and "never looked". A consumer could not tell that the search had run.
+    """
+
+    @pytest.mark.parametrize("quote", [None, "", "   "])
+    def test_no_quoted_text_says_there_was_nothing_to_look_for(self, quote):
+        c = _context.build(doc(para("x\n")), quote)
+        assert c is not None, "an absence is what this change exists to remove"
+        assert c.kind == _context.KIND_NO_QUOTE
+        assert c.text == ""
+
+    def test_and_says_it_is_not_a_failure(self):
+        """The distinction the note has to carry: no question asked, versus asked and failed."""
+        note = _context.build(doc(para("x\n")), None).note
+        assert "not a failure" in note and "no question to answer" in note
+        assert "anchor_state" in note, "it should say where to look for WHICH no-quote state"
+
+    def test_a_quote_that_is_not_there_says_WE_LOOKED(self):
+        """The requested change. "Missing" and "we searched and it is absent" are different
+        answers, and a consumer that cannot tell them apart has to assume the software broke."""
         c = _context.build(doc(para("something else\n")), "deleted passage")
         assert c.kind == _context.KIND_NOT_FOUND
-        assert "not in the document any more" in c.note
+        assert "WE SEARCHED THE DOCUMENT" in c.note
+        assert "not an error" in c.note, "it must not read as a malfunction"
+
+    def test_it_offers_the_causes_without_choosing_one(self):
+        """Including the one measured in #380: the quote may never have been in the document,
+        because its creator supplies that field and Google validates nothing. The old note
+        asserted the passage "is not in the document ANY MORE", which presupposes it once was."""
+        note = _context.build(doc(para("something else\n")), "never here").note
+        assert "edited or deleted" in note      # it was there and changed
+        assert "different revision" in note     # it is there, in another version
+        assert "NEVER" in note                  # it was never there at all
+        assert "any more" not in note, "that phrasing presupposes the passage once existed"
+
+    def test_it_tells_the_caller_not_to_repeat_the_quote_as_fact(self):
+        note = _context.build(doc(para("something else\n")), "fabricated").note
+        assert "Do not repeat the quoted text as something the document says" in note
 
 
 class TestTheAmbiguousCase:
@@ -190,9 +224,104 @@ def test_every_kind_is_in_the_closed_vocabulary():
     for name, value in vars(_context).items():
         if name.startswith("KIND_"):
             assert value in _context.KINDS, f"{name} is not in KINDS"
-    assert len(_context.KINDS) == 8
+    # 8 until 2026-09-03, when `no_quote` and `unsupported` were added so that a context the
+    # caller asked for always explains itself. Bump this deliberately, with a reason.
+    assert len(_context.KINDS) == 10
 
 
 def test_the_repr_does_not_leak_the_passage():
     c = _context.build(doc(para("confidential restructuring plan\n")), "restructuring")
     assert "confidential" not in repr(c) and "kind=" in repr(c)
+
+
+class TestNullMeansExactlyOneThing:
+    """The invariant this change buys: a `context` of `null` means "you did not ask", and
+    nothing else. Every other outcome carries a `kind` and a `note`.
+
+    Asserted through the MCP surface rather than on `_context`, because that is where the three
+    meanings were being conflated — `build()` was only one of the three producers of `None`.
+    """
+
+    DOC = "application/vnd.google-apps.document"
+    SHEET = "application/vnd.google-apps.spreadsheet"
+    F = "1oW1BM5UpGCiwuk8jLJWuou4BECe5INjI8T6rGnAj8x8"
+
+    def server(self, mime, comments):
+        import asyncio
+
+        from csa_google_workspace import Workspace
+        from csa_google_workspace.backend import FakeBackend
+        from csa_google_workspace.mcp.server import create_server
+        be = FakeBackend(
+            {self.F: {"id": self.F, "name": "n", "mimeType": mime}},
+            comments={self.F: comments},
+            documents={self.F: {"body": {"content": [
+                {"paragraph": {"elements": [{"textRun": {"content": "real prose here\n"}}]}},
+            ]}}},
+            spreadsheets={self.F: {"sheets": [{"properties": {"sheetId": 0, "title": "S1"}}]}},
+        )
+        return create_server(lambda: Workspace(be)), asyncio
+
+    def quoted(self, cid, value):
+        return {"id": cid, "content": "c", "author": {"displayName": "A"},
+                "anchor": "kix.a",
+                "quotedFileContent": {"mimeType": "text/html", "value": value}}
+
+    def test_not_requested_is_the_only_null(self):
+        server, asyncio = self.server(self.DOC, [self.quoted("c1", "real prose here")])
+        out = asyncio.run(server.call_tool("list_comments", {"fileId": self.F}))
+        assert out.structured_content["comments"][0]["context"] is None
+
+    def test_requested_and_found_explains_itself(self):
+        server, asyncio = self.server(self.DOC, [self.quoted("c1", "real prose here")])
+        out = asyncio.run(server.call_tool(
+            "list_comments", {"fileId": self.F, "context": True}))
+        ctx = out.structured_content["comments"][0]["context"]
+        assert ctx is not None and ctx["kind"] == _context.KIND_PARAGRAPH
+
+    def test_requested_with_nothing_to_find_explains_itself(self):
+        """A file-level comment. The caller asked; "no passage exists" is an answer."""
+        server, asyncio = self.server(
+            self.DOC, [{"id": "c1", "content": "looks good", "author": {"displayName": "A"}}])
+        out = asyncio.run(server.call_tool(
+            "list_comments", {"fileId": self.F, "context": True}))
+        ctx = out.structured_content["comments"][0]["context"]
+        assert ctx is not None, "asked and got silence is the defect being fixed"
+        assert ctx["kind"] == _context.KIND_NO_QUOTE
+
+    def test_requested_but_absent_says_we_searched(self):
+        server, asyncio = self.server(self.DOC, [self.quoted("c1", "not in this document")])
+        out = asyncio.run(server.call_tool(
+            "list_comments", {"fileId": self.F, "context": True}))
+        ctx = out.structured_content["comments"][0]["context"]
+        assert ctx["kind"] == _context.KIND_NOT_FOUND
+        assert "WE SEARCHED THE DOCUMENT" in ctx["note"]
+
+    def test_an_unsupported_file_type_says_so_instead_of_going_quiet(self):
+        """A spreadsheet has no passage lookup here. Before, the loop returned early and every
+        row kept a null the caller could not distinguish from "not requested"."""
+        server, asyncio = self.server(self.SHEET, [self.quoted("c1", "anything")])
+        out = asyncio.run(server.call_tool(
+            "list_comments", {"fileId": self.F, "context": True}))
+        ctx = out.structured_content["comments"][0]["context"]
+        assert ctx is not None, "we did not look, and that must not read as nothing to find"
+        assert ctx["kind"] == _context.KIND_UNSUPPORTED
+        assert "cell_text" in ctx["note"], "it should name the equivalent that DOES exist"
+        assert "gap in this tool, not a property of the file" in ctx["note"]
+
+    def test_every_requested_context_is_non_null_whatever_the_outcome(self):
+        """The invariant itself, over all four outcomes at once."""
+        for mime, comments in (
+            (self.DOC, [self.quoted("c1", "real prose here")]),        # found
+            (self.DOC, [self.quoted("c2", "not in this document")]),   # searched, absent
+            (self.DOC, [{"id": "c3", "content": "x",
+                         "author": {"displayName": "A"}}]),            # nothing to find
+            (self.SHEET, [self.quoted("c4", "anything")]),             # unsupported
+        ):
+            server, asyncio = self.server(mime, comments)
+            out = asyncio.run(server.call_tool(
+                "list_comments", {"fileId": self.F, "context": True}))
+            for row in out.structured_content["comments"]:
+                assert row["context"] is not None, (mime, row["id"])
+                assert row["context"]["kind"] in _context.KINDS
+                assert row["context"]["note"], "a kind without a note explains nothing"

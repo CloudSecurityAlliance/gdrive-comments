@@ -64,10 +64,20 @@ KIND_HEADING = "heading_and_following"    # the selection is a heading; its cont
 KIND_TABLE = "table"                      # the whole enclosing table
 KIND_TABLE_ROW = "table_row"              # too big for the cap: the row plus the header row
 KIND_NEAREST = "nearest_text"             # the element has no text; nearest that does
-KIND_NOT_FOUND = "not_found"              # the quote is not in the document any more
+KIND_NOT_FOUND = "not_found"              # we searched the document and it is not there
+KIND_NO_QUOTE = "no_quote"                # the comment quotes nothing, so there is no passage
+KIND_UNSUPPORTED = "unsupported"          # this document type has no passage lookup here
 KIND_AMBIGUOUS = "ambiguous"              # the quote occurs more than once
 KINDS = frozenset({KIND_PARAGRAPH, KIND_PARAGRAPHS, KIND_HEADING, KIND_TABLE, KIND_TABLE_ROW,
-                   KIND_NEAREST, KIND_NOT_FOUND, KIND_AMBIGUOUS})
+                   KIND_NEAREST, KIND_NOT_FOUND, KIND_AMBIGUOUS,
+                   KIND_NO_QUOTE, KIND_UNSUPPORTED})
+
+# The last two exist so that a `context` a caller ASKED FOR always explains itself, which
+# makes `null` mean exactly one thing: nobody asked. Before, `null` meant three - "there is no
+# passage to find", "this file type is not supported here", and "you did not request it" - and
+# a consumer could not tell "we looked and found nothing" from "we never looked". That is the
+# same asymmetry `labels.py` and `_inventory.py` are built around, and the dangerous direction
+# is identical: silence reading as absence.
 
 # A guard, never the unit of measurement. Structural expansion is the point (#358 prefers it
 # over character counts because it respects boundaries) - but a single legal-document paragraph
@@ -211,15 +221,24 @@ def build(document: dict, quote: str | None, *, paragraphs: int = 0) -> Context 
     would imply a failure where there is simply no question.
     """
     if not quote or not quote.strip():
-        return None
+        return Context("", KIND_NO_QUOTE,
+                       "This comment quotes nothing, so there is no passage to find. It is "
+                       "either about the whole file or attached to something that is not text "
+                       "- an image, a drawing, a cell. `anchor_state` says which. This is not "
+                       "a failure and not a missing value: there was no question to answer.")
 
     blocks = _blocks(document)
     found = _occurrences(blocks, quote)
     if found == 0:
         return Context("", KIND_NOT_FOUND,
-                       "The quoted text is not in the document any more, so the comment could "
-                       "not be placed. Either the passage was edited or deleted after the "
-                       "comment was written, or the comment is on a different revision.")
+                       "WE SEARCHED THE DOCUMENT AND THIS QUOTED TEXT IS NOT IN IT. The search "
+                       "ran and completed - this is a finding, not an error and not a missing "
+                       "value. Three things cause it and they cannot be told apart from here: "
+                       "the passage was edited or deleted after the comment was written; the "
+                       "comment belongs to a different revision; or the quoted text was NEVER "
+                       "in this document, which is possible because whoever created the "
+                       "comment supplies that field and Google validates it against nothing. "
+                       "Do not repeat the quoted text as something the document says.")
     if found > 1:
         # MEASURED while building this, on a nine-paragraph document: a comment placed with a
         # bare caret quotes the single word the editor snapped to, and a single word is
