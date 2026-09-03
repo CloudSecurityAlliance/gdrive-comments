@@ -61,15 +61,72 @@ class Doc(Document):
             "containsText": {"text": find, "matchCase": match_case}, "replaceText": replace}}])
         return occurrences_changed(resp)
 
-    def insert_text(self, text: str, at: int) -> None:
-        self._require_writable()
-        self._backend.docs_batch_update(self.id, [{"insertText": {"location": {"index": at}, "text": text}}])
+    def insert_text(self, text: str, at: int, tab_id: str | None = None) -> None:
+        """Insert text at a character index, optionally in a named tab.
 
-    def append_text(self, text: str) -> None:
+        `tab_id` added in v0.45.0 (#390). Without it the Docs API applies the request to the
+        FIRST tab — and `delete_range` has always accepted one, so a caller composing a
+        replace out of the pair (there is no `replace_range`) deleted from the tab they named
+        and inserted into tab 1. No error from either call; the corruption was only visible by
+        reading two tabs.
+
+        The omission was documented as *"a real limitation of index-addressed Docs requests,
+        not a choice"*. **That was wrong** — measured 2026-09-03 by sending a bogus tab id,
+        which came back *"Cannot apply request to an invalid tab ID"*, i.e. parsed and
+        validated. `insertText.location` takes a `tabId` exactly as `Range` does.
+        """
         self._require_writable()
-        content = self._backend.get_document(self.id).get("body", {}).get("content", [])
-        end = content[-1].get("endIndex", 2) if content else 2
-        self._backend.docs_batch_update(self.id, [{"insertText": {"location": {"index": end - 1}, "text": text}}])
+        location: dict = {"index": at}
+        if tab_id:
+            location["tabId"] = tab_id
+        self._backend.docs_batch_update(self.id, [{"insertText": {"location": location,
+                                                                  "text": text}}])
+
+    def append_text(self, text: str, tab_id: str | None = None) -> None:
+        """Add text to the end of the document — or of one tab.
+
+        **This appended to the START of every Google Doc until v0.45.0 (#391).** It read
+        `document["body"]["content"]` while `get_document` passes `includeTabsContent=True`,
+        which leaves the top-level `body` EMPTY and moves everything under
+        `tabs[].documentTab.body`. So `content` was `[]`, a default of index 1 was used, and
+        the text went to the top. Silently, on every call. `_content.doc_tab_end_indices` now
+        owns that shape knowledge, which is the actual fix — the bug was a second reader of a
+        response shape that only one function understood.
+
+        **A multi-tab document with no `tab_id` is REFUSED**, rather than resolved to the first
+        tab. "The end of the document" has no meaning when there are several ends, and #390 is
+        the argument: a refusal the caller can see beats a default they cannot. Nothing relies
+        on the old behaviour, because the old behaviour was to write to the beginning.
+        """
+        self._require_writable()
+        ends = _content.doc_tab_end_indices(self._backend.get_document(self.id))
+        if not ends:
+            # Could not find a body at all - distinct from finding an empty one, which yields
+            # index 1. Refusing is the point: the old code's plausible-looking default is
+            # exactly what let #391 run undetected.
+            raise ValueError(
+                "cannot determine where this document ends: the response carried neither a "
+                "top-level `body` nor any `tabs`. Refusing to guess an index, because "
+                "guessing one here appends to the wrong place without failing.")
+        if tab_id is None:
+            if len(ends) > 1:
+                raise ValueError(
+                    f"this document has {len(ends)} tabs, so 'the end' is ambiguous. Pass "
+                    f"tab_id to say which one; `document_tabs` lists them. Refusing rather "
+                    f"than appending to the first tab, which is a silent wrong answer.")
+            target, end = ends[0]
+        else:
+            match = [(t, e) for t, e in ends if t == tab_id]
+            if not match:
+                known = [t for t, _ in ends if t]
+                raise ValueError(f"no tab {tab_id!r} in this document. Present: "
+                                 f"{known or '(the response carries no tab ids)'}")
+            target, end = match[0]
+        location: dict = {"index": max(1, end - 1)}
+        if target:
+            location["tabId"] = target
+        self._backend.docs_batch_update(self.id, [{"insertText": {"location": location,
+                                                                  "text": text}}])
 
     def delete_range(self, start: int, end: int, tab_id: str | None = None) -> None:
         """Delete a character range. **Requires `content.delete`, not `content.write`.**
