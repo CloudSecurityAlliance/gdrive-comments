@@ -337,6 +337,71 @@ the setup for the native-API work whenever enrolment happens.
 Sequencing: build it **with** #340 rather than before it. Writing the reference is what reveals
 which states actually need evidence, and the zoo built speculatively would hold the wrong files.
 
+### Versioning, regression recovery, and cleaning up somebody's mess — investigate before building
+
+**The behaviour wanted, stated as a user would:** *"undo what Bob did in version X"* — recover from
+a malicious edit, an accidental mess, or a formatting call that destroyed something, **without**
+throwing away the good work that happened alongside it. Requested 2026-09-03 (CINO). #389 asks for
+the read-only half; this is the whole problem.
+
+**Probe first. It is not buildable in the obvious way, and that is measured, not assumed**
+(2026-09-03, `experiments/revisions/`):
+
+- **There is no revert method.** Drive `revisions` exposes `list`, `get`, `get_media`, `update`,
+  `delete` and nothing else. A reset has to be read-then-write.
+- **Read-then-write does work, with real fidelity.** Export the good revision as `.docx`, then
+  `files.update` with it as media: bold runs recovered, `HEADING_1` preserved, the bad text gone,
+  and it lands as a **new** revision so nothing is destroyed. Same upload-and-convert trick
+  `_export.py` already uses.
+- **`keepForever` is accepted and silently discarded on a Google Doc.**
+  `revisions.update(keepForever=True)` returns **200**, reading the revision back shows the field
+  absent, and the revision is pruned on the next edit anyway. Google's reference says the field
+  applies only to files with binary content — so the semantics are documented and the API is wrong
+  to accept the write. **This is the anchor trap again**: a write that reports success and does
+  nothing. It means *you cannot pin the revision you might later want*.
+- **Drive gives whole-document snapshots and nothing else** — no per-edit deltas, no change list,
+  and rapid edits coalesce into the head revision. How many revisions survive edits spaced minutes
+  apart is being measured separately; if the answer is "two", then "read a past revision" mostly
+  means "read the file's creation state".
+
+**Why "undo what Bob did" does not follow from revisions alone.** Attribution is *per revision*
+(`lastModifyingUser`, singular) and revisions coalesce, so Bob's edits and Alice's can share one
+revision with one name on it. The API cannot separate them, and diffing two snapshots recovers
+*what changed*, never *who changed which part*.
+
+**The missing half is the Drive Activity API v2** (`driveactivity.googleapis.com`), and it is
+reachable: the client builds, `activity.query` exists, and it returns **403 insufficient scopes**
+today because we do not request `drive.activity.readonly`. It gives per-file activity with
+**actors** and action kinds — which is exactly the attribution revisions lack. It does **not** give
+content deltas, so the shape is: **activity for who, snapshots for what.** Adding a scope is a
+deliberate decision here (`SECURITY.md` names scope breadth as a risk), and it is the first
+question to answer rather than a detail.
+
+**The reframe that makes the whole thing exact, and its cost.** If *we* snapshot before editing,
+the baseline is ours and both reset and selective reapply become diffs over artifacts we control
+rather than guesses about Google's coalesced history. But that is a **new persistence surface**,
+and this library states "no persistent storage of comment content" as a property — the same
+tension #380 left open for a provenance log. **Decide that before building**, not after.
+
+**Where the boundary has to fall.** Reapplying "the good edits but not the bad ones" is a merge
+with conflict resolution, which is a *judgement* — and #358 settled that this library supplies
+facts, not verdicts. The shape that respects both: we supply the base, the current state and the
+attribution; a **model** proposes the merged document; we apply it and record all three. That fits
+what this library is for, and it keeps the guess where a human can review it.
+
+**Safety properties any implementation must have**, because this is the most destructive thing the
+library would ever do:
+
+- **never destroy** — always roll forward to a new revision, so the bad state stays recoverable;
+- **an explicit revision id**, never "the last good one" inferred;
+- **its own capability**, so it can be switched off independently of `content.write`;
+- **say what will be lost before doing it** — the `.docx` round trip preserved bold and headings in
+  the probe, but "preserved these three things once" is not "lossless", and the fidelity gaps need
+  enumerating before anyone is told it restores a document.
+
+Sequence: measure revision durability → decide the scope question → decide the snapshot question →
+then design. The read-only half (#389) can ship first and independently.
+
 ### Parked
 
 - **#297** prompt-injection research — got a real down payment in #312 (control-sequence
