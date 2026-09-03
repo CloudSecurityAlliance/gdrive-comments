@@ -95,6 +95,7 @@ all rejected as *unknown fields*, identically to a made-up control.
 | No orphan / anchor-validity signal exists on the resource | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | No cross-file comment search; `comments.list` is per-file, `files.list` has no comment predicate | MEASURED / DOCUMENTED | `google-drive-comments-reference.md` |
 | Sheets comment → cell needs the XLSX-export detour, incl. the three-hop rels walk | MEASURED 2026-07-21 | `sheets-cellmap/`, `_cellmap.py` |
+| **An UNQUALIFIED A1 range reads the FIRST tab — so inserting a tab at index 0 silently changes what every unqualified read returns** | MEASURED 2026-09-03 | `experiments/zoo/` — found when a README tab added at index 0 made a verifier read the documentation and report the data missing |
 | Notes are not comments: a file with a note returns **zero** comments | MEASURED 2026-09-02 | `docs-anchor-states/probe_notes.py` |
 | What a **comment on a Slides shape / slide / speaker notes** looks like | **UNKNOWN** | never probed |
 | Whether a Drive-API comment can be **assigned** at create | **UNKNOWN** | — |
