@@ -33,6 +33,8 @@ first, and the confidence column is the point of it.
 | **UNKNOWN** | nobody here has checked |
 | **UNTESTABLE** | cannot be checked without access we do not have (preview enrolment, an admin, a second account) |
 
+**And the layers are ordered, which matters for planning.** Measured 2026-09-03: the discovery document is *static* — byte-identical with and without credentials — so it describes the **published** surface and can never describe *yours*. Worse, the first barrier masks the rest: `driveactivity`, `admin.directory`, `vault` and `cloudidentity` all refuse with the identical `403 PERMISSION_DENIED — insufficient authentication scopes`, so whether an admin or an edition is *also* required is unknowable until the scope is held. **UNTESTABLE therefore means 'not testable from here, today', never 'impossible'** — and each scope acquired reveals the next barrier rather than removing all of them.
+
 ## The four surfaces, and which of them is real today
 
 This is the frame the reference needs, because most confusion is people conflating them:

@@ -134,6 +134,111 @@ So the gate on these is not *"can the user do this?"* but ***"can a mistake be u
 a different question, deserving a different default. `IRREVERSIBLE` in `policy.py` already names
 the operations that warn; this names the ones that must be switched on first.
 
+## 4b. "100% of the API" has layers, and the discovery document cannot see them
+
+**Asked directly (CINO): does the API present everything? Might an enterprise tier have API
+surface we cannot see?** Measured 2026-09-03, and the answer is no in three distinct ways.
+
+**The discovery document is STATIC.** Fetched with and without credentials it is byte-identical
+— 64 Drive v3 methods either way. So enumerating from discovery gives the **published** surface,
+never *your* surface. It cannot tell you what your account can reach, and the §1 table in this
+spec is therefore a ceiling, not an inventory of the possible.
+
+Three layers, and they are ordered:
+
+| layer | how you find out | example |
+|---|---|---|
+| **L1 — published** | the discovery document | the 242 operations in §1 |
+| **L2 — reachable by us** | try it; read the refusal | `drives.update` works; `driveactivity` 403s |
+| **L3 — exists but invisible to us** | only by clearing L2 first | Developer Preview methods absent from discovery entirely; edition-gated features; anything needing a domain admin |
+
+**L3 is real and we have already met it.** The native comment APIs are in Google's protos and
+**absent from every discovery document** — found only by sending candidate request names and
+reading `No request set` (accepted, dispatch disabled) against `Unknown name` (not a field).
+No amount of enumeration would have revealed them.
+
+### THE BARRIER THAT MASKS THE OTHERS
+
+`driveactivity`, `admin.directory`, `vault` and `cloudidentity` all return the **same** refusal:
+
+```
+403 PERMISSION_DENIED  "Request had insufficient authentication scopes."
+```
+
+Identical for all four, and it is the **scope** gate answering first. Behind it may be an
+admin requirement, an edition requirement, or nothing at all — **and we cannot tell which until
+we hold the scope.** So the honest shape of the ask is recursive: *"100% of what we can see and
+test"* is bounded by what we have asked consent for, and each scope we add reveals the next
+barrier rather than removing all of them.
+
+That is a reason to sequence scope requests deliberately, not a reason to avoid them. But it
+means **"we have full coverage" can only ever be said of a layer**, and the layer has to be
+named.
+
+### `about.get` is the runtime complement, and we do not implement it
+
+Discovery says what the API offers; **`about.get` says something about what this account can
+do** — measured just now: `canCreateDrives: true`, `maxUploadSize`, `appInstalled`,
+`storageQuota`. Neither answers the question alone, and we currently have neither. It belongs in
+the first coverage wave for that reason, not merely because it is easy.
+
+## 4c. Things only the WEB INTERFACE can do
+
+**The Skilljar precedent (CINO).** That plugin implements both API versions, and some
+activities — processing and grading a submission — are reachable only through the web interface.
+Because it is a rendered page with a JSON endpoint, automating it is straightforward, and the
+point stands: **100% of the API is not 100% of the product.**
+
+For Google the ambition is smaller — we do **not** aim to cover everything the website does —
+but where something important is UI-only it should be **written down and reconsidered**, not
+silently absent. Register, from measurements already in this repository:
+
+| UI-only capability | measured | why it matters here |
+|---|---|---|
+| **Minting a real comment anchor** | 2026-07-09, 2026-09-03 | The big one. An API-supplied anchor is stored verbatim and then treated as un-anchored; only the editor produces one that works. Every comment this library creates therefore renders as *"Original content deleted"*, shows no quote, and is filtered from the default sidebar. **But**: a real `kix.*` anchor *reused* from an existing comment IS honoured — so this is partially reachable. |
+| **Assigning a comment** | 2026-09-03 | `comments.create` accepts `assigneeEmailAddress`, returns 200, and **stores nothing**. An action item — the one comment state carrying an obligation — can be read but not created. |
+| **Commenting on an image or other non-text object** | 2026-09-02 | The `object` anchor state is editor-only. |
+| **Accept / reject a suggestion** | 2026-09-02 | Not on the GA API; exists in Developer Preview, so gated rather than impossible. |
+| **Version history beyond two revisions** | 2026-09-03 | The editor shows a rich history; the API exposes the creation state and the head. Named versions are not in the API at all. |
+
+**How to reach them, and the honest difference from Skilljar.** Skilljar's UI is a rendered page
+with a JSON endpoint, and using it is a pragmatic choice against a small vendor's product. The
+Docs editor also talks to a private backend — but those endpoints are undocumented, change
+without notice, and automating them sits uneasily with Google's API terms. **Driving the real UI
+with a browser is the defensible route**, not calling its internals.
+
+Which reopens something this repository closed **this morning**:
+`research/comments-apis-2026-09.md` §2.4 retired the `PlaywrightBackend` on the grounds that its
+two stated justifications — accept/reject and cell-anchored creation — now exist in Developer
+Preview. That reasoning was sound and is **no longer sufficient**: the preview is gated and we
+are not enrolled, and the register above gives the seam *new* justifications it did not have.
+Under the governing principle, *"only the website can do that"* is not an acceptable final
+answer. **The seam should be considered live again** — recorded here rather than left as a
+contradiction between two documents written hours apart.
+
+## 4d. Shipping what we cannot test: label it, do not withhold it
+
+**The provision (CINO): cover 100% of what we can see and test now; longer term reach for real
+100% including what we lack access to — perhaps marked untested and dangerous, soliciting
+feedback.**
+
+Adopted, with one requirement that makes it safe. An operation we have never executed may have
+the wrong field mask, the wrong parameter shape, or an error path nobody has seen. Withholding it
+says *"we can't"*, which the principle forbids. Shipping it silently claims a working feature.
+So it ships **marked**, and the marking must be **machine-readable rather than prose**:
+
+- a registry of what has been **exercised against live Google**, so "untested" is derived rather
+  than remembered — the same derive-with-declared-exceptions shape the test suite already uses;
+- untested operations say so **in the tool description and in the result**, because a model
+  relaying a failure should be able to say *"this path has never been run against a real
+  account"* rather than *"it broke"*;
+- and a route for the answer to come back, so the first person to try it improves the registry.
+
+**Precedent in this repository:** `scripts/check_controls.py` reports OK / VIOLATED /
+**UNVERIFIABLE**, and *the third never counts as the first*. An untested capability is the same
+shape — not working, not broken, **unknown** — and the whole value is in refusing to collapse
+those three into two.
+
 ## 5. Sequencing
 
 1. **The category machinery** — three capability names, the `_GATES` entries, `DEFAULT_ENABLED`
@@ -141,8 +246,9 @@ the operations that warn; this names the ones that must be switched on first.
    an off-by-default capability cannot be silently re-enabled. *This is the load-bearing change
    and should land alone*: it is the first time this library has had an off-by-default
    capability since v0.31.0, and every count, description and startup notice asserts otherwise.
-2. **Reads, no new scope** — `revisions.list` / `get` (#389, honestly scoped to two entries),
-   `changes.list` (what changed since), `drives.list`, `about.get`.
+2. **Reads, no new scope** — `about.get` **first**, because it is the runtime answer to "what
+   can this account do" and there is currently no way to ask; then `revisions.list` / `get`
+   (#389, honestly scoped to two entries), `changes.list`, `drives.list`.
 3. **`drive.admin`** — drive lifecycle and restrictions. Reverses `restrictions.py`'s
    read-only-by-construction property, which must be rewritten rather than quietly contradicted.
 4. **`share.public`** — reverses T4's control that `type="anyone"` is unreachable. **Needs a
