@@ -225,8 +225,10 @@ def test_every_kind_is_in_the_closed_vocabulary():
         if name.startswith("KIND_"):
             assert value in _context.KINDS, f"{name} is not in KINDS"
     # 8 until 2026-09-03, when `no_quote` and `unsupported` were added so that a context the
-    # caller asked for always explains itself. Bump this deliberately, with a reason.
-    assert len(_context.KINDS) == 10
+    # caller asked for always explains itself, then 11 when `spanning` was added because a
+    # quote crossing a paragraph boundary was being reported as absent from its own document
+    # (#405). Bump this deliberately, with a reason.
+    assert len(_context.KINDS) == 11
 
 
 def test_the_repr_does_not_leak_the_passage():
