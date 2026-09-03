@@ -10,6 +10,49 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.43.1 (`quoted_text` is a claim, not evidence) — not released *(yet — flipped once PyPI confirms)*
+
+A documentation correction, shipped as a patch because the text corrected is **what a model
+reads** and it asserted the opposite of what is true.
+
+Measured in the Docs editor while answering a leftover question from v0.43.0 (#379): does the
+editor display `quotedFileContent`? It does — and **it validates it against nothing.**
+
+| comment | anchor | quote sent | Docs displays |
+|---|---|---|---|
+| REUSE-2 | real, at `"Drive API"` | `"Drive API"` | `Tab 1 · Drive API` |
+| **REUSE-3** | real, at `"Drive API"` | **text absent from the document** | **`Tab 1 · THIS TEXT IS NOT IN THE DO…`** |
+| **REUSE-4** | real, at `"Drive API"` | **a different real passage** | **`Tab 1 · A shorter paragraph, about a …`** |
+
+REUSE-3's "quotation" occurs nowhere in the file and still renders as an ordinary anchored card,
+with the same header a hand-placed comment gets. **Commenter access is sufficient** — putting
+fabricated words in a reviewer's mouth needs no write access to the content.
+
+The tool description said `quoted_text` was *"Drive's own record of what the reviewer selected"*.
+That holds for an editor-created comment, because the editor fills the field in. For an
+API-created one it is **free text chosen by whoever created the comment**, and we were handing it
+to a model labelled as document content. Corrected on all three surfaces that made the claim, and
+they now point at `context=true`, which reads the passage from the **document** rather than from
+the comment.
+
+Worse than a fabricated quote: **the apparent subject of a comment can be redirected.** REUSE-4's
+anchor points at one passage while its quote names another, and `_context.py` locates by quoted
+text — so this library resolves, marks with `⟦…⟧` and reports the passage the *attacker* named.
+Threat-model row proposed in #380 rather than edited in, per the rule that `THREAT_MODEL.md`
+changes arrive by issue.
+
+**Also measured, and it is the good half: a Drive-API comment CAN be anchored** by reusing a real
+`kix.*` id (#379). Google's "developer-defined anchors are treated as un-anchored", and our own
+2026-07-09 measurement, are both about **synthetic** anchors; a real id naming an anchor the
+document actually has is honoured, and the result is indistinguishable from a hand-placed comment.
+You cannot *mint* an anchor, but you can *reuse* one — which reaches only already-commented
+passages, and is also what makes the spoof above look legitimate. `CLAUDE.md` fact 3's "you cannot
+create an anchored comment via the API" is qualified accordingly.
+
+No behaviour change. The remaining remedies in #380 — surfacing *"this quote does not occur in the
+document"*, and whether `create_comment` should ever write the field — are decisions rather than
+cleanups and are left to their own change.
+
 ## 2026-09-03 — v0.43.0 (there is a fourth anchor state)
 
 Answers **#372**, filed by a consumer on the first real measurement after upgrading to 0.41.0:
