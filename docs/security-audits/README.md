@@ -60,7 +60,7 @@ looked for, which is the reason this table exists.
 | `tests/` as code | **partial** — 13/130 at 2026-09-01 · 16% of lines |
 | `.github/workflows/` | 2026-09-01 · codex · 94% of lines |
 | packaging and secret-scanning config | 2026-08-27 · claude-code · 85% of lines |
-| `scripts/` | 2026-09-01 · codex · 85% of lines |
+| `scripts/` | 2026-09-01 · codex · 84% of lines |
 | `experiments/` | **not yet audited** |
 | `research/` | **not yet audited** |
 <!-- END GENERATED COVERAGE -->

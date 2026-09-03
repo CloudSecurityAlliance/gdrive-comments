@@ -233,6 +233,23 @@ def _posture_problems(paths, anything_disabled: bool, unset_is_everything: bool)
         return []                                  # the claims would be true; nothing to check
     problems = []
     for path in paths:
+        # A PROPOSAL describes intent, not current state, and this guard cannot tell the two
+        # apart from the words alone. A spec that says "three capabilities are OFF by default"
+        # as a *design* is not the drift this exists to catch - that drift was released text
+        # telling an operator they were protected when they were not.
+        #
+        # Narrow on purpose. Only `docs/superpowers/specs/`, and only when the document
+        # declares its own status in the first few lines, so the exemption is a thing the author
+        # wrote down rather than a directory that quietly stopped being checked. A spec whose
+        # design SHIPS has to drop the marker, and then this guard starts reading it - which is
+        # the moment the claim becomes a claim.
+        # `str(path)`, not `path.as_posix()`: the test for this function plants a stub object
+        # that provides `read_text` and nothing else, which is the right way to test a text
+        # scanner - so the scanner must not require the rest of the Path protocol.
+        if "superpowers/specs/" in str(path).replace("\\", "/"):
+            head = path.read_text(encoding="utf-8")[:400].lower()
+            if "status: proposed" in head or "status: not started" in head:
+                continue
         # EMPHASIS STRIPPED before matching, and this is not tidiness. `policy.py` says
         # "it does **not** fail closed when nothing is configured" - the correct statement - and
         # the negation check looked for "not " while the text held "not**". A guard defeated by

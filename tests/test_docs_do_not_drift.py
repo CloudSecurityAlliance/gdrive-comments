@@ -786,3 +786,75 @@ class TestTheModuleInventoryWalksTheWholeTree:
         assert any("_zzz_drift_pkg" in p for p in problems), (
             "a new undocumented subpackage was not reported - this is exactly what the "
             "top-level-only glob missed")
+
+
+class TestAProposedSpecIsNotAClaim:
+    """A design document describes intent; the posture guard reads it as an assertion.
+
+    The guard exists because thirteen released claims of a closed default survived eleven
+    releases after the default reversed — text telling an operator they were protected when
+    they were not. A spec proposing that three capabilities be OFF by default is not that: it
+    is a proposal, and it has to be writable before it is true.
+
+    **The exemption is narrow on purpose**, and these tests pin both halves of it: only
+    `docs/superpowers/specs/`, and only while the document declares its own status. **A spec
+    whose design ships must drop the marker, and the guard then starts reading it** — which is
+    exactly the moment its sentences become claims about the product.
+    """
+
+    def check(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_cdc2", ROOT / "scripts/check_doc_claims.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def planted(self, tmp_path, relative: str, text: str):
+        p = tmp_path / relative
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    CLAIM = "Three capabilities are OFF by default, which is the whole design."
+
+    def test_a_proposed_spec_is_exempt(self, tmp_path):
+        cdc = self.check()
+        path = self.planted(tmp_path, "docs/superpowers/specs/x.md",
+                            "# X\n\n**Status: proposed, 2026-09-03.**\n\n" + self.CLAIM)
+        assert cdc._posture_problems([path], anything_disabled=False,
+                                     unset_is_everything=True) == []
+
+    def test_the_SAME_spec_without_the_marker_is_NOT_exempt(self, tmp_path):
+        """The half that makes the exemption safe: drop the status line and it is read as a
+        claim again. Otherwise the directory would have quietly stopped being checked."""
+        cdc = self.check()
+        path = self.planted(tmp_path, "docs/superpowers/specs/x.md", "# X\n\n" + self.CLAIM)
+        assert cdc._posture_problems([path], anything_disabled=False,
+                                     unset_is_everything=True) != []
+
+    def test_the_exemption_does_not_apply_outside_the_specs_directory(self, tmp_path):
+        """A status marker in a README would otherwise silence the guard on shipped text."""
+        cdc = self.check()
+        path = self.planted(tmp_path, "README.md",
+                            "**Status: proposed.**\n\n" + self.CLAIM)
+        assert cdc._posture_problems([path], anything_disabled=False,
+                                     unset_is_everything=True) != []
+
+    def test_the_marker_must_be_near_the_TOP(self, tmp_path):
+        """Only the first few hundred characters are read, so a status line buried at the end
+        of a long shipped document cannot retroactively exempt it."""
+        cdc = self.check()
+        path = self.planted(tmp_path, "docs/superpowers/specs/x.md",
+                            "# X\n\n" + self.CLAIM + "\n\n" + ("filler. " * 200)
+                            + "\n\nStatus: proposed")
+        assert cdc._posture_problems([path], anything_disabled=False,
+                                     unset_is_everything=True) != []
+
+    def test_the_real_spec_declares_its_status(self):
+        """The document this exemption was added for. If somebody implements it and drops the
+        marker, this test tells them the guard is now reading their file — which is correct."""
+        spec = ROOT / ("docs/superpowers/specs/"
+                       "2026-09-03-full-api-coverage-and-admin-capabilities.md")
+        assert spec.exists()
+        assert "Status: proposed" in spec.read_text(encoding="utf-8")[:400]
