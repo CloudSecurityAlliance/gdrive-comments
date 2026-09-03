@@ -56,7 +56,11 @@ class CommentOut(TypedDict):
     # (file-level, or anchored to a non-text object). Off by default — the token cost is the
     # caller's to manage, and #358 asks for exactly that.
     context: ContextOut | None
-    # The passage the comment is attached to, from Drive's `quotedFileContent`. `None` means
+    # The passage the comment CLAIMS to be attached to, from Drive's `quotedFileContent`. Not
+    # evidence about the document: the field is written by whoever created the comment and
+    # Google validates it against neither the document nor the anchor, so an API-created
+    # comment can quote text the document never contained (measured 2026-09-03, #380). `None`
+    # means
     # the comment is on the FILE rather than on a passage - a real and common state ("looks
     # good to me") - which is why it is not an empty string.
     #
