@@ -37,6 +37,12 @@ NOT_EXERCISED = {
     # nothing to resolve and would only print "everything" - which the startup line
     # already says. It is exercised against a real list in tests instead.
     "preview_allowlist": "needs a narrowed allowlist; the demo runs unrestricted",
+    # Needs a shared DRIVE, and the demo creates its files in My Drive - deliberately, so it
+    # never writes into an organisation's shared space. A file in My Drive has no `driveId`, so
+    # there is nothing to pass. Not a gap in the demo: staging one would mean the demo creating
+    # or requiring a shared drive, which is a far more invasive thing to do to somebody's
+    # account than anything else it does.
+    "get_shared_drive": "needs a shared drive; the demo works in My Drive by design",
     "resolve_access_proposal": (
         "needs a pending request, which only another human without access can create"),
 }

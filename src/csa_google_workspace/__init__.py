@@ -24,10 +24,14 @@ from .files import FileActor, FileCollection, FileRef
 from .labels import Label, LabelField
 from .permissions import Permission
 from .policy import Policy, PolicyBackend, Scope
+from .restrictions import FileRestrictions, ProtectedRange, SharedDrive
 from .suggestions import Suggestion
 from .workspace import Workspace
 
 __all__ = [
+    "FileRestrictions",
+    "ProtectedRange",
+    "SharedDrive",
     # The four attachment states a `Comment.anchor_state` can take - exported because a
     # consumer branches on them, and a bare string comparison is how #372 happened.
     "ANCHOR_FILE",
@@ -45,4 +49,4 @@ __all__ = [
     # policy / allowlisting (#82)
     "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",
 ]
-__version__ = "0.48.0"
+__version__ = "0.49.0"

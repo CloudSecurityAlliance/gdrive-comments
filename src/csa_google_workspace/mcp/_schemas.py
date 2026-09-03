@@ -242,6 +242,58 @@ class NoteOut(TypedDict):
     text: str
 
 
+class ProtectedRangeOut(TypedDict):
+    protected_range_id: int | None
+    tab: str | None
+    a1_range: str | None
+    description: str | None
+    # THE field to read before calling this protection: a warning-only range shows a dialog and
+    # then permits the edit anyway. `enforced` is the inverse, precomputed, because a caller
+    # branching on `warning_only` gets the polarity backwards half the time.
+    warning_only: bool
+    enforced: bool
+    requesting_user_can_edit: bool | None
+    editors: list[str]
+    domain_users_can_edit: bool | None
+
+
+class ProtectedRangesOut(TypedDict):
+    file_id: str
+    ranges: list[ProtectedRangeOut]
+    count: int
+    detail: str
+
+
+class RestrictionsOut(TypedDict):
+    file_id: str
+    # What somebody CONFIGURED. `None` means Drive did not say, never "unrestricted".
+    copy_requires_writer_permission: bool | None
+    writers_can_share: bool | None
+    # What Drive will actually permit THIS user, after the flags, the ACL and any drive-level
+    # policy. A different question from the two above, and usually the more useful one.
+    can_edit: bool | None
+    can_comment: bool | None
+    can_share: bool | None
+    can_copy: bool | None
+    can_delete: bool | None
+    can_read_revisions: bool | None
+    drive_id: str | None
+    detail: str
+
+
+class SharedDriveOut(TypedDict):
+    drive_id: str
+    name: str | None
+    drive_members_only: bool | None
+    domain_users_only: bool | None
+    copy_requires_writer_permission: bool | None
+    sharing_folders_requires_organizer_permission: bool | None
+    admin_managed_restrictions: bool | None
+    download_restricted_for_readers: bool | None
+    download_restricted_for_writers: bool | None
+    detail: str
+
+
 class NotesOut(TypedDict):
     notes: list[NoteOut]
     count: int
@@ -657,6 +709,74 @@ def context_out(ctx: Any) -> ContextOut | None:
             "heading_path": list(ctx.heading_path), "truncated": ctx.truncated,
             "candidates": [{"paragraph_index": i, "heading_path": list(p)}
                            for i, p in ctx.candidates]}
+
+
+def protected_ranges_out(file_id: str, ranges: list) -> ProtectedRangesOut:
+    enforced = sum(1 for r in ranges if r.enforced)
+    warning = len(ranges) - enforced
+    if not ranges:
+        detail = ("No protected ranges on this spreadsheet. Nothing here is protected by "
+                  "GOOGLE, which is a different question from what this server's policy "
+                  "permits - a range with no protection can still be refused by policy, and "
+                  "policy can still be routed around by another client.")
+    else:
+        detail = (f"{len(ranges)} protected range(s): {enforced} ENFORCED, {warning} "
+                  f"warning-only. A warning-only range shows a dialog and then PERMITS the "
+                  f"edit - do not report it as protection. Enforcement is Google's and applies "
+                  f"to every client, not just this server.")
+    return {"file_id": file_id, "count": len(ranges), "detail": detail,
+            "ranges": [{"protected_range_id": r.protected_range_id, "tab": r.tab_title,
+                        "a1_range": r.a1_range, "description": r.description,
+                        "warning_only": r.warning_only, "enforced": r.enforced,
+                        "requesting_user_can_edit": r.requesting_user_can_edit,
+                        "editors": list(r.editor_users) + list(r.editor_groups),
+                        "domain_users_can_edit": r.domain_users_can_edit}
+                       for r in ranges]}
+
+
+def restrictions_out(file_id: str, r: Any, drive_id: str | None) -> RestrictionsOut:
+    if r.unknown:
+        detail = ("Drive returned NO restriction information for this file. That is not the "
+                  "same as unrestricted - it means we could not read it, and reporting it as "
+                  "absent would be the dangerous direction.")
+    else:
+        blocked = [n for n, v in (("copying", r.can_copy), ("sharing", r.can_share),
+                                  ("editing", r.can_edit), ("commenting", r.can_comment))
+                   if v is False]
+        detail = (f"Drive will refuse: {', '.join(blocked)}." if blocked
+                  else "Drive permits editing, commenting, sharing and copying for this user.")
+        if r.writers_can_share is False:
+            detail += (" writersCanShare=false: writers may NOT re-share this file, and that is "
+                       "enforced by Drive against every client - stronger than this server's "
+                       "own file.share gate, which binds only its own calls.")
+    return {"file_id": file_id, "drive_id": drive_id, "detail": detail,
+            "copy_requires_writer_permission": r.copy_requires_writer_permission,
+            "writers_can_share": r.writers_can_share,
+            "can_edit": r.can_edit, "can_comment": r.can_comment, "can_share": r.can_share,
+            "can_copy": r.can_copy, "can_delete": r.can_delete,
+            "can_read_revisions": r.can_read_revisions}
+
+
+def shared_drive_out(d: Any) -> SharedDriveOut:
+    on = [n for n, v in (("driveMembersOnly", d.drive_members_only),
+                         ("domainUsersOnly", d.domain_users_only),
+                         ("copyRequiresWriterPermission", d.copy_requires_writer_permission),
+                         ("sharingFoldersRequiresOrganizerPermission",
+                          d.sharing_folders_requires_organizer_permission))
+          if v is True]
+    detail = (f"Restrictions in force on this shared drive: {', '.join(on)}. These bound every "
+              f"file in the drive and every client, so they can make an action impossible "
+              f"regardless of how this server is configured." if on
+              else "No drive-level restrictions are set on this shared drive.")
+    return {"drive_id": d.id, "name": d.name, "detail": detail,
+            "drive_members_only": d.drive_members_only,
+            "domain_users_only": d.domain_users_only,
+            "copy_requires_writer_permission": d.copy_requires_writer_permission,
+            "sharing_folders_requires_organizer_permission":
+                d.sharing_folders_requires_organizer_permission,
+            "admin_managed_restrictions": d.admin_managed_restrictions,
+            "download_restricted_for_readers": d.download_restricted_for_readers,
+            "download_restricted_for_writers": d.download_restricted_for_writers}
 
 
 def notes_out(notes: list) -> NotesOut:

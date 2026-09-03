@@ -1,14 +1,17 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from .. import _cellmap
 from .. import exceptions as exc
 from ..base import Document
+from ..comments import Comment
 
-if TYPE_CHECKING:
-    from ..comments import Comment
+# A RUNTIME import, and it has to stay one: `protected_ranges` calls `ProtectedRange.from_api`.
+# `ruff --fix` will move an annotation-only import into the `TYPE_CHECKING` block, which is
+# correct right up until the class is also *constructed* - and then it passes ruff and mypy and
+# raises NameError on first use. It did, once.
+from ..restrictions import ProtectedRange
 
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 _DEFAULT_RANGE = "A1:Z1000"   # fallback for as_text() when no tab metadata is available
@@ -76,6 +79,42 @@ class Sheet(Document):
                         if text:
                             out.append(Note(tab=title, cell=f"{_cellmap.column_letters(c)}{r}",
                                             text=text))
+        return out
+
+    @property
+    def protected_ranges(self) -> list[ProtectedRange]:
+        """Every protected range, across every tab — **the control that actually prevents an
+        edit** (#336).
+
+        Different in kind from this library's own capability gating, which is why it is worth
+        having: our gates bind our own calls, and `README.md` concedes that running another
+        Drive client alongside defeats them. A protected range binds **every** client, so
+        "Google will refuse this" is a categorically stronger answer than "our policy is
+        configured not to".
+
+        **Read `warning_only` before calling one of these protection.** A warning-only range
+        shows a dialog and then permits the edit; Google's own UI calls it *"show a warning when
+        editing this range"*. `ProtectedRange.enforced` is the field to branch on.
+
+        The range is reported in A1 with its tab title resolved, because a `GridRange` of
+        zero-based half-open indices is not something a caller should have to decode — and
+        `sheetId` alone does not say which tab it names.
+        """
+        ss = self._backend.get_spreadsheet(self.id)
+        titles = {sh.get("properties", {}).get("sheetId"):
+                  sh.get("properties", {}).get("title")
+                  for sh in ss.get("sheets", [])}
+        out: list[ProtectedRange] = []
+        for sheet in ss.get("sheets", []):
+            for raw in sheet.get("protectedRanges", []) or []:
+                grid = raw.get("range") or {}
+                # A GridRange with no row/column bounds means the WHOLE TAB, which is the
+                # commonest protection there is and would otherwise render as an empty range.
+                tab_id = grid.get("sheetId", sheet.get("properties", {}).get("sheetId"))
+                title = titles.get(tab_id)
+                out.append(ProtectedRange.from_api(
+                    raw, tab_id=tab_id, tab_title=title,
+                    a1_range=_grid_to_a1(grid, title)))
         return out
 
     @property
@@ -299,3 +338,33 @@ class Sheet(Document):
         self._require_writable()
         self._cell_map_cache = None
         return self._backend.sheets_batch_update(self.id, requests)
+
+
+def _grid_to_a1(grid: dict, title: str | None) -> str | None:
+    """A `GridRange` as A1, or `None` when there is nothing decodable.
+
+    Google's `GridRange` is **zero-based and half-open** (`startRowIndex` inclusive,
+    `endRowIndex` exclusive), while A1 is one-based and inclusive - so an off-by-one here is
+    silent and produces a range that looks plausible. Converted in one place for that reason.
+
+    **Missing bounds mean UNBOUNDED, not zero.** A protected range covering a whole tab arrives
+    with no row or column keys at all, which is the commonest protection there is; rendering
+    that as `A1:A1` would report a whole-sheet lock as a single cell.
+    """
+    if not grid and not title:
+        return None
+    r1, r2 = grid.get("startRowIndex"), grid.get("endRowIndex")
+    c1, c2 = grid.get("startColumnIndex"), grid.get("endColumnIndex")
+    if r1 is None and r2 is None and c1 is None and c2 is None:
+        return f"'{title}'" if title else None          # the entire tab
+    start = f"{_col(c1) if c1 is not None else ''}{r1 + 1 if r1 is not None else ''}"
+    end = f"{_col(c2 - 1) if c2 is not None else ''}{r2 if r2 is not None else ''}"
+    span = f"{start}:{end}" if end and end != start else start
+    return f"'{title}'!{span}" if title else span
+
+
+def _col(index: int) -> str:
+    """0 -> A. Bijective base-26, so 26 is `AA` and not `A@` - the same conversion
+    `_cellmap.column_letters` performs, and wrong in the same way if written by hand."""
+    from .._cellmap import column_letters
+    return column_letters(index + 1)

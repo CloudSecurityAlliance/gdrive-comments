@@ -66,6 +66,7 @@ class Backend(Protocol):
                   parent_id: str | None = None) -> JsonDict: ...
     def get_document(self, file_id: str, suggestions_view_mode: str | None = None) -> JsonDict: ...
     def get_spreadsheet(self, file_id: str) -> JsonDict: ...
+    def get_drive(self, drive_id: str) -> JsonDict: ...
     def get_sheet_notes(self, file_id: str) -> JsonDict: ...
     def get_values(self, file_id: str, a1_range: str) -> list[list[Any]]: ...
     def get_presentation(self, file_id: str) -> JsonDict: ...
@@ -85,8 +86,9 @@ class FakeBackend:
     def __init__(self, files, *, documents=None, spreadsheets=None,
                  values=None, presentations=None, exports=None, media=None, comments=None,
                  permissions=None, access_proposals=None, file_labels=None,
-                 label_definitions=None):
+                 label_definitions=None, drives=None):
         self._files = files
+        self._drives = drives or {}
         # Keyed (file_id, comment_id) -> raw Drive comment dict, matching what
         # create_comment() builds. The seed exists for fixtures needing fields
         # create_comment() cannot produce — `quotedFileContent` above all, the only way to
@@ -119,6 +121,11 @@ class FakeBackend:
             return self._files[file_id]
         except KeyError:
             raise exc.NotFoundError(f"file '{file_id}' not found") from None
+
+    def get_drive(self, drive_id):
+        # Seeded like every other fixture. A drive the fixture does not know is `not found`,
+        # matching what an ordinary (non-admin) user sees for a drive they are not a member of.
+        return self._fixture(self._drives, drive_id, "shared drive")
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
         raise exc.UnsupportedOperation("accept_suggestion is not supported by FakeBackend")
@@ -558,9 +565,33 @@ class ApiBackend:
         return _errors.call(
             self._services.drive.files()
             .get(fileId=file_id,
-                 fields="id,name,mimeType,webViewLink,size,trashed,createdTime,modifiedTime,"
-                        f"driveId,owners({_USER_FIELDS}),lastModifyingUser({_USER_FIELDS})",
+                 # `copyRequiresWriterPermission` and `writersCanShare` are the file-level
+                 # RESTRICTIONS (#337) - Google's own version of what this project's capability
+                 # gating attempts, and unlike ours they bind every client rather than only our
+                 # calls. `capabilities(...)` is the EFFECTIVE answer after restrictions, ACLs
+                 # and drive-level policy have all been applied, which is a different and often
+                 # more useful question than any single flag: "may I" rather than "is this set".
+                 fields=self._FILE_FIELDS,
                  supportsAllDrives=True).execute)
+
+    def get_drive(self, drive_id):
+        """A shared drive's metadata and RESTRICTIONS (#338).
+
+        The broadest Google-side controls there are, and the ones an organisation actually
+        configures: `driveMembersOnly`, `domainUsersOnly`, `copyRequiresWriterPermission`,
+        `sharingFoldersRequiresOrganizerPermission`, and `downloadRestriction` - which the
+        request for this did not list and which is **set on real drives**, so enumerating from
+        the issue rather than from the API would have missed it.
+
+        `useDomainAdminAccess` is deliberately NOT passed. It is how an administrator reads a
+        drive they are not a member of, and this library authenticates as an ordinary user by
+        design - asking for admin access would be asking for authority the posture says we do
+        not want. A drive the user cannot see reports as unreachable.
+        """
+        return _errors.call(
+            self._services.drive.drives()
+            .get(driveId=drive_id,
+                 fields="id,name,createdTime,hidden,restrictions").execute)
 
     def accept_suggestion(self, file_id: str, suggestion_id: str) -> None:
         raise exc.UnsupportedOperation(
@@ -579,6 +610,20 @@ class ApiBackend:
     # OMITS them, so the wildcard is not a way to find out they exist. Omitting them is how
     # an assigned comment reads as an ordinary one, which the README warned about while this
     # mask did it. Both are on replies too; `quotedFileContent` is refused there.
+    # A class constant so it can be ASSERTED. `FakeBackend` never sees a field mask, so a
+    # missing field is invisible to every test that uses the fake - which is precisely how #398
+    # shipped with the assignment fields unrequested, and how #391 shipped against a response
+    # shape nothing exercised. The masks are the one part of this class that a fake cannot
+    # stand in for.
+    _FILE_FIELDS = ("id,name,mimeType,webViewLink,size,trashed,createdTime,modifiedTime,"
+                    "copyRequiresWriterPermission,writersCanShare,"
+                    "capabilities(canEdit,canComment,canShare,canCopy,canDelete,"
+                    "canReadRevisions),"
+                    f"driveId,owners({_USER_FIELDS}),lastModifyingUser({_USER_FIELDS})")
+    _SHEET_FIELDS = ("sheets(properties(sheetId,title,index,hidden,sheetType),"
+                     "protectedRanges(protectedRangeId,description,warningOnly,"
+                     "requestingUserCanEdit,namedRangeId,range,"
+                     "editors(users,groups,domainUsersCanEdit)))")
     _CF = "id,anchor,content,htmlContent,resolved,deleted,createdTime,modifiedTime," \
           "author(displayName,emailAddress,me,photoLink),quotedFileContent," \
           "mentionedEmailAddresses,assigneeEmailAddress," \
@@ -953,8 +998,13 @@ class ApiBackend:
                                  # index/hidden/sheetType are what make `list_tabs` honest: a
                                  # HIDDEN tab nobody knows about is exactly what a register
                                  # build trips over, and `index` is why `Title` can be first.
-                                 fields="sheets(properties(sheetId,title,index,hidden,"
-                                        "sheetType))").execute)
+                                 # `protectedRanges` is THE control that actually prevents an
+                                 # edit (#336), enforced by Google against every client rather
+                                 # than by our gates against our own calls. It lives in
+                                 # `sheets[]` rather than at the top level, and the roadmap
+                                 # never listed it because the Sheets inventory enumerated
+                                 # METHODS and this capability lives in request types.
+                                 fields=self._SHEET_FIELDS).execute)
 
     def get_sheet_notes(self, file_id):
         """Cell NOTES, which are not comments and are invisible to the comments API.

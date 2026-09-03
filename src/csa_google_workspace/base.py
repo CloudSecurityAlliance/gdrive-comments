@@ -8,6 +8,7 @@ from .backend import Backend
 from .comments import Comment, CommentCollection
 from .labels import LabelsMixin
 from .permissions import PermissionsMixin
+from .restrictions import FileRestrictions
 
 MIME_TO_TYPE = {
     "application/vnd.google-apps.document": "document",
@@ -70,6 +71,26 @@ class Document(CommentsMixin, PermissionsMixin, AccessProposalsMixin, LabelsMixi
         "pdf", "docx"); rejects formats Drive will not produce for this type, rather than
         letting a bad one become a 400 from Google."""
         return self._backend.export_file(self.id, _formats.resolve(mime_type, self.type))
+
+    @property
+    def restrictions(self) -> FileRestrictions:
+        """What Drive itself permits on this file (#337) — a stronger answer than our policy.
+
+        Two halves, answering different questions. The **restriction flags**
+        (`copy_requires_writer_permission`, `writers_can_share`) say what somebody configured.
+        The **`can_*` fields** say what Drive will actually permit *this* user, after the
+        flags, the ACL and any drive-level policy are all applied.
+
+        A model deciding whether to attempt something wants the second; somebody auditing the
+        document's posture wants the first. Neither is derivable from the other.
+
+        `writers_can_share=False` is worth singling out: it is Google's version of this
+        project's `file.share` capability gate, and **unlike ours it cannot be routed around** —
+        our gate binds this server's calls, and `README.md` concedes that running another Drive
+        client alongside defeats it. Every field is `None` when Drive did not say, and `None`
+        never means unrestricted; `FileRestrictions.unknown` tells the two apart.
+        """
+        return FileRestrictions.from_api(self._backend.get_file_metadata(self.id))
 
     @property
     def export_formats(self) -> tuple[str, ...]:

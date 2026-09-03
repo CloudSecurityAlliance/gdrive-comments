@@ -28,6 +28,7 @@ from csa_google_workspace.mcp import settings_from_env
 from csa_google_workspace.mcp.server import create_server
 
 DOC, SHEET, DECK = "doc1", "sheet1", "deck1"
+DRIVE = "0ABCDEfakeSharedDrive"
 
 # `authenticate` opens a browser or elicits a URL from the client. Excluded deliberately, and
 # named here rather than skipped silently, so "not smoke-tested" stays a visible decision.
@@ -50,6 +51,12 @@ ARGS: dict[str, dict] = {
     "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
     "list_suggestions":      {"fileId": DOC},
     "list_notes":            {"fileId": SHEET},
+    "list_protected_ranges": {"fileId": SHEET},
+    "get_file_restrictions": {"fileId": DOC},
+    # A drive id the fixture does not seed, so this exercises the NOT-FOUND path - which is the
+    # normal answer for an ordinary user asking about a drive they are not a member of, and the
+    # one a smoke test can actually stage.
+    "get_shared_drive":      {"driveId": DRIVE},
     "export_comments":       {"fileId": DOC},
     # `query=` rather than `fileIds=`, because the query path is the one a caller
     # reaches for first; the id path is covered in test_work_handoff_inventory.py
@@ -131,9 +138,21 @@ def server():
                 "mimeType": "application/vnd.google-apps.presentation"}},
         documents={DOC: {"body": {"content": [
             {"paragraph": {"elements": [{"textRun": {"content": "hello world\n"}}]}}]}}},
-        spreadsheets={SHEET: {"sheets": [{"properties": {"title": "Tab1", "sheetId": 0}}]}},
+        spreadsheets={SHEET: {"sheets": [
+            {"properties": {"title": "Tab1", "sheetId": 0},
+             # One protected range, so the tool is exercised against a POPULATED answer. A
+             # smoke test that only ever saw an empty list would pass while the shaping was
+             # broken - the emptiness would be what was under test, not the tool.
+             "protectedRanges": [{"protectedRangeId": 1, "description": "locked",
+                                  "range": {"sheetId": 0, "startRowIndex": 0,
+                                            "endRowIndex": 5}}]}]}},
         values={(SHEET, "Tab1"): [["a", "b"]]},
         presentations={DECK: {"slides": [{"objectId": "s1", "pageElements": [_shape()]}]}},
+        drives={DRIVE: {"id": DRIVE, "name": "A Shared Drive",
+                        "restrictions": {"driveMembersOnly": True,
+                                         "domainUsersOnly": False,
+                                         "downloadRestriction": {
+                                             "restrictedForReaders": True}}}},
         exports={(DOC, "text/plain"): b"hello world", (DOC, "text/markdown"): b"# hello"},
         permissions={DOC: [{"id": "p1", "type": "user", "role": "writer"}]},
         access_proposals={DOC: [{"proposalId": "ap1", "fileId": DOC,

@@ -71,6 +71,11 @@ GENERATED_REPR_IS_SAFE = {
     "_environment.py::Environment": "which client/token/paths are configured, never their contents",
     "access_proposals.py::RoleAndView": "two role strings from Drive's fixed vocabulary",
     "comments.py::Location":     "cell reference and row/col integers, not the cell's value",
+    # Eight tri-state booleans and nothing else: what Drive permits, never what it contains.
+    # `ProtectedRange` and `SharedDrive` in the same module DO redact by hand, because a range
+    # description is author-written text, an editor list is collaborator PII, and a drive name
+    # identifies an organisational unit.
+    "restrictions.py::FileRestrictions": "tri-state booleans about permission, no content",
     # A bool and a tuple of PreviewedEntry, each of which redacts its own repr - so the
     # generated one here recurses into redacted output rather than around it.
     "allowlist.py::Preview":     "a bool plus already-redacting PreviewedEntry values",

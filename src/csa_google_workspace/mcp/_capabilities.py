@@ -54,6 +54,13 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     # has no endpoint for either, so there is nothing to gate.
     "list_suggestions": None,
     "list_notes": None,                # a read; notes are read-only in this library
+    # All three are reads, and read-only by CONSTRUCTION rather than by configuration: there is
+    # no write counterpart anywhere in the library, and no capability that would enable one.
+    # These are the controls that bound every client, so an agent able to lift one has not
+    # been restricted (#336, #337, #338).
+    "list_protected_ranges": None,
+    "get_file_restrictions": None,
+    "get_shared_drive": None,
     "export_comments": None,
     # Also `None`, for the same reason and with the same lossiness: reading is ungated,
     # but destination="sheet" creates a Drive file and so needs `file.create`. A
