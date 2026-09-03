@@ -433,15 +433,24 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         the file in the modify allowlist — a register that does both needs both, and either half
         can be refused on its own."""
         from pathlib import Path
-        source = Path(path).expanduser()
-        if not source.is_file():
-            raise ValueError(f"{source} is not a file. Pass the .csv or .xlsx that "
-                             f"export_comments wrote.")
+        # THE SWITCH IS CHECKED FIRST, and the order is the whole fix (#314). The other way
+        # round, `is_file()` ran before the refusal - so with local reads OFF the two error
+        # strings still separated "exists" from "does not exist", one bit at a time, for any
+        # path `expanduser()` can reach: ~/.ssh/id_rsa, ~/.aws/credentials,
+        # ~/.csa_google_workspace/token.json. An existence oracle inside the switch whose
+        # stated purpose is to remove local exposure.
+        #
+        # No `path` in the refusal either: echoing back the probe tells the caller the server
+        # saw it, and a message that varies with the input is the oracle in a smaller form.
         if not local_read:
             raise ValueError(
                 "reading a register from this machine is switched off (CSA_GW_LOCAL_READ). "
                 "That is a data-handling setting, not a permission. Without it the register "
                 "workflow is unavailable; the individual comment tools still work.")
+        source = Path(path).expanduser()
+        if not source.is_file():
+            raise ValueError(f"{source} is not a file. Pass the .csv or .xlsx that "
+                             f"export_comments wrote.")
         doc = get_workspace().open(fileId)
         rows = _apply.read_rows(source)
         report = _apply.apply_rows(doc, rows, apply=apply, force=force)
