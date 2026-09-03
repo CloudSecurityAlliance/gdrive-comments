@@ -39,7 +39,7 @@ collide on the callback port.
 
 | For | Against |
 |---|---|
-| Zero code. Available now | **Context cost: 34 tools × N accounts.** Two accounts is 68 tools |
+| Zero code. Available now | **Context cost: the whole tool surface × N accounts.** *(Read 34 × N when written; the surface is 52 as of v0.47.0, so two accounts is 104 tools — the argument gets stronger as the server grows, which is why the number is no longer written in.)* |
 | **Process isolation** — a *code* bug cannot cross accounts (but see the threat-model section: this does **not** help against injection, and does not isolate tokens at rest) | No fan-out across accounts |
 | Per-account policy is free — separate env per instance | The model picks by server prefix, which is easy to get wrong and invisible in the result |
 
@@ -366,7 +366,7 @@ apply tools, plus `search_files`, `list_recent_files`, `create_file`, `demonstra
 | `describe_configuration` | Takes an **optional** `account`: without one, the server-wide config plus the alias list; with one, that account's effective policy |
 | `read_server_resource` | Same treatment — it renders `csa-gw://config`, which becomes per-account. Optional `account` |
 
-Counted against the live registry rather than by hand: of today's 34 tools, **31 would take a
+Counted against the live registry rather than by hand: of the **34 tools present when this was written** (52 as of v0.47.0), **31 would take a
 required `account`**, and the three above would not.
 
 ### 6. `list_accounts` — because a required parameter must be discoverable

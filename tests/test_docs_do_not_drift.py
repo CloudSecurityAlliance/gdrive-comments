@@ -695,3 +695,94 @@ def _usage_text() -> str:
     nothing makes every assertion built on it vacuous."""
     from csa_google_workspace.mcp import cli
     return cli.USAGE
+
+
+class TestTheModuleInventoryWalksTheWholeTree:
+    """The inventory check inspects subpackages, not just the top level (#329).
+
+    **The glob was `*.py`** — top level only — so `mcp/` and `documents/` were never walked, and
+    `mcp/_flavours.py`, `mcp/_logging.py` and `mcp/_capabilities.py` went undocumented while the
+    check reported no problems. A guard that only inspects the directory where things were
+    originally written stops working the first time the tree grows a subpackage, and reports
+    success while doing it.
+
+    Asserted here rather than left to `check_doc_claims.py` alone because that script is
+    **advisory** — it opens one weekly issue rather than failing a PR. The property that it
+    *looks in the right places* is cheap to pin and is what silently regressed.
+    """
+
+    def check_problems(self) -> list[str]:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "_cdc", ROOT / "scripts/check_doc_claims.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.check()
+
+    def test_it_is_clean_right_now(self):
+        """Vacuity guard: if this is dirty, the tests below prove nothing about the mechanism."""
+        assert self.check_problems() == []
+
+    def test_every_subpackage_is_described(self):
+        """The direction that broke. A whole directory nobody is told about is worse than a
+        module nobody is told about, and it was the invisible case."""
+        pkg = ROOT / "src/csa_google_workspace"
+        subs = [d.relative_to(pkg).as_posix() for d in pkg.iterdir()
+                if d.is_dir() and (d / "__init__.py").exists()]
+        assert subs, "no subpackages found - this test would pass vacuously"
+        guide = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        for sub in subs:
+            assert f"`{sub}/`" in guide or f"`{sub}`" in guide, (
+                f"the `{sub}/` subpackage is not mentioned in CLAUDE.md's layout section")
+
+    # The three `mcp/` modules the 2026-09-01 audit found missing (F24, #329). A hand-written
+    # list of three, and that IS the derive-don't-list rule being applied rather than broken:
+    # the general check deliberately accepts a directory-level mention for a subpackage module,
+    # because demanding a line for each of twenty `mcp/` internals would make it cry wolf. So
+    # these are pinned individually for the reason CLAUDE.md gives for its other narrow guards
+    # — they are the claims that have ALREADY gone wrong. Each carries a decision an agent
+    # needs: the surface ceiling, the tool-vs-Backend capability split, and the
+    # operation-never-content logging rule.
+    AUDIT_FOUND_MISSING = ("mcp/_flavours.py", "mcp/_capabilities.py", "mcp/_logging.py")
+
+    @pytest.mark.parametrize("module", AUDIT_FOUND_MISSING)
+    def test_the_modules_the_audit_found_missing_are_named(self, module):
+        guide = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+        assert f"`{module}`" in guide, (
+            f"{module} is not named in CLAUDE.md. The audit found it missing once (F24); the "
+            f"general inventory check accepts a directory-level mention for subpackage modules, "
+            f"so nothing else would catch it going missing again.")
+
+    def test_those_modules_still_exist_where_the_guard_expects(self):
+        """Otherwise the guard above would pass by describing modules that had been moved or
+        deleted — a documented ghost, which is worse than an undocumented module."""
+        for module in self.AUDIT_FOUND_MISSING:
+            assert (ROOT / "src/csa_google_workspace" / module).exists(), (
+                f"{module} no longer exists; CLAUDE.md describes it and this guard requires it")
+
+    def test_a_new_top_level_module_would_be_reported(self, tmp_path, monkeypatch):
+        """Proves the check FAILS when it should, which "it is clean right now" cannot."""
+        pkg = ROOT / "src/csa_google_workspace"
+        planted = pkg / "_zzz_drift_probe.py"
+        planted.write_text('"""Temporary, planted by a test."""\n', encoding="utf-8")
+        try:
+            problems = self.check_problems()
+        finally:
+            planted.unlink()
+        assert any("_zzz_drift_probe.py" in p for p in problems), (
+            "a new undocumented top-level module was not reported")
+
+    def test_a_new_SUBPACKAGE_would_be_reported(self):
+        """The #329 case itself: the one the old glob could not see."""
+        pkg = ROOT / "src/csa_google_workspace"
+        planted = pkg / "_zzz_drift_pkg"
+        planted.mkdir()
+        (planted / "__init__.py").write_text('"""Temporary."""\n', encoding="utf-8")
+        try:
+            problems = self.check_problems()
+        finally:
+            (planted / "__init__.py").unlink()
+            planted.rmdir()
+        assert any("_zzz_drift_pkg" in p for p in problems), (
+            "a new undocumented subpackage was not reported - this is exactly what the "
+            "top-level-only glob missed")

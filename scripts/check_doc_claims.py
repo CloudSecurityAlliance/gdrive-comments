@@ -373,15 +373,36 @@ def check() -> list[str]:
                 f"INTERFACE-RESOURCES.md: claims current release v{claimed}; this is "
                 f"v{__version__}")
 
-    # Modules that exist but no guide mentions. CLAUDE.md's layout section is how an agent learns
-    # what is in the package; a module absent from it is a module nobody is told about.
+    # Modules and SUBPACKAGES that exist but no guide mentions. CLAUDE.md's layout section is how
+    # an agent learns what is in the package; a module absent from it is a module nobody is told
+    # about.
+    #
+    # **The glob was `*.py`, top level only** (#329), so `mcp/` and `documents/` were never
+    # walked - which is exactly how `mcp/_flavours.py`, `mcp/_logging.py` and
+    # `mcp/_capabilities.py` went undocumented while this check reported no problems. A guard
+    # that only inspects the directory where things were originally written stops working the
+    # first time the tree grows a subpackage.
+    #
+    # It does NOT demand a line per module inside a subpackage, and that restraint is
+    # deliberate: `documents/` and `demo/` are described as units and that genuinely tells an
+    # agent where to look, so requiring twenty more lines would make this cry wolf - which
+    # CLAUDE.md names as the way a guard gets ignored. What it asserts instead are the two real
+    # failure modes: a new TOP-LEVEL module nobody described, and a whole new SUBPACKAGE nobody
+    # described.
     guide = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    for module in sorted((ROOT / "src/csa_google_workspace").glob("*.py")):
+    pkg = ROOT / "src/csa_google_workspace"
+    for module in sorted(pkg.glob("*.py")):
         if module.name == "__init__.py":
             continue
         if f"`{module.name}`" not in guide:
             problems.append(
                 f"CLAUDE.md: does not mention `{module.name}` in the code-layout section")
+    for sub in sorted(d for d in pkg.iterdir() if d.is_dir() and (d / "__init__.py").exists()):
+        rel = sub.relative_to(pkg).as_posix()
+        if f"`{rel}/`" not in guide and f"`{rel}`" not in guide:
+            problems.append(
+                f"CLAUDE.md: does not mention the `{rel}/` subpackage in the code-layout "
+                f"section - a whole directory nobody is told about")
 
     # The default-posture sweep: Markdown plus every source file, since model-facing text lives
     # in docstrings and tool descriptions.
