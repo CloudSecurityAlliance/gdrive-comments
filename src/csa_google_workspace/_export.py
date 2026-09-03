@@ -36,7 +36,8 @@ from typing import Any
 # None for a document, for an unanchored comment, and for a spreadsheet whose relationship graph
 # could not be walked - those are three different reasons and none of them is "the first tab".
 REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
-            "quoted_text", "tab", "cell", "cell_text", "cell_text_by_tab")
+            "quoted_text", "anchored", "tab", "cell", "cell_text", "cell_text_by_tab",
+            "row_header", "column_header")
 
 # What somebody FILLS IN, and what the importer ticks. Always empty on export - they are the
 # point of the register being a worksheet rather than a printout.
@@ -88,6 +89,31 @@ def _cell_lookup(document: Any) -> tuple[dict[str, list[list[Any]]], list[str]]:
     return grids, tabs
 
 
+def _headers(grid: list[list[Any]], row: int, col: int) -> tuple[str | None, str | None]:
+    """The row and column labels for a cell — `(row_header, column_header)`.
+
+    *"B11"* is useless in a register and *"B11, which reads 388000"* is better, but the thing
+    that actually makes a cell comment interpretable is *"in the row labelled Southwest, column
+    Q3 actual"* — and a comment on the WRONG cell is only detectable against its neighbours.
+    That is #358 §6, and it costs nothing: this reads the same grid `cell_text` already has.
+
+    **The header row and column are a GUESS**, and the caller is told so in a caveat rather
+    than left to assume. Row 1 and column A are the convention, and a sheet with a title block
+    above the table, a transposed layout, or merged headers breaks it. Reporting a guess as a
+    fact is the failure this project avoids elsewhere by saying `tab_ambiguous` instead of
+    picking the first sheet.
+
+    A header equal to the cell itself is suppressed: for a comment ON row 1 or column A the
+    "header" would be the cell's own text, which reads as a fact and is noise.
+
+    Indices are 1-BASED, like `_at` and like `Location.row`/`col`. Written 0-based first, which
+    silently returned no headers at all rather than failing - the tests caught it.
+    """
+    row_header = _at(grid, row, 1) if col != 1 else ""
+    column_header = _at(grid, 1, col) if row != 1 else ""
+    return (row_header or None), (column_header or None)
+
+
 def _at(grid: list[list[Any]], row: int, col: int) -> str:
     """The text at 1-based (row, col), or "" — which is what an empty cell holds.
 
@@ -114,6 +140,8 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
         tab = getattr(location, "tab", None) if location else None
         cell_text = None
         by_tab = None
+        row_header = None
+        column_header = None
         if cell and grids:
             anchored += 1
             row_i = getattr(location, "row", 0)
@@ -122,8 +150,10 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
                 # The tab is known (#290), so read only that tab. Offering every tab's
                 # candidate alongside a settled answer invites the reader to second-guess it.
                 cell_text = _at(grids[tab], row_i, col_i)
+                row_header, column_header = _headers(grids[tab], row_i, col_i)
             elif len(tabs) == 1:
                 cell_text = _at(grids[tabs[0]], row_i, col_i)
+                row_header, column_header = _headers(grids[tabs[0]], row_i, col_i)
             else:
                 # Unknown tab on a multi-tab workbook: the pre-#290 fallback. `tab` stays None
                 # rather than guessing, and the content of each candidate usually settles it.
@@ -136,7 +166,11 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
                          created_time=_iso(getattr(comment, "created_time", None)),
                          resolved=bool(comment.resolved), text=comment.content,
                          quoted_text=getattr(comment, "quoted_text", None),
-                         cell=cell, cell_text=cell_text, cell_text_by_tab=by_tab))
+                         # TRUE/FALSE as text, never blank: a register cell has no third
+                         # state, and this one is genuinely known for every comment.
+                         anchored="TRUE" if getattr(comment, "anchored", False) else "FALSE",
+                         cell=cell, cell_text=cell_text, cell_text_by_tab=by_tab,
+                         row_header=row_header, column_header=column_header))
         for reply in (comment.replies or []):
             reply_author = (getattr(reply.author, "display_name", None)
                             if getattr(reply, "author", None) else None)
@@ -161,6 +195,12 @@ def comment_rows(document: Any, comments: list) -> tuple[list[str], list[dict], 
             "empty on every row. Either these are file-level comments, which have no anchor at "
             "all, or the XLSX export that cell mapping depends on was unavailable for this "
             "file. The comments themselves are complete either way.")
+    if any(r.get("row_header") or r.get("column_header") for r in rows):
+        caveats.append(
+            "`row_header` and `column_header` are a GUESS: they read column A and row 1, which "
+            "is the usual layout and not a guaranteed one. A sheet with a title block above the "
+            "table, a transposed layout, or merged headers will label a cell wrongly. Check "
+            "them against `cell_text` before quoting them as the meaning of a cell.")
     if len(tabs) > 1 and unplaced:
         caveats.append(
             f"{unplaced} of {anchored} anchored comment(s) could not be placed on a tab: this "

@@ -41,6 +41,11 @@ class CommentOut(TypedDict):
     cell: str | None          # where DRIVE anchored it: A1 for anything created via the API
     tab: str | None           # which sheet that cell is on; None when it could not be resolved
     linked_cell: str | None   # the cell its deep link points at, if it has one
+    # Whether Drive attached this to a REGION of the file rather than to the file as a whole.
+    # With `quoted_text` it separates three situations that otherwise look identical:
+    # file-level (False, null), anchored to a non-text object such as an image (True, null),
+    # anchored to text (True, text). Measured 2026-09-02.
+    anchored: bool
     # The passage the comment is attached to, from Drive's `quotedFileContent`. `None` means
     # the comment is on the FILE rather than on a passage - a real and common state ("looks
     # good to me") - which is why it is not an empty string.
@@ -482,6 +487,7 @@ def comment_out(comment: Any) -> CommentOut:
         "tab": getattr(location, "tab", None) if location else None,
         "linked_cell": linked.group(1) if linked else None,
         "quoted_text": getattr(comment, "quoted_text", None),
+        "anchored": bool(getattr(comment, "anchored", False)),
         "replies": [reply_out(r) for r in (comment.replies or [])],
     }
 
