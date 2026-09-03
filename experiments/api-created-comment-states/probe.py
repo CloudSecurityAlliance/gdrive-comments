@@ -194,6 +194,59 @@ def dump_library(file_id: str) -> None:
               f"{str(c.quoted_text is not None):<8} {n}{flag}")
 
 
+def reuse_anchor(drive, file_id: str) -> None:
+    """Borrow a REAL `kix.*` anchor from an editor-created comment and reuse it from the API.
+
+    The question this settles is worth more than the one the probe was written for. Google says
+    developer-defined anchors are treated as un-anchored, and we measured that in July with a
+    **synthetic** anchor. A real `kix.*` id is a different proposition: it names an anchor object
+    the document actually has.
+
+    MEASURED 2026-09-03: **it works.** REUSE-1 (anchor only) renders as `Tab 1`, REUSE-2
+    (anchor + quote) as `Tab 1 · Drive API` - the same header the hand-placed donor gets, and
+    neither says "Original content deleted". So the July finding is about SYNTHETIC anchors
+    only; a real `kix.*` id is honoured.
+
+    The catch is that a real anchor can only be obtained from a comment that already exists, so
+    this permits adding a thread to an already-commented passage, not anchoring to an arbitrary
+    one. See RESULTS.md.
+
+    Needs one comment placed BY HAND first. It picks the newest comment that has an anchor and
+    was NOT made by this probe (the probe's own D and E carry a fake anchor, and copying that
+    would measure nothing).
+    """
+    fields = "comments(id,anchor,content,quotedFileContent,createdTime)"
+    got = drive.comments().list(fileId=file_id, fields=fields, pageSize=100).execute()
+    donors = [c for c in got.get("comments", [])
+              if c.get("anchor") and FAKE_ANCHOR not in c.get("anchor", "")]
+    if not donors:
+        print("No hand-placed comment found. In the browser: select some words, add a comment,\n"
+              "then re-run. (The probe's own D and E carry a FAKE anchor and are skipped - "
+              "copying that would measure nothing.)")
+        return
+    donor = max(donors, key=lambda c: c.get("createdTime", ""))
+    quoted = (donor.get("quotedFileContent") or {}).get("value")
+    print(f"donor comment {donor['id']}: {donor.get('content','')[:40]!r}")
+    print(f"  anchor : {donor['anchor']!r}")
+    print(f"  quoted : {quoted!r}\n")
+
+    # Two copies: anchor alone, and anchor + the donor's own quoted text. If the editor derives
+    # its display from the anchor, the first suffices; if it needs both, the second says so.
+    for label, body in (
+        ("anchor only, copied verbatim",
+         {"content": "REUSE-1 - copied anchor, no quote", "anchor": donor["anchor"]}),
+        ("anchor + the donor's quoted text",
+         {"content": "REUSE-2 - copied anchor AND quote", "anchor": donor["anchor"],
+          "quotedFileContent": {"mimeType": "text/html", "value": quoted or ""}}),
+    ):
+        out = drive.comments().create(fileId=file_id, body=body, fields=FIELDS).execute()
+        print(f"  created ({label}): {out['id']}  anchor back: {out.get('anchor')!r}")
+    print("\nNOW LOOK IN THE BROWSER. For each REUSE comment, the question is one thing:\n"
+          "  does it highlight the donor's passage, or does it say "
+          "'Original content deleted'?\n"
+          "That is the whole measurement - the API cannot answer it (there is no orphan flag).")
+
+
 def trash(drive, file_id: str) -> None:
     drive.files().update(fileId=file_id, body={"trashed": True}).execute()
     print(f"\ntrashed {file_id}")
@@ -205,6 +258,8 @@ def main() -> int:
     ap.add_argument("--create", action="store_true", help="make a throwaway Doc")
     ap.add_argument("--comments", action="store_true", help="create the six comments")
     ap.add_argument("--dump", action="store_true", help="raw list + through the library")
+    ap.add_argument("--reuse-anchor", action="store_true",
+                    help="copy a REAL kix anchor from a hand-placed comment (see docstring)")
     ap.add_argument("--trash", action="store_true", help="trash the throwaway Doc")
     args = ap.parse_args()
 
@@ -220,6 +275,8 @@ def main() -> int:
     if args.dump:
         dump_raw(drive, file_id)
         dump_library(file_id)
+    if args.reuse_anchor:
+        reuse_anchor(drive, file_id)
     if args.trash:
         trash(drive, file_id)
     return 0
