@@ -1,0 +1,51 @@
+{
+  "drive": "0AKAuCJtMDPcZUk9PVA",
+  "folder_top": "1_aiITq8NljxetU8wuKQL6HXfhi-fUKbR",
+  "folder_comments": "1FxlnvwIsvX3Bf58-T8jgIdyjYj5gQLkh",
+  "readme": "1Y50NAvUtnpYKtguCpiMZKm2V-M9tqYGBa1Ph0x7ZbE0",
+  "specimens": [
+    {
+      "name": "docs-anchor-states",
+      "id": "1wlDT6GOQTvdH5817887zav5KooIB6ZTY4nXI8XW1-Fs",
+      "title": "the four anchor states of a Drive comment",
+      "url": "https://docs.google.com/document/d/1wlDT6GOQTvdH5817887zav5KooIB6ZTY4nXI8XW1-Fs/edit",
+      "hand_placement_outstanding": [
+        "Insert any image, click it, and comment on it. That is the only way to produce the object-anchored state \u2014 the API cannot.",
+        "Select the whole of paragraph P2 below and comment on it, for the ordinary text-anchored state.",
+        "Click inside P1 without selecting anything and comment. The editor expands the anchor to the enclosing WORD, which is worth seeing."
+      ]
+    },
+    {
+      "name": "docs-sloppy-selections",
+      "id": "18Le7FkvhsKSIB68qv5Wn8vhi1MgBDc-4rQhvcrhuWOs",
+      "title": "selections that are hard to place",
+      "url": "https://docs.google.com/document/d/18Le7FkvhsKSIB68qv5Wn8vhi1MgBDc-4rQhvcrhuWOs/edit",
+      "hand_placement_outstanding": [
+        "Select just the word 'threshold' in P1 and comment on it. Four paragraphs below contain it, so this is the ambiguous case.",
+        "Select from the end of P3 into the start of P4, crossing the boundary, and comment. That is the spanning case.",
+        "Select the three words 'the taxonomy here' in P2 and comment something that is clearly about the whole paragraph."
+      ]
+    },
+    {
+      "name": "docs-structure",
+      "id": "1veWUWLEMY0ylDa2g6YZZtOVpBizD3fGcBxx6oYe0BlY",
+      "title": "headings, tables and empty paragraphs",
+      "url": "https://docs.google.com/document/d/1veWUWLEMY0ylDa2g6YZZtOVpBizD3fGcBxx6oYe0BlY/edit",
+      "hand_placement_outstanding": [
+        "Comment on the heading 'Section Two' below.",
+        "Comment on a cell inside the table.",
+        "Try to comment on the empty paragraph between P1 and P2, and confirm no comment box appears. That refusal is the finding."
+      ]
+    },
+    {
+      "name": "docs-lifecycle",
+      "id": "1Cob3hTZUh32TE7HzzI1j1AvA3474YXkdz8Y05cY1BC4",
+      "title": "what a comment looks like through its life",
+      "url": "https://docs.google.com/document/d/1Cob3hTZUh32TE7HzzI1j1AvA3474YXkdz8Y05cY1BC4/edit",
+      "hand_placement_outstanding": [
+        "Resolve one thread, then reopen it, so both action-replies exist.",
+        "Delete one comment from the UI, to produce a tombstone."
+      ]
+    }
+  ]
+}
