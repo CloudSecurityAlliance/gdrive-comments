@@ -10,6 +10,126 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.41.0 (what a comment is actually about) — not released *(yet — flipped once PyPI confirms)*
+
+Answers issues **#358** and **#361** from a consumer building on this library, and the whole
+release came out of **probing before implementing** — which changed the design three times and
+proved one prediction wrong.
+
+The premise, theirs: **an anchor records where a comment was *attached*, not what it is *about*.**
+Usually those coincide. Often enough they do not, and no exotic cause is needed — a reviewer
+selects three words of a paragraph-length point, clicks the line above the one they meant, or
+writes *"at the end of this paper the conclusion is weak"* while the comment sits on page 1. A
+human reading the comment beside its passage compensates without noticing; a consumer treating
+`quoted_text` as the subject cannot.
+
+### `anchored` — three situations that were indistinguishable (#361)
+
+A falsy `quoted_text` meant three different things, and the discriminator was **not** where the
+question looked. It is **anchor presence** — which the library already retained and both consumer
+surfaces dropped:
+
+| situation | `anchored` | `quoted_text` |
+|---|---|---|
+| a comment on the **whole file** | `false` | `null` |
+| attached to a **non-text object** — an image, a cell | **`true`** | `null` |
+| attached to text | `true` | the text |
+
+Conflating the first two turns *"look here, carefully"* into *"there is nothing to look at."* The
+consumer had measured 2 of 90 real threads in this state and could not tell which they were; they
+now resolve with no model call.
+
+### `context=true` — the passage the comment sits in
+
+Off by default, on every retrieval that does not already carry the document — `list_comments`,
+`get_comment`, `export_comments`. The selection is marked `⟦like this⟧` **inside** the passage,
+because seeing where it sits is the under-selection signal: three words at the head of a
+400-character paragraph is visible at a glance and needs no computation.
+
+**The unit is the enclosing structural element**, which is one rule with three stated exceptions
+rather than the four ad-hoc rules the design started with:
+
+- a **paragraph** for prose;
+- a **table cell gets the whole table** — a table *is* one structural element, so neighbouring
+  prose is unrelated. Too large for the cap degrades to the row plus the header row;
+- a **heading** expands forward, skipping consecutive headings, because `namedStyleType` says it
+  heads what follows — structure, not inference. Two labels and no prose is the thing being fixed;
+- an element with **no text** walks outward to the nearest that has some.
+
+`context_kind` says which rule fired and `context_note` explains it in a sentence, so a passage you
+did not expect is explicable rather than suspicious. `paragraph_index` of `paragraph_total` plus
+the heading chain make a prose claim like *"at the end of this paper"* **checkable** — by the
+caller. We never compare them: the boundary the consumer asked for is *facts, not verdicts*.
+
+`Doc.comment_contexts` takes the **whole list** on purpose. Locating quotes needs the document, so
+it is **one** fetch for ninety comments where a per-comment tool would be ninety — and accessors
+re-fetch by design, so the loop genuinely re-downloads it each time.
+
+### Cell notes are readable, and a register says when it is hiding them
+
+A **note** has no author, no thread, and cannot be replied to or resolved — so nothing in a
+reply-and-resolve workflow applies to one. And measured: **a file carrying a note returns zero
+comments** from the Drive comments API. The two are different objects and the comments API does not
+see notes at all.
+
+Which means a tool reporting "no comments" on a sheet covered in notes is telling the truth and
+giving the wrong impression. `list_notes` reads them; `export_comments` now says in `caveats` when
+it is not showing them. The consumer named this as the thing they cared about most, and the reason
+was the failure mode rather than the feature: *"a silent zero is the expensive failure — we once had
+a `resolved` field parsed against the wrong vocabulary, which turned 17 closed threads into 0 while
+every test stayed green."*
+
+### Cell comments carry their row and column headers
+
+*"B11"* is useless in a register, *"B11, which reads 388000"* is better, and *"in the row labelled
+Southwest, column Q3 actual"* is what makes it interpretable — a comment on the **wrong** cell is
+only detectable against its neighbours. Free, from the same grid `cell_text` already reads.
+
+The header row and column are a **guess** (column A, row 1) and a caveat says so: a title block
+above the table or a transposed layout will label a cell wrongly. Same rule the tab resolution
+already follows — report `tab_ambiguous` rather than picking the first sheet.
+
+### What the probing changed
+
+Recorded because it is the argument for doing it, and the full transcripts are in
+[`experiments/docs-anchor-states/`](experiments/docs-anchor-states/RESULTS.md).
+
+**The prediction was wrong.** Google publishes exactly one Docs anchor example and it carries a
+`line` number. A real anchor is an opaque `kix.…` id with **no position**, exactly as Sheets
+anchors are opaque `workbook-range` ids. The documented shape is not what the editors produce.
+
+**And it turned out not to matter**, which no amount of reasoning would have found: the editor
+**expands a bare caret to its enclosing word** and **refuses to comment on empty space at all**, so
+quoted text is present wherever text is. The only anchored comments without it are on non-text
+objects, where there is no textual context to give.
+
+**A one-word quote is ambiguous almost immediately** — in a **nine-paragraph** document, the word a
+caret snapped to occurred four times. So `ambiguous` is not an edge case, it is the dominant outcome
+for the commonest under-selection, and it reports the **candidate locations** with their paragraph
+index and heading path rather than picking one. The consumer holds the comment text and can usually
+tell; we cannot, and choosing would be the guess the feature exists to avoid.
+
+**Two of the seven requests needed no code.** A **page number is not obtainable** — Google's own
+discovery document has no page element in the document model, because pagination is a rendering
+*output*. And **suggestions already carried their proposed text**, with a replacement deliberately
+not collapsed.
+
+**One request was declined**: span metrics in characters and words, which a consumer computes from
+`quoted_text` in one line. A field nobody needs is a field somebody maintains.
+
+### Also
+
+- **README: *"Why comment retrieval is trickier than it looks"*** — the short version of what this
+  project learned, opening by saying that if you tried this and it did not work properly, that is
+  the expected outcome and not your fault. Including the trap that has defeated other
+  implementations: **writing an anchor appears to work.** Drive stores it verbatim and returns it
+  intact, so a round-trip test passes — and the editors then treat it as unanchored, with no error
+  at any point.
+- `_cellmap.column_letters` — the inverse of a conversion that already existed. **Bijective**
+  base-26, not plain: 26 is `Z`, 27 is `AA`, and `divmod(col, 26)` gives `A@`. Round-tripped
+  against the existing parser, because the two are written in opposite directions in different
+  functions and nothing else makes them agree.
+
 ## 2026-09-02 — v0.40.1 (the register says what is true)
 
 Remediation from security audit `2026-09-01-02`, continuing the batch v0.39.0 opened. Nothing a
