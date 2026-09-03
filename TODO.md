@@ -359,10 +359,13 @@ the read-only half; this is the whole problem.
   applies only to files with binary content — so the semantics are documented and the API is wrong
   to accept the write. **This is the anchor trap again**: a write that reports success and does
   nothing. It means *you cannot pin the revision you might later want*.
-- **Drive gives whole-document snapshots and nothing else** — no per-edit deltas, no change list,
-  and rapid edits coalesce into the head revision. How many revisions survive edits spaced minutes
-  apart is being measured separately; if the answer is "two", then "read a past revision" mostly
-  means "read the file's creation state".
+- **Drive gives whole-document snapshots and nothing else** — no per-edit deltas, no change list.
+- **And it keeps TWO of them. MEASURED**: 5 edits spaced **5 minutes** apart left exactly
+  `['1', '7']` — the file's creation and the current head. Revisions 3, 4, 5 and 6 each appeared
+  and then vanished. The five-minute gap was chosen to rule out coalescing-within-a-window, and it
+  does. **So "read a past revision" means "read the state the file was created in"**, which is a
+  very different capability from what the phrase suggests, and reset can only reach that state.
+  `experiments/revisions/RESULTS.md`.
 
 **Why "undo what Bob did" does not follow from revisions alone.** Attribution is *per revision*
 (`lastModifyingUser`, singular) and revisions coalesce, so Bob's edits and Alice's can share one
@@ -399,8 +402,16 @@ library would ever do:
   the probe, but "preserved these three things once" is not "lossless", and the fidelity gaps need
   enumerating before anyone is told it restores a document.
 
-Sequence: measure revision durability → decide the scope question → decide the snapshot question →
-then design. The read-only half (#389) can ship first and independently.
+Sequence: ~~measure revision durability~~ **(done: two revisions)** → decide the scope question →
+decide the snapshot question → then design. The read-only half (#389) can still ship first and
+independently, but it must **say** that the history is two entries deep rather than returning two
+rows that look like a history.
+
+**The durability result changes the conclusion rather than just informing it.** "Reset to a past
+revision" was the tractable-looking half; with only the creation state reachable it is nearly
+vacuous for a document anyone has been working in. So the snapshot decision is no longer an
+optimisation for exactness — **it is the whole feature**, and there is no version of this that
+rests on Drive's history.
 
 ### Parked
 
