@@ -31,6 +31,10 @@ class ReplyOut(TypedDict):
     author: str | None
     content: str | None
     created_time: str | None
+    # Who this reply hands the thread to, if anyone. Reassignment on a reply is how a
+    # thread changes hands, so this is not a duplicate of the comment's own assignee.
+    assignee_email: str | None
+    mentioned_emails: list[str]
 
 
 class CommentOut(TypedDict):
@@ -52,6 +56,18 @@ class CommentOut(TypedDict):
     # emphatically not file-level). Three measured 2026-09-02 from the editor, the fourth
     # 2026-09-03 from the API.
     anchor_state: str
+    # THE ACTION ITEM (#398). `assignee_email` is set when a comment was assigned to
+    # somebody — the one comment state that carries an obligation rather than an opinion,
+    # and "which comments are assigned to me" is the question a reviewer actually asks.
+    # `null` means unassigned, which is the common case.
+    #
+    # Read-only: Drive ACCEPTS an assignee at create, returns 200 and stores nothing
+    # (measured 2026-09-03), so nothing here can assign a comment. Say that rather than
+    # letting a caller conclude the field is merely unset.
+    assignee_email: str | None
+    # Addresses structurally @mentioned. Real addresses, unlike `author`, which is a
+    # display name — so this is the better identity signal when it is present.
+    mentioned_emails: list[str]
     # Present only when the caller asked for it; `null` when the comment has no passage
     # (file-level, or anchored to a non-text object). Off by default — the token cost is the
     # caller's to manage, and #358 asks for exactly that.
@@ -509,6 +525,8 @@ def reply_out(reply: Any) -> ReplyOut:
         "author": getattr(reply.author, "display_name", None) if reply.author else None,
         "content": reply.content,
         "created_time": _iso(reply.created_time),
+        "assignee_email": getattr(reply, "assignee_email", None),
+        "mentioned_emails": list(getattr(reply, "mentioned_emails", ()) or ()),
     }
 
 
@@ -540,6 +558,8 @@ def comment_out(comment: Any) -> CommentOut:
         "quoted_text": getattr(comment, "quoted_text", None),
         "anchored": bool(getattr(comment, "anchored", False)),
         "anchor_state": getattr(comment, "anchor_state", ANCHOR_FILE),
+        "assignee_email": getattr(comment, "assignee_email", None),
+        "mentioned_emails": list(getattr(comment, "mentioned_emails", ()) or ()),
         "context": None,
         "replies": [reply_out(r) for r in (comment.replies or [])],
     }

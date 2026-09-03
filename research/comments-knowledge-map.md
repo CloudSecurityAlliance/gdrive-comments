@@ -88,6 +88,8 @@ all rejected as *unknown fields*, identically to a made-up control.
 | The quote value round-trips **byte-verbatim** (whitespace, newlines, tabs) | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | Comment ids within one batch are **sequential** in the final character | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | **`fields=*` is NOT exhaustive** — it omits `mentionedEmailAddresses` and `assigneeEmailAddress`, both of which a mask accepts | MEASURED 2026-09-03 | this file's own probe |
+| Both fields exist on **replies** too, while `quotedFileContent` is **refused** on a reply | MEASURED 2026-09-03 | #398 |
+| Neither field is **writable**: accepted at create, 200 returned, **stored neither** | MEASURED 2026-09-03 | #398 |
 | No orphan / anchor-validity signal exists on the resource | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | No cross-file comment search; `comments.list` is per-file, `files.list` has no comment predicate | MEASURED / DOCUMENTED | `google-drive-comments-reference.md` |
 | Sheets comment → cell needs the XLSX-export detour, incl. the three-hop rels walk | MEASURED 2026-07-21 | `sheets-cellmap/`, `_cellmap.py` |
@@ -115,7 +117,15 @@ the surface *exists* and is *gated*:
 
 ## The gaps that are worth closing, ranked
 
-**1. `mentionedEmailAddresses` and `assigneeEmailAddress` are not in our field mask.** MEASURED
+**1. ~~`mentionedEmailAddresses` and `assigneeEmailAddress` are not in our field mask.~~ CLOSED
+on the read side in v0.47.0 (#398)** — both are now named in the mask, modelled on `Comment` and
+`Reply`, exposed on both consumer surfaces, and redacted from `__repr__`. **The write side is not
+a gap but a limit**: `comments.create` accepts either in the body, returns 200 and stores neither
+(MEASURED 2026-09-03), so nothing can assign a comment through the Drive API. What remains UNKNOWN
+is whether an *editor* assignment populates the field, and whether resolving clears it — a zoo
+fixture (#388). Original text follows.
+
+**1a. The original finding.** MEASURED
 2026-09-03: both are accepted in a mask (an invented name and `action` are refused, so these are
 real fields), and **`fields=*` omits them**. Zero occurrences in `src/`. So **an assigned comment
 — an action item, the single most workflow-relevant kind — is invisible to this library**, and

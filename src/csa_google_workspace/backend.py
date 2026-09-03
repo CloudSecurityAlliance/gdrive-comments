@@ -574,11 +574,19 @@ class ApiBackend:
             "comment with a #range deep-link instead."
         )
 
+    # `mentionedEmailAddresses` and `assigneeEmailAddress` must be NAMED (#398). They are
+    # real fields - a mask accepts them where an invented name is refused - and `fields=*`
+    # OMITS them, so the wildcard is not a way to find out they exist. Omitting them is how
+    # an assigned comment reads as an ordinary one, which the README warned about while this
+    # mask did it. Both are on replies too; `quotedFileContent` is refused there.
     _CF = "id,anchor,content,htmlContent,resolved,deleted,createdTime,modifiedTime," \
           "author(displayName,emailAddress,me,photoLink),quotedFileContent," \
+          "mentionedEmailAddresses,assigneeEmailAddress," \
           "replies(id,content,htmlContent,action,deleted,createdTime,modifiedTime," \
+          "mentionedEmailAddresses,assigneeEmailAddress," \
           "author(displayName,emailAddress,me,photoLink))"
     _RF = "id,content,htmlContent,action,deleted,createdTime,modifiedTime," \
+          "mentionedEmailAddresses,assigneeEmailAddress," \
           "author(displayName,emailAddress,me,photoLink)"
 
     def _comments(self):

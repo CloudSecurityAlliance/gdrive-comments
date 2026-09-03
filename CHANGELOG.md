@@ -10,6 +10,55 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.47.0 (an assigned comment is finally visible) — not released *(yet — flipped once PyPI confirms)*
+
+**#398.** The library did exactly what its own README warns against. That section says:
+
+> `mentionedEmailAddresses` and `assigneeEmailAddress` exist but only if you ask. Omit them from
+> the field mask and structured @mentions look like they do not exist.
+
+And the field mask omitted both, with zero occurrences of either in `src/`. So an **assignment** —
+the one comment state that carries an obligation rather than an opinion — read as an ordinary
+comment, and *"which comments are assigned to me"*, the question a reviewer actually asks, could
+not be answered at all.
+
+Found while writing `research/comments-knowledge-map.md`, which is the point of that file.
+
+### Three things measured before changing anything
+
+- **Both fields are real.** A mask accepts them where `action` and an invented name are both
+  *refused*.
+- **`fields=*` OMITS them.** So the wildcard — the obvious way to ask what a resource carries — is
+  **not exhaustive** on the comments resource, and cannot be used to discover these exist.
+- **They are read-only.** `comments.create` accepts either in the body, returns **200**, and stores
+  **neither**. That is the third instance of this pattern in one day, after `keepForever` and the
+  anchor trap, so it is now asserted as a documented property rather than left to be rediscovered.
+
+### What shipped
+
+`Comment.assignee_email` / `Comment.mentioned_emails`, and the same on `Reply` — replies carry both
+fields too (`quotedFileContent` is *refused* on a reply, so a reply is not merely a narrower
+comment). A reply's assignee is its own fact: **reassignment on a reply is how a thread changes
+hands**, so the last assigned row in a thread is the current owner, and flattening it onto the
+parent would lose the sequence.
+
+On both consumer surfaces: `assignee_email` / `mentioned_emails` on every MCP comment *and reply*
+result, and `assigned_to` / `mentions` columns in the register — placed beside `author`, because
+that is the pair a reviewer scans: who said it and whose problem it is.
+
+**The addresses are redacted from `__repr__`** (invariant 2) exactly as `Author.email` already is —
+they are real collaborators' addresses and embedders log these objects. What survives redaction is
+`assigned=True|False` and a mention *count*, because whether an obligation exists is what a log
+reader needs and it discloses nobody.
+
+### A test of mine failed its own mutation, and the fix is worth recording
+
+The first version asserted `name in ApiBackend._CF`, and removing the **top-level** request passed
+it — the same name survives inside the nested `replies(…)` spec, so the substring was still there.
+That is precisely the failure `CLAUDE.md` names: *never ask whether the right string is present*. A
+comment's own assignee and its replies' assignees are two separate requests, and one can go missing
+while a substring test stays green. It now slices `_CF` before `replies(` and asserts against that.
+
 ## 2026-09-03 — v0.46.0 (T44 adopted, and two threats close)
 
 Threat-register work, plus the one code change needed to make a status claim honest.

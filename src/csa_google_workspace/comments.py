@@ -66,6 +66,12 @@ class Reply:
     deleted: bool
     created_time: datetime | None
     modified_time: datetime | None
+    # WHO this reply is addressed to, structurally (#398). Replies carry both fields -
+    # MEASURED 2026-09-03, and `quotedFileContent` is REFUSED on a reply, so the reply
+    # resource is not simply a narrower comment. Reassigning on a reply is how a thread
+    # changes hands, so a reply's assignee is not a curiosity.
+    assignee_email: str | None = None
+    mentioned_emails: tuple[str, ...] = ()
     # Injected by Comment/CommentCollection after construction to enable mutation.
     # The cast(..., None) defaults let these carry their true (non-Optional) types
     # while still defaulting to None for the from_api() construction path.
@@ -80,12 +86,17 @@ class Reply:
                    content=d.get("content"), html_content=d.get("htmlContent"),
                    action=d.get("action"), deleted=bool(d.get("deleted", False)),
                    created_time=parse_time(d.get("createdTime")),
-                   modified_time=parse_time(d.get("modifiedTime")))
+                   modified_time=parse_time(d.get("modifiedTime")),
+                   assignee_email=d.get("assigneeEmailAddress"),
+                   mentioned_emails=tuple(d.get("mentionedEmailAddresses") or ()))
 
     def __repr__(self) -> str:
-        # Redacted: omit content/html_content (document text) — see #49.
+        # Redacted: omit content/html_content (document text) and the email fields, which
+        # are collaborator PII exactly as `Author.email` is (#49, #398). Counts only.
         n = len(self.content) if self.content else 0
-        return f"Reply(id={self.id!r}, action={self.action!r}, deleted={self.deleted}, content_chars={n})"
+        return (f"Reply(id={self.id!r}, action={self.action!r}, deleted={self.deleted}, "
+                f"content_chars={n}, assigned={self.assignee_email is not None}, "
+                f"mentions={len(self.mentioned_emails)})")
 
     def edit(self, text: str) -> None:
         if self._backend is None:
@@ -134,6 +145,20 @@ class Comment:
     deleted: bool
     created_time: datetime | None
     modified_time: datetime | None
+    # WHO the comment is addressed to, structurally rather than as prose (#398).
+    #
+    # `assignee_email` is the ACTION ITEM: the one comment state carrying an obligation
+    # rather than an opinion, and "which comments are assigned to me" is the question a
+    # reviewer actually asks. `mentioned_emails` carries real addresses, which is the
+    # identity signal `author.email` lacks - it is usually absent even when requested.
+    #
+    # Both are read-only here, and that is Drive's doing rather than a choice: MEASURED
+    # 2026-09-03, `comments.create` ACCEPTS either in the body, returns 200, and stores
+    # NEITHER. Third instance of that pattern in one day, after `keepForever` and the
+    # anchor trap. Also measured: `fields=*` OMITS both, so the wildcard is not a way to
+    # discover them - they must be named in the mask, which is what `_CF` now does.
+    assignee_email: str | None = None
+    mentioned_emails: tuple[str, ...] = ()
     replies: list[Reply] = field(default_factory=list)
     # Injected by CommentCollection after construction (see Reply for the cast rationale).
     _backend: Backend = field(default=cast("Backend", None), repr=False, compare=False)
@@ -214,6 +239,8 @@ class Comment:
             deleted=bool(d.get("deleted", False)),
             created_time=parse_time(d.get("createdTime")),
             modified_time=parse_time(d.get("modifiedTime")),
+            assignee_email=d.get("assigneeEmailAddress"),
+            mentioned_emails=tuple(d.get("mentionedEmailAddresses") or ()),
             replies=[Reply.from_api(r) for r in d.get("replies", [])],
         )
 
@@ -221,7 +248,10 @@ class Comment:
         # Redacted: omit content/quoted_text/html_content (document text) and author email — see #49.
         n = len(self.content) if self.content else 0
         return (f"Comment(id={self.id!r}, resolved={self.resolved}, deleted={self.deleted}, "
-                f"replies={len(self.replies)}, content_chars={n}, quoted={self.quoted_text is not None})")
+                f"replies={len(self.replies)}, content_chars={n}, "
+                f"quoted={self.quoted_text is not None}, "
+                f"assigned={self.assignee_email is not None}, "
+                f"mentions={len(self.mentioned_emails)})")
 
     def _guard(self):
         if self._backend is None:

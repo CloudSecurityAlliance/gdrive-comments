@@ -35,7 +35,13 @@ from typing import Any
 # `tab` sits immediately before `cell` so `tab | cell | cell_text` reads as one thought. It is
 # None for a document, for an unanchored comment, and for a spreadsheet whose relationship graph
 # could not be walked - those are three different reasons and none of them is "the first tab".
-REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
+REPORTED = ("thread_id", "reply_to", "author",
+            # `assigned_to` sits beside `author` because that is the pair a reviewer scans:
+            # who said it and whose problem it is. An assignment is the one comment state
+            # carrying an OBLIGATION, so a register that omits it is missing the column that
+            # decides what happens next (#398).
+            "assigned_to", "mentions",
+            "created_time", "resolved", "text",
             # `anchor_state` sits beside `anchored` because it is the same fact at higher
             # resolution: the boolean says whether there is a passage, this says which of the
             # four ways it is attached - including `quote_only`, which reads as file-level to
@@ -205,6 +211,8 @@ def comment_rows(document: Any, comments: list,
 
         author = getattr(comment.author, "display_name", None) if comment.author else None
         rows.append(_row(tab=tab, thread_id=comment.id, reply_to=None, author=author,
+                         assigned_to=getattr(comment, "assignee_email", None) or "",
+                         mentions=", ".join(getattr(comment, "mentioned_emails", ()) or ()),
                          created_time=_iso(getattr(comment, "created_time", None)),
                          resolved=bool(comment.resolved), text=comment.content,
                          quoted_text=getattr(comment, "quoted_text", None),
@@ -221,7 +229,12 @@ def comment_rows(document: Any, comments: list,
             # A reply carries no passage and no cell of its own: only the top-level comment
             # anchors, and repeating the thread's anchor on every reply would make a register
             # look like several separate findings.
+            # A reply's OWN assignee is carried, unlike its anchor: reassigning on a reply
+            # is how a thread changes hands, so the last assigned row in a thread is the
+            # current owner and flattening it onto the parent would lose the sequence.
             rows.append(_row(thread_id=reply.id, reply_to=comment.id, author=reply_author,
+                             assigned_to=getattr(reply, "assignee_email", None) or "",
+                             mentions=", ".join(getattr(reply, "mentioned_emails", ()) or ()),
                              created_time=_iso(getattr(reply, "created_time", None)),
                              resolved=bool(comment.resolved), text=reply.content))
 
