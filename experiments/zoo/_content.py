@@ -176,7 +176,10 @@ SPECIMENS: dict[str, dict] = {
         what=("The same thread, resolved and reopened, plus a soft-deleted comment and a "
               "reply that carries no text. Each of these arrives in a shape that surprises "
               "code written from the documentation."),
-        why=("Measured 2026-07-20. `resolved` is ABSENT on a comment that was never resolved, "
+        why=("Measured 2026-07-20, and ALL OF IT IS STAGED THROUGH THE API - resolve and reopen "
+             "are action-REPLIES rather than a field update, which is exactly why they are "
+             "reachable without a browser and exactly why naive code misses them. "
+             "`resolved` is ABSENT on a comment that was never resolved, "
              "not false — so a missing field must read as unresolved. Soft delete strips BOTH "
              "the content and the author, leaving a tombstone. Resolve and reopen are "
              "action-REPLIES rather than a field update, and may carry no text at all, so a "
@@ -187,8 +190,10 @@ SPECIMENS: dict[str, dict] = {
               "do not.",
               "A comment that was never resolved, whose `resolved` field is absent rather "
               "than false."],
-        by_hand=["Resolve one thread, then reopen it, so both action-replies exist.",
-                 "Delete one comment from the UI, to produce a tombstone."],
+        by_hand=["Nothing for the lifecycle itself - see below. What is still missing is an "
+                 "ANCHORED thread: every comment here is file-level or quote-only, because "
+                 "only the editor mints an anchor. Select P1 and comment, then reply to it, "
+                 "to get a lifecycle on a properly anchored thread."],
         material=["P1. A paragraph to hang a thread on.",
                   "P2. A second paragraph, for a thread that stays open."]),
 }
@@ -232,3 +237,66 @@ RULES
 Everything here is synthetic. There is no real content and there never should be.
 These files are cited BY ID from csa-google-workspace. Renaming and moving are safe — a Drive
 file id survives both. Deleting breaks the citation. Please do not tidy this folder."""
+
+
+# Specimens that are NOT Google Docs. Kept separate because `build.py` creates each type
+# through a different API, and because their material is a grid or a deck rather than prose.
+SHEET_SPECIMENS: dict[str, dict] = {
+    "sheets-notes-are-not-comments": dict(
+        title="a note is not a comment, and the comments API cannot see one",
+        what=("A spreadsheet carrying cell NOTES and no comments. Ask the Drive comments API "
+              "for its comments and it returns zero - truthfully, and misleadingly."),
+        why=("Measured 2026-09-02: a file carrying a note returns ZERO comments from the Drive "
+             "comments API, because a note and a comment are different objects and the comments "
+             "API does not see notes at all. A note has no author, no thread, and cannot be "
+             "replied to or resolved, so nothing in a reply-and-resolve workflow applies to "
+             "one. A tool reporting 'no comments' on a sheet covered in notes is telling the "
+             "truth and giving exactly the wrong impression."),
+        look=["Cells B2, B3 and B4 carry notes. Hover them in the UI.",
+              "`list_comments` on this file returns nothing. That is correct.",
+              "`list_notes` returns the three. That is the tool for this."],
+        by_hand=[],
+        material=["(the grid is the material - see the tabs)"]),
+
+    "sheets-header-not-row-1": dict(
+        title="a header row that is not row 1, so the header guess is wrong",
+        what=("A grid whose real header row is row 4, under a title block. Any tool that "
+              "assumes 'column A and row 1 are the headers' will label a cell wrongly here."),
+        why=("`comments_by_cell` reports `row_header` and `column_header` to turn 'a comment on "
+             "B11' into 'the row labelled Southwest, column Q3 actual' - which is what makes a "
+             "cell comment interpretable, and how a comment on the WRONG cell becomes "
+             "detectable. But the header row and column are a GUESS (column A, row 1), and a "
+             "caveat says so. This file is what the guess gets wrong: a title block sits above "
+             "the table, so row 1 is a title and row 4 is the header."),
+        look=["Row 1 is a title, rows 2-3 are blank, row 4 is the real header.",
+              "A comment on a data cell should report a row_header of 'Southwest' and a "
+              "column_header taken from row 4 - and a naive reading takes it from row 1.",
+              "The caveat in the export is the point: the guess is declared, not hidden."],
+        by_hand=["Comment on cell C6 in the editor. Only the editor anchors a comment to a "
+                 "cell, so this one genuinely cannot be staged - and a Sheets anchor is an "
+                 "opaque `workbook-range`, which is why mapping it to A1 needs the XLSX "
+                 "export detour."],
+        material=["(the grid is the material)"]),
+}
+
+SLIDE_SPECIMENS: dict[str, dict] = {
+    "slides-comments": dict(
+        title="comments on a deck - never before probed",
+        what=("A three-slide deck with a shape, text inside the shape, and speaker notes, so a "
+              "comment can be placed on each and the anchor compared."),
+        why=("**Nothing in this project has ever looked at what a Slides comment contains.** "
+             "We support them through the uniform Drive axis and everything said about them is "
+             "generalised from the Docs and Sheets measurements - which is precisely the "
+             "reasoning that produced a three-anchor-state table that turned out to have four "
+             "members. Docs anchors are `kix.*`, Sheets are `workbook-range`; Slides is a third "
+             "addressing model and no one here has seen one."),
+        look=["A comment on the slide itself.",
+              "A comment on a shape.",
+              "A comment on text INSIDE a shape - does it carry quoted text?",
+              "A comment on the speaker notes, which are a separate element tree."],
+        by_hand=["All four. Only the editor anchors a comment, and this is the whole point of "
+                 "the specimen: place one on the slide, one on the shape, one on text inside "
+                 "the shape, and one on the speaker notes, then we read the raw anchors and "
+                 "find out what a Slides anchor actually looks like."],
+        material=["(the deck is the material - see the slides)"]),
+}
