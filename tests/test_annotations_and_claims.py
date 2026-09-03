@@ -34,19 +34,41 @@ import pytest
 from csa_google_workspace import Workspace
 from csa_google_workspace.backend import FakeBackend
 from csa_google_workspace.mcp import settings_from_env
+from csa_google_workspace.mcp._capabilities import TOOL_CAPABILITIES
 from csa_google_workspace.mcp.server import INSTRUCTIONS, create_server
 from csa_google_workspace.policy import ALL_CAPABILITIES, PolicyBackend
+
 
 # Hand-written on purpose. Deriving it from the code would test the code against itself; the
 # question "does this tool touch the filesystem or create a file?" is one a person answers by
 # reading it, and a new tool belongs on this list by a deliberate act.
-TOUCHES_STORAGE = {
-    "export_comments",        # destination="file"/"xlsx" write a path; "sheet" creates a Drive file
-    "apply_comment_actions",  # rewrites the register in place
-    "create_file", "copy_file", "update_file", "trash_file", "share_file",
-    "replace_text", "append_text", "insert_slide_text", "update_cells", "append_rows",
-    "authenticate",           # writes the token cache
+# DERIVED, not hand-listed (#319). The list version named 13 tools while 27 are gated, so
+# SIXTEEN mutating tools could have been re-annotated `read_only_hint=True` with the suite
+# staying green - including `delete_comment`, `clear_cells` and `resolve_access_proposal`, which
+# grants a stranger access to a document. Its anti-staleness guard fired on a name that no
+# longer existed and never on a mutating tool that was never added, which is precisely the
+# defect class #184 was filed about.
+#
+# A tool gated on a capability mutates something by definition, so `TOOL_CAPABILITIES` already
+# knows the answer and cannot fall behind the way a literal can.
+def _gated_tools() -> set[str]:
+    return {name for name, capability in TOOL_CAPABILITIES.items() if capability}
+
+
+# The two that write OUTSIDE the capability model, so no gate names them. Declared with
+# reasons rather than folded in silently, and asserted disjoint from the derived set below -
+# if either ever gains a capability, that assertion fails and somebody decides deliberately
+# instead of ending up with a stale duplicate.
+WRITES_WITHOUT_A_CAPABILITY = {
+    "export_comments": 'destination="file"/"xlsx" writes a path and "sheet" creates a Drive '
+                       "file, but the tool itself is ungated - see "
+                       "test_mcp_capabilities.py::test_the_reverse_is_deliberately_not_asserted",
+    "authenticate": "writes the token cache, which is local state and not a Drive capability",
 }
+
+
+def touches_storage() -> set[str]:
+    return _gated_tools() | set(WRITES_WITHOUT_A_CAPABILITY)
 
 
 @pytest.fixture
@@ -61,7 +83,7 @@ def tools():
 class TestNothingThatWritesClaimsToBeReadOnly:
     def test_no_storage_tool_is_annotated_read_only(self, tools):
         offenders = [
-            name for name in TOUCHES_STORAGE
+            name for name in touches_storage()
             if name in tools and getattr(tools[name].annotations, "read_only_hint", False)]
         assert offenders == [], (
             f"annotated read-only while writing: {sorted(offenders)}. The spec maps "
@@ -71,16 +93,21 @@ class TestNothingThatWritesClaimsToBeReadOnly:
     def test_no_storage_tool_claims_to_be_idempotent(self, tools):
         """A retry that creates a second file is not a retry."""
         offenders = [
-            name for name in TOUCHES_STORAGE
+            name for name in touches_storage()
             if name in tools and getattr(tools[name].annotations, "idempotent_hint", False)]
         assert offenders == [], f"annotated idempotent while writing: {sorted(offenders)}"
 
-    def test_the_list_is_still_current(self, tools):
-        """If a name on the list disappears, the list is stale and silently checking nothing."""
-        gone = sorted(TOUCHES_STORAGE - set(tools))
+    def test_the_set_names_no_tool_that_has_gone(self, tools):
+        """The old hand-written list had a staleness guard for exactly this, and it was the
+        WEAKER half: it could only fire on a name that had been removed, never on a mutating
+        tool that was never added. The set is derived now, so the removal case is all that is
+        left to check — and it still is, because `TOOL_CAPABILITIES` can name a tool that no
+        longer exists."""
+        gone = sorted(touches_storage() - set(tools))
         assert gone == [], (
-            f"TOUCHES_STORAGE names tools that no longer exist: {gone}. Renamed or removed - "
-            f"either way the guard above stopped covering them.")
+            f"these are treated as touching storage but are not registered: {gone}. Either a "
+            f"tool was renamed and TOOL_CAPABILITIES not updated, or a declared exception is "
+            f"stale.")
 
     def test_a_genuinely_read_only_tool_is_still_annotated_read_only(self, tools):
         """The counterweight: broadening WRITE until it means nothing would also pass the
@@ -88,6 +115,35 @@ class TestNothingThatWritesClaimsToBeReadOnly:
         for name in ("list_comments", "get_comment", "read_file_content", "search_files"):
             assert tools[name].annotations.read_only_hint is True, (
                 f"{name} reads and should say so, or the annotation carries no information")
+
+
+class TestTheStorageSetIsDerived:
+    """#319. The hand-written version named 13 of 27 gated tools, and its staleness guard could
+    only fire on a name that had been REMOVED - never on a mutating tool that was never added."""
+
+    def test_every_gated_tool_is_treated_as_touching_storage(self, tools):
+        missing = sorted(_gated_tools() - touches_storage())
+        assert missing == [], f"derivation dropped {missing}"
+
+    def test_the_declared_exceptions_are_not_also_gated(self):
+        """If one of them gains a capability the derivation covers it, and the declaration
+        becomes a stale duplicate that nothing would otherwise notice."""
+        overlap = sorted(set(WRITES_WITHOUT_A_CAPABILITY) & _gated_tools())
+        assert overlap == [], (
+            f"{overlap} are now gated, so the derived set already includes them - remove them "
+            f"from WRITES_WITHOUT_A_CAPABILITY rather than carrying both")
+
+    def test_the_exceptions_still_exist_as_tools(self, tools):
+        """The failure the old list could catch, kept: a declared name that no longer exists."""
+        stale = sorted(set(WRITES_WITHOUT_A_CAPABILITY) - set(tools))
+        assert stale == [], f"{stale} are declared but no longer registered"
+
+    def test_it_covers_more_than_the_old_hand_list_did(self, tools):
+        """A regression guard on the FIX, not on the code: if somebody replaces the derivation
+        with a literal again, this notices. 27 gated plus 2 ungated writers."""
+        assert len(touches_storage()) >= 27, (
+            f"only {len(touches_storage())} tools treated as touching storage; the hand-written "
+            f"version managed 13 and that was the bug")
 
 
 class TestTheInstructionsDoNotInventControls:

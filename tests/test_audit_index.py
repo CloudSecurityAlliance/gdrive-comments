@@ -143,6 +143,55 @@ class TestNoTrackedCodeIsInvisibleToTheCoverageTable:
             f"say whether they have been audited. Add a group in gen_audit_index.py.")
 
 
+class TestCoverageIsMeasuredInLinesNotJustFiles:
+    """#322. The table counted FILES, and a file does not stop being listed as covered when it
+    triples in size — roughly 3,400 of 4,061 new `src/` lines sat inside files marked fully
+    covered.
+
+    Counting lines TODAY would not fix it: that counts growth the audit never read as covered.
+    The honest number is the size a file was **when the audit saw it**, which git still has,
+    against the size it is now. The effect is visible immediately — `mcp/_tools/` reads as fully
+    covered by file and **63% by line**.
+    """
+
+    def test_an_unresolvable_commit_yields_no_number_rather_than_a_wrong_one(self, gen):
+        """The normal case in CI: `actions/checkout` is shallow, so an audit's `target_commit`
+        is usually absent. Degrading to the older, weaker file-only claim is right; inventing a
+        percentage from today's line counts would be worse than the bug being fixed."""
+        assert gen.lines_at("0000000000000000000000000000000000000000",
+                            ["src/csa_google_workspace/policy.py"]) == {}
+        assert gen.lines_at("", ["src/csa_google_workspace/policy.py"]) == {}
+
+    def test_no_paths_is_not_an_error(self, gen):
+        assert gen.lines_at("HEAD", []) == {}
+
+    def test_it_counts_the_file_as_it_was_then_not_now(self, gen):
+        """The whole point, asserted against real history: `policy.py` has grown since the
+        2026-08-27 audit read it, and the coverage number must reflect what was read."""
+        then = gen.lines_at("95c6afa", ["src/csa_google_workspace/policy.py"])
+        now = gen.lines_now(["src/csa_google_workspace/policy.py"])
+        assert then, "the 2026-08-27 audit commit should be resolvable in a full clone"
+        assert then["src/csa_google_workspace/policy.py"] < now["src/csa_google_workspace/policy.py"], (
+            "policy.py has grown since that audit; if this ever fails the fixture changed, not "
+            "the mechanism")
+
+    def test_the_generated_table_carries_a_line_share(self, gen):
+        """End to end: at least one group reports one, or the feature is not wired in."""
+        table = gen.render_coverage(gen.load_audits(), gen.tracked_files())
+        assert "% of lines" in table
+
+    def test_a_group_can_be_fully_covered_by_file_and_partly_by_line(self, gen):
+        """The exact overstatement #322 describes, present in this repository today."""
+        table = gen.render_coverage(gen.load_audits(), gen.tracked_files())
+        rows = [r for r in table.splitlines()
+                if "% of lines" in r and "partial" not in r]
+        assert rows, "no group is fully-covered-by-file with a line share to compare against"
+        shares = [int(r.split("· ")[-1].split("%")[0]) for r in rows]
+        assert any(s < 100 for s in shares), (
+            "every fully-covered group also reads 100% of lines, which would mean the "
+            "file-based count was never overstating anything - check the mechanism")
+
+
 class TestEveryRecordCarriesWhatTheIndexNeeds:
     REQUIRED = ["audit_id", "date_completed", "tool", "human_interaction", "automation",
                 "review_depth", "modules_covered"]
