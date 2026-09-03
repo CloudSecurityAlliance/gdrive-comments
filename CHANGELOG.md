@@ -10,6 +10,46 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.44.0 ("we looked and could not find it") — not released *(yet — flipped once PyPI confirms)*
+
+Remedy 2 from #380, and the reasoning is the operator's: *"otherwise, is it missing, did the
+software error out? 'We looked and couldn't find it' is incredibly helpful."*
+
+**`context_kind: "not_found"` now states the search, not a presumed cause.** It used to read *"The
+quoted text is not in the document **any more**"* — which presupposes the passage once existed, and
+after #380 we know it may never have. The note now says plainly that the search **ran and
+completed**, that this is a finding rather than an error, and lists the three causes without
+choosing between them: the passage was edited or deleted; the comment belongs to a different
+revision; or **the quoted text was never in the document at all**, which is possible because its
+creator supplies that field and Google validates nothing. It also tells the caller not to repeat
+the quote as something the document says.
+
+### The same defect was one level up, so `null` now means exactly one thing
+
+A `context` of `null` used to carry **three** different meanings, indistinguishably: *there is no
+passage to find*, *this file type is not supported here*, and *you did not ask for context*. A
+consumer could not tell that the search had run — the exact confusion the change above removes,
+reintroduced by the layer above it.
+
+Two new members of the closed `KINDS` vocabulary say the first two out loud:
+
+- **`no_quote`** — the comment quotes nothing, so there was no question to answer. Not a failure,
+  and the note points at `anchor_state` for *which* kind of nothing.
+- **`unsupported`** — passage context is implemented for Google Docs only. A spreadsheet now says
+  so, and names the equivalent it already returns (`cell_text` with `row_header` /
+  `column_header`), instead of returning early and leaving every row blank. The note says this is
+  a gap in the tool, not a property of the file.
+
+So **`null` means "not requested" and nothing else**, and every context a caller asked for
+explains itself. That is the same asymmetry `labels.py` and `_inventory.py` are built around —
+report what could not be reached, with a reason, because silence reading as absence is the
+dangerous direction.
+
+`context_out`'s own docstring argued the opposite before this ("inventing a `kind` would imply a
+failure where there is simply no question"). The first half was right; the conclusion was wrong,
+because the same `null` was doing two other jobs. Both the old reasoning and the correction are
+kept in place.
+
 ## 2026-09-03 — v0.43.1 (`quoted_text` is a claim, not evidence)
 
 A documentation correction, shipped as a patch because the text corrected is **what a model

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from mcp.server import MCPServer
 
-from ... import _apply, _export
+from ... import _apply, _context, _export
 from ... import exceptions as exc
 from ...documents.sheet import Sheet
 from .._schemas import (
@@ -58,14 +58,31 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         per call by design (no caching layer, settled 2026-08-30), so the loop really would
         re-download it each time.
 
-        Best-effort per comment: a document type with no structure to walk, or a quote that
-        cannot be placed, leaves `context` null or carries a `kind` explaining why. It never
-        costs the caller the comments themselves.
+        **A context the caller asked for always explains itself.** Every outcome carries a
+        `kind` and a `note` - including "there was nothing to look for" and "not supported for
+        this file type" - so `null` means one thing only: context was not requested. Reporting
+        "we did not look" as an empty value is the same defect as reporting an unreachable file
+        as an unlabelled one, and it fails in the same direction.
+
+        It never costs the caller the comments themselves.
         """
         contexts = getattr(document, "comment_contexts", None)
         if contexts is None:
-            # A Sheet or a deck: the passage idea does not apply. A Sheets comment's context is
-            # `cell_text` plus the row/column headers, which the register already carries.
+            # A Sheet or a deck. SAID rather than left blank: the caller asked a question and
+            # is owed an answer, even when the answer is "not here". For a spreadsheet the
+            # equivalent already exists under different names, so the note points at them
+            # instead of leaving the caller to guess that nothing is coming.
+            for row in out:
+                row["context"] = {
+                    "text": "", "kind": _context.KIND_UNSUPPORTED,
+                    "note": ("Passage context is not available for this file type - it is "
+                             "implemented for Google Docs only. For a spreadsheet the "
+                             "equivalent is `cell_text` with `row_header` and `column_header`, "
+                             "which this result already carries; for a deck, read the slide. "
+                             "This is a gap in this tool, not a property of the file."),
+                    "paragraph_index": 0, "paragraph_total": 0, "heading_path": [],
+                    "truncated": False, "candidates": [],
+                }
             return out
         # strict=True: one context per comment is the contract, and a silent length
         # mismatch would attach a passage to the WRONG comment - worse than an error.

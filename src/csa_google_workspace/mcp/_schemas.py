@@ -618,8 +618,18 @@ def inventory_out(inv: Any, *, destination: str) -> InventoryOut:
 
 
 def context_out(ctx: Any) -> ContextOut | None:
-    """`None` passes straight through: a comment with no quoted text has no passage, and
-    inventing a `kind` for it would imply a failure where there is simply no question."""
+    """A context that was ASKED FOR always explains itself, so `null` means only "not asked".
+
+    This used to pass `None` straight through, reasoning that a comment with no quoted text has
+    no passage and that inventing a `kind` "would imply a failure where there is simply no
+    question". The first half is right and the conclusion was wrong: `null` was *also* what a
+    caller got for an unsupported file type and for not requesting context at all, so one value
+    carried "no question", "not supported" and "never looked". A consumer could not tell that
+    the search had run.
+
+    `KIND_NO_QUOTE` and `KIND_UNSUPPORTED` now say those two out loud. `None` survives only for
+    the third, where the caller already knows the answer because they chose it.
+    """
     if ctx is None:
         return None
     return {"text": ctx.text, "kind": ctx.kind, "note": ctx.note,
