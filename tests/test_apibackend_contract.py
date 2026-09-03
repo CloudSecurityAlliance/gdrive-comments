@@ -2,6 +2,8 @@
 comment-list pagination, and the non-idempotent wiring on every write method.
 Both are only otherwise covered by the never-in-CI live suite.
 """
+import pytest
+
 from csa_google_workspace.backend import ApiBackend
 
 # --- #6: list_comments must follow nextPageToken and preserve filters ----------
@@ -75,41 +77,115 @@ class _Chain:
         return {}
 
 
+# DERIVED from policy._GATES, not hand-listed (#324). The call-by-call version exercised 15 of
+# 26 MODIFY-gated writes, and the eleven it missed included `create_permission` - the SHARING
+# write, where a silently retried 5xx that had already landed is a duplicated grant of access.
+# A write added to `ApiBackend` without the `idempotent=False` flag gains a retry that can
+# double-apply, and nothing would have said so.
+#
+# Two are excluded because they never reach `_errors.call` at all: `ApiBackend` raises
+# `UnsupportedOperation` for both, so there is no request to flag. Declared rather than filtered
+# by behaviour, so that if either ever becomes real the assertion below fails and somebody adds
+# the call deliberately - which matters, because both now EXIST in Google's Developer Preview
+# (see research/comments-apis-2026-09.md).
+NOT_IMPLEMENTED_SO_NO_REQUEST = {
+    "accept_suggestion": "ApiBackend raises UnsupportedOperation; no HTTP call is made",
+    "create_cell_anchored_comment": "same - the GA API cannot anchor a comment to a cell",
+}
+
+# How to call each write with arguments that reach `_errors.call`. Hand-written, because a
+# derived call cannot know what a valid argument looks like - but WHICH writes must appear is
+# derived, which is the half that used to fall behind.
+WRITE_CALLS = {
+    "create_comment":               lambda b: b.create_comment("f", "hi"),
+    "create_reply":                 lambda b: b.create_reply("f", "c", content="x"),
+    "update_comment":               lambda b: b.update_comment("f", "c", "x"),
+    "update_reply":                 lambda b: b.update_reply("f", "c", "r", "x"),
+    "delete_comment":               lambda b: b.delete_comment("f", "c"),
+    "delete_reply":                 lambda b: b.delete_reply("f", "c", "r"),
+    "docs_batch_update":            lambda b: b.docs_batch_update("f", []),
+    "sheets_values_update":         lambda b: b.sheets_values_update("f", "A1", [[1]]),
+    "sheets_values_append":         lambda b: b.sheets_values_append("f", "A1", [[1]]),
+    "sheets_values_clear":          lambda b: b.sheets_values_clear("f", "A1"),
+    "sheets_batch_update":          lambda b: b.sheets_batch_update("f", []),
+    "slides_batch_update":          lambda b: b.slides_batch_update("f", []),
+    # #235: both permission mutations. `delete_permission` matters most - it returns None, so a
+    # retried 5xx that already landed looks like a clean second revocation rather than an error,
+    # and the caller never learns the first one worked.
+    "update_permission":            lambda b: b.update_permission("f", "p1", role="reader"),
+    "delete_permission":            lambda b: b.delete_permission("f", "p1"),
+    # Answering an access request. Returns None like `delete_permission`, so a retried 5xx that
+    # had already landed looks like a clean second resolve - and the mutation it may have already
+    # applied is A GRANT OF ACCESS. Worst thing here to double-apply silently.
+    "resolve_access_proposal":      lambda b: b.resolve_access_proposal(
+                                        "f", "ap1", action="ACCEPT", roles=["reader"]),
+    # ADDED BY #324. `create_permission` is the one the hand-list omitted and the one whose
+    # repetition is most visible to a third party: a second grant to the same address.
+    "create_permission":            lambda b: b.create_permission(
+                                        "f", email="a@b.com", role="reader"),
+    "create_file":                  lambda b: b.create_file("n", "text/plain"),
+    "trash_file":                   lambda b: b.trash_file("f"),
+    "update_file_metadata":         lambda b: b.update_file_metadata("f", name="n"),
+    "docs_add_tab":                 lambda b: b.docs_add_tab("f", "t"),
+    "docs_delete_range":            lambda b: b.docs_delete_range("f", 1, 2),
+    "docs_delete_tab":              lambda b: b.docs_delete_tab("f", "t1"),
+    "sheets_add_tab":               lambda b: b.sheets_add_tab("f", "t"),
+    "sheets_delete_tab":            lambda b: b.sheets_delete_tab("f", 0),
+}
+
+
+def _modify_gated() -> set[str]:
+    from csa_google_workspace.policy import _GATES, MODIFY
+    return {m for m, g in _GATES.items() if g.access == MODIFY}
+
+
+def test_every_write_is_exercised_by_this_file():
+    """The guard on the guard. Without it, a new write simply is not tested and nothing says so
+    - which is how this file came to cover 15 of 26."""
+    expected = _modify_gated() - set(NOT_IMPLEMENTED_SO_NO_REQUEST)
+    missing = sorted(expected - set(WRITE_CALLS))
+    assert missing == [], (
+        f"these writes are MODIFY-gated and never called here: {missing}. Add a lambda to "
+        f"WRITE_CALLS - a write with no test can silently gain a retry that double-applies.")
+    extra = sorted(set(WRITE_CALLS) - _modify_gated())
+    assert extra == [], f"WRITE_CALLS names non-write methods: {extra}"
+
+
+def test_the_exclusions_are_still_unimplemented():
+    """Both now exist in Google's Developer Preview. If either becomes reachable here, the
+    exclusion is wrong and this says so rather than leaving a write untested."""
+    from csa_google_workspace import exceptions as exc
+    from csa_google_workspace.backend import ApiBackend
+    b = ApiBackend(_Chain())
+    for name in NOT_IMPLEMENTED_SO_NO_REQUEST:
+        with pytest.raises(exc.UnsupportedOperation):
+            getattr(b, name)("f", "x") if name == "accept_suggestion" else \
+                getattr(b, name)("f", "A1", "x")
+
+
 def test_all_writes_are_non_idempotent(monkeypatch):
-    captured = []
+    """Only 429 is retried for a non-idempotent call; 5xx is not, because the mutation may
+    already have landed server-side. A write that omits the flag silently gains a retry that
+    can double-apply — CLAUDE.md invariant 1."""
+    captured: dict[str, bool] = {}
 
     def fake_call(fn, *args, idempotent=True, _sleep=None, **kwargs):
-        captured.append(idempotent)
+        captured[_current[0]] = idempotent
         return {}
 
     monkeypatch.setattr("csa_google_workspace.backend._errors.call", fake_call)
     b = ApiBackend(_Chain())
+    _current = [""]
+    for name, call in sorted(WRITE_CALLS.items()):
+        _current[0] = name
+        call(b)
 
-    b.create_comment("f", "hi")
-    b.create_reply("f", "c", content="x")
-    b.update_comment("f", "c", "x")
-    b.update_reply("f", "c", "r", "x")
-    b.delete_comment("f", "c")
-    b.delete_reply("f", "c", "r")
-    b.docs_batch_update("f", [])
-    b.sheets_values_update("f", "A1", [[1]])
-    b.sheets_values_append("f", "A1", [[1]])
-    b.sheets_values_clear("f", "A1")
-    b.sheets_batch_update("f", [])
-    b.slides_batch_update("f", [])
-    # #235: both permission mutations. `delete_permission` is the one that matters most here -
-    # it returns None, so a retried 5xx that already landed would look like a clean second
-    # revocation rather than an error, and the caller would never learn the first one worked.
-    b.update_permission("f", "p1", role="reader")
-    b.delete_permission("f", "p1")
-    # Answering an access request. It returns None, like `delete_permission`, so a retried 5xx
-    # that had already landed would look like a clean second resolve - and the mutation it may
-    # have already applied is A GRANT OF ACCESS. Worst thing on this list to double-apply
-    # silently, because the second call would report success for something already done and
-    # nobody would go looking.
-    b.resolve_access_proposal("f", "ap1", action="ACCEPT", roles=["reader"])
-
-    assert captured == [False] * 15    # a single True here is a silent double-apply risk
+    wrong = sorted(n for n, flag in captured.items() if flag is not False)
+    assert wrong == [], (
+        f"these writes did NOT pass idempotent=False: {wrong}. Each can be retried after a 5xx "
+        f"and applied twice.")
+    assert len(captured) == len(WRITE_CALLS), (
+        f"only {len(captured)} of {len(WRITE_CALLS)} writes reached _errors.call")
 
 
 class _FilesStub:

@@ -66,6 +66,31 @@ class TestExactlyOneJobCanMintTheCredential:
         """The load-bearing half: this is where every third-party thing runs."""
         assert "id-token" not in (jobs["build"].get("permissions") or {})
 
+    def test_the_WORKFLOW_LEVEL_block_does_not_grant_it_either(self, workflow):
+        """#323. Both assertions above read PER-JOB permissions, and a workflow-level grant is
+        INHERITED by every job that does not override it — so adding `id-token: write` at the
+        top would hand the credential to `build`, the job that runs `pip install` and the test
+        suite, **with both of those assertions still green**.
+
+        `release.yml` is correct today (`permissions: contents: read` at the top, `id-token`
+        scoped to `publish` alone). This is a guard gap rather than a live leak, and the point
+        of writing it now is that the leak would be invisible to the tests that exist.
+        """
+        top = workflow.get("permissions") or {}
+        assert "id-token" not in top, (
+            "the workflow-level permissions block grants id-token, which every job inherits - "
+            "including `build`. Scope it to the `publish` job instead.")
+
+    def test_the_workflow_level_default_is_read_only(self, workflow):
+        """The counterweight: absence of `id-token` is not the same as a narrow default. An
+        omitted block inherits the repository default, which may be write-all."""
+        top = workflow.get("permissions") or {}
+        assert top, "release.yml has no workflow-level permissions block, so jobs inherit the "\
+                    "repository default - state it explicitly"
+        assert all(v == "read" for v in top.values()), (
+            f"workflow-level permissions are {top}; the default every job inherits should be "
+            f"read-only, with any write scoped to the one job that needs it")
+
     def test_the_publish_job_waits_for_the_build_job(self, jobs):
         assert jobs["publish"].get("needs") == "build"
 

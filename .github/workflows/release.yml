@@ -34,6 +34,13 @@ jobs:
     # third-party code, and none of it can mint a publishing credential that does not exist.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Full history and tags, for the same reason `tests.yml` needs them: the suite this
+          # job runs includes guards that READ git - the audit coverage table sizes each file
+          # as it was at the audit that covered it, and the changelog is reconciled against
+          # the tags. Depth 1 has neither, and a release must not be gated by a suite whose
+          # guards cannot see what they check.
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
