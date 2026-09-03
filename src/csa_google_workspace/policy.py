@@ -393,6 +393,13 @@ _GATES: dict[str, Gate] = {
     # to check against an allowlist. It is also the only call here that reaches a second Google
     # API (`drivelabels`), and it can only ever read: this library never requests the write
     # scope, so mislabelling is impossible rather than merely disabled.
+    # A shared DRIVE is not a file, so the file allowlist has no id to match and
+    # `READS_LISTING` is the honest gate - the same shape and the same reasoning as
+    # `get_label_definition`, which T41 records as `file_scoped=False` on an org-level object.
+    # Read-only: there is no `update_drive` here, deliberately. Drive-level restrictions bound
+    # an entire drive and every file in it, which makes them the broadest control this library
+    # could touch and the last one it should be able to change.
+    "get_drive": READS_LISTING,
     "get_label_definition": READS_LISTING,
     "search_files": READS_LISTING,
     "list_comments": READS_FILE,

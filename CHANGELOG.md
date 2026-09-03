@@ -10,6 +10,68 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.49.0 (what GOOGLE will refuse, not what we are configured not to do) — not released *(yet — flipped once PyPI confirms)*
+
+Wave 4's read side: **#336**, **#337** and **#338** together, because they are one idea.
+
+### These are a different KIND of control, and that is the whole point
+
+`policy.py` builds a ceiling **below** Drive's. It bounds what *this agent* does, and `README.md`
+concedes the limit out loud: running the built-in Drive connector alongside this server *"defeats
+the scoping entirely"*, because our gates bind only our own calls.
+
+A **protected range**, `writersCanShare=false`, or `driveMembersOnly` binds **every** client — this
+server, that connector, the web UI, a script, a phone. So when a model is deciding whether an
+action is safe, *"Google will refuse this"* is a categorically stronger answer than *"our policy is
+configured not to"* — and until now the library could not read any of it.
+
+### Three tools, all read-only
+
+- **`list_protected_ranges`** (#336) — the control that actually prevents an edit. Ranges are
+  reported in **A1 with the tab resolved**, because a `GridRange` of zero-based half-open indices
+  is not something a caller should have to decode. **`warning_only` means the edit is PERMITTED** —
+  Google's own UI calls it *"show a warning when editing this range"* — so `enforced` is the field
+  to branch on, precomputed, because a caller reading `warning_only` gets the polarity backwards
+  half the time.
+- **`get_file_restrictions`** (#337) — two questions in one answer. The flags say what somebody
+  *configured*; `can_*` says what Drive will actually *permit this user* once the flags, the ACL
+  and any drive policy are applied. Neither is derivable from the other.
+- **`get_shared_drive`** (#338) — the broadest controls there are, and previously unreachable
+  entirely: there was no `drives` surface at all.
+
+### Two things the probe found that the issues did not say
+
+**`downloadRestriction` was not in the request** and **is set on real drives** — so the field list
+was probed against the API rather than transcribed from the issue, and `restrictedForReaders` /
+`restrictedForWriters` are reported.
+
+**`capabilities(...)` is often the more useful half.** No issue asked for it, but "may I" is a
+different and usually better question than "is this flag set", and it is the one that saves a turn:
+`can_share=false` means Google will refuse however this server is configured.
+
+### Read-only by construction, not by configuration
+
+There is no write counterpart anywhere and **no capability that would enable one** — asserted by
+test, so *"we chose not to"* cannot quietly become *"we forgot to gate it"*. A control this broad
+is the last thing an agent should be able to change: one that can lift the protection on a document
+has not been restricted. Same reasoning as `labels.py`.
+
+**`None` never means unrestricted.** Every field is `None` when Drive did not say, and
+`FileRestrictions.unknown` tells absence from unread — the asymmetry `labels.py` and `_inventory.py`
+are built around.
+
+### And the same test mistake, twice in one day
+
+The spreadsheet field-mask test was written as `"protectedRanges" in mask` and **passed** a mutation
+renaming the field to `protectedRangesX(`. That is the second time today: #398's mask test passed
+when the top-level request was removed, because the name survived inside the nested `replies(` spec.
+Both now assert the *request* — with its open paren — rather than the presence of a word. Ten
+mutations, all caught after the fix.
+
+Verified against real Google: a live file's restrictions and effective capabilities, and a live
+shared drive reporting `driveMembersOnly`, `copyRequiresWriterPermission` and a reader download
+restriction.
+
 ## 2026-09-03 — v0.48.0 (a quote that spans a paragraph is no longer "not in the document")
 
 **#405**, and it is the most confident possible wrong answer this library has given.

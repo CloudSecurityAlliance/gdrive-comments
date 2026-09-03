@@ -9,6 +9,7 @@ from .backend import ApiBackend, Backend
 from .base import Document, subclass_for_mime
 from .files import FileCollection
 from .policy import Policy, PolicyBackend
+from .restrictions import SharedDrive
 
 if TYPE_CHECKING:
     from google.auth.credentials import Credentials
@@ -35,6 +36,26 @@ class Workspace:
         holds no per-axis state — the same reason `Document.comments` is a property.
         """
         return FileCollection(self._backend, self.read_only)
+
+    def shared_drive(self, drive_id: str) -> SharedDrive:
+        """A shared drive and its restrictions (#338) — the broadest Google-side controls.
+
+        These bound an entire drive and every file in it: `drive_members_only`,
+        `domain_users_only`, `copy_requires_writer_permission`,
+        `sharing_folders_requires_organizer_permission`, and the download restriction.
+
+        **Why reading this matters for a tool that shares files:** a document living in a drive
+        with `drive_members_only` cannot be shared outward however our own policy is configured
+        — Drive will refuse. Being unable to read that meant the server could not tell a model
+        that an action it was about to attempt was already impossible.
+
+        `driveId` comes from `FileRef.drive_id` or `get_file_metadata`; a file **not** in a
+        shared drive has none, and passing one for a My Drive file is a question with no answer
+        rather than an error to invent. **Read-only by construction** — there is no
+        `update_drive` here and no capability to enable one, for the same reason `labels.py`
+        cannot write: a control this broad is the last thing an agent should be able to lift.
+        """
+        return SharedDrive.from_api(self._backend.get_drive(drive_id))
 
     def open(self, file_id_or_url: str) -> Document:
         file_id = parse_file_id(file_id_or_url)

@@ -52,12 +52,12 @@ looked for, which is the reason this table exists.
 <!-- BEGIN GENERATED COVERAGE -->
 | group | first covered by |
 |---|---|
-| `src/csa_google_workspace/` — top level | **partial** — 22/24 at 2026-09-01 · 82% of lines |
+| `src/csa_google_workspace/` — top level | **partial** — 22/25 at 2026-09-01 · 79% of lines |
 | `documents/` — per-type content | 2026-07-22 · claude-code |
-| `mcp/` — server, auth flow, config, resources | **partial** — 15/16 at 2026-09-01 · 90% of lines |
-| `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code · 61% of lines |
-| `demo/` | 2026-08-27 · claude-code · 86% of lines |
-| `tests/` as code | **partial** — 13/129 at 2026-09-01 · 16% of lines |
+| `mcp/` — server, auth flow, config, resources | **partial** — 15/16 at 2026-09-01 · 86% of lines |
+| `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code · 59% of lines |
+| `demo/` | 2026-08-27 · claude-code · 84% of lines |
+| `tests/` as code | **partial** — 13/130 at 2026-09-01 · 16% of lines |
 | `.github/workflows/` | 2026-09-01 · codex · 94% of lines |
 | packaging and secret-scanning config | 2026-08-27 · claude-code · 85% of lines |
 | `scripts/` | 2026-09-01 · codex · 85% of lines |

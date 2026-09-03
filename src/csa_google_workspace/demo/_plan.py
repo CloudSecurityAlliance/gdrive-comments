@@ -102,6 +102,14 @@ def per_type(kind: str) -> list[Step]:
              "Name, type, and when it changed - without fetching the content, which for a "
              "large file is the difference between instant and slow.",
              group=kind),
+        Step("get_file_restrictions", lambda s, key=key: {"fileId": s[key]},
+             f"Ask what DRIVE permits on the {label}",
+             "Two questions in one answer: the configured restriction flags, and what Drive "
+             "will actually permit THIS user once the flags, the sharing and any shared-drive "
+             "policy are all applied. A model deciding whether to attempt something wants the "
+             "second - `can_share=false` means Google will refuse however this server is set "
+             "up, so trying it wastes a turn on a predictable failure.",
+             group=kind),
     ]
 
     # ── Content: add, edit, remove — spelled out per type, because they are three APIs ──
@@ -167,6 +175,13 @@ def per_type(kind: str) -> list[Step]:
         ]
     elif kind == "spreadsheet":
         steps += [
+            Step("list_protected_ranges", lambda s: {"fileId": s["spreadsheet_id"]},
+                 "Ask what GOOGLE will refuse to let us edit",
+                 "A protected range is enforced by Google against every client, so it is a "
+                 "categorically stronger answer than this server's own policy - which binds "
+                 "only this server's calls. Expect zero here: the demo just made this file, so "
+                 "nothing is protected yet. Zero is the useful answer, not a failure.",
+                 group=kind),
             Step("list_notes", lambda s: {"fileId": s["spreadsheet_id"]},
                  "List the cell NOTES on the Sheet",
                  "Notes are NOT comments - no author, no thread, and they cannot be replied to "
