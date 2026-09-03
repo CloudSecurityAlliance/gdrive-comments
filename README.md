@@ -1226,19 +1226,31 @@ inside it are worth knowing before anyone reimplements it:
 It degrades asymmetrically on purpose: a damaged graph costs you the *tab*, never the *cell*, and
 an unresolved tab stays empty rather than defaulting to the first sheet.
 
-### Three different things arrive as an empty `quoted_text`
+### Four different things arrive as a comment, and `quoted_text` distinguishes none of them
 
-Distinguishable by whether an **anchor** is present — not by the quoted text, which is where most
-code looks:
+Anchor presence and quoted-text presence are **independent**, so there are four combinations —
+and most code looks at the quoted text, which separates none of them:
 
-| situation | `anchored` | `quoted_text` |
-|---|---|---|
-| a comment on the **whole file** | `false` | empty |
-| attached to a **non-text object** — an image, a cell | **`true`** | empty |
-| attached to text | `true` | the text |
+| situation | `anchor_state` | `anchored` | `quoted_text` | made by |
+|---|---|---|---|---|
+| a comment on the **whole file** | `file` | `false` | empty | editor or API |
+| attached to a **non-text object** — an image, a cell | `object` | `true` | empty | editor |
+| attached to text | `text` | `true` | the text | editor |
+| **a quote with no anchor** | `quote_only` | `true` | **the text** | **API only** |
 
 Conflating the first two turns *"look here, carefully"* into *"there is nothing to look at."*
 Drive **omits** absent fields rather than sending `null`, so absence has exactly one form.
+
+**The fourth one is the trap, and it is not rare.** A consumer measured 4 of 90 threads on one
+real document in this state, one carrying a 244-character quotation. It exists because
+`comments.create` accepts a quote with no anchor — and because an API-supplied anchor is stored
+and then ignored by the editors, a tool that knows this drops the anchor and keeps the quote.
+**So it appears on any file another tool has written to.** Read it as file-level and you skip
+exactly the comments somebody quoted at length.
+
+`anchored` here answers *"is there a passage?"*, and `anchor_state` says which of the four.
+*(`anchored` was raw anchor presence until v0.43.0, which reported `false` on those 244
+characters — the bug this table now exists to prevent.)*
 
 ### The editor quietly fixes sloppy selections, which helps
 

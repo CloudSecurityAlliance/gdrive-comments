@@ -4,7 +4,18 @@ from .access_proposals import AccessProposal, RoleAndView
 from .allowlist import AllowlistError, Listing, parse_setting
 from .backend import Backend
 from .base import Document
-from .comments import Author, Comment, CommentCollection, Location, Reply
+from .comments import (
+    ANCHOR_FILE,
+    ANCHOR_OBJECT,
+    ANCHOR_QUOTE_ONLY,
+    ANCHOR_STATES,
+    ANCHOR_TEXT,
+    Author,
+    Comment,
+    CommentCollection,
+    Location,
+    Reply,
+)
 from .documents.doc import Doc
 from .documents.sheet import Sheet
 from .documents.slides import Slide, Slides
@@ -17,6 +28,13 @@ from .suggestions import Suggestion
 from .workspace import Workspace
 
 __all__ = [
+    # The four attachment states a `Comment.anchor_state` can take - exported because a
+    # consumer branches on them, and a bare string comparison is how #372 happened.
+    "ANCHOR_FILE",
+    "ANCHOR_OBJECT",
+    "ANCHOR_QUOTE_ONLY",
+    "ANCHOR_STATES",
+    "ANCHOR_TEXT",
     "Workspace", "Doc", "Sheet", "Slides", "exceptions",
     "Comment", "Author", "Reply", "Location",
     "Suggestion", "Slide", "EXPORT_FORMATS",
@@ -27,4 +45,4 @@ __all__ = [
     # policy / allowlisting (#82)
     "Policy", "PolicyBackend", "Scope", "Listing", "AllowlistError", "parse_setting",
 ]
-__version__ = "0.42.0"
+__version__ = "0.43.0"

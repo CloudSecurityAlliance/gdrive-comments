@@ -241,19 +241,41 @@ nothing:
 Consequently the only anchored comments **without** quoted text are those on **non-text objects**:
 a comment on an inline image returned `anchor: kix.y1h574n5va9q` with `quotedFileContent` **absent**.
 
-### The three anchor states, and how to tell them apart (MEASURED 2026-09-02)
+### The FOUR anchor states, and how to tell them apart (MEASURED 2026-09-02 and 2026-09-03)
 
-`quoted_text` alone cannot distinguish them; **`anchor` presence** can:
+`anchor` presence and `quotedFileContent` presence are **independent**, so there are four
+combinations. `quoted_text` alone distinguishes none of them.
 
-| state | `anchor` | `quotedFileContent` |
-|---|---|---|
-| file-level (no anchor at all) | key **absent** | key **absent** |
-| anchored to a non-text object (image) | present | key **absent** |
-| anchored to text (including a bare caret) | present | present |
+| state | `anchor` | `quotedFileContent` | produced by |
+|---|---|---|---|
+| file-level (no anchor at all) | key **absent** | key **absent** | editor or API |
+| anchored to a non-text object (image) | present | key **absent** | editor |
+| anchored to text (including a bare caret) | present | present | editor |
+| **quoted, no anchor** | key **absent** | **present** | **API only** |
 
 Drive **omits** absent fields rather than returning them as `null`, so "key absent" is the only
 form absence takes — a `""`-versus-`None` distinction would be one a consumer invented, not one
 Drive draws.
+
+*(This section said **three** states until 2026-09-03. The first three were measured from the
+editor in [`experiments/docs-anchor-states`](../experiments/docs-anchor-states/RESULTS.md), and
+the fourth is unreachable that way — the editor snaps a bare caret to the enclosing word and
+refuses to comment on empty space, so it cannot produce a quote without an anchor. It took a
+consumer hitting it on real material (#372) to go and look.)*
+
+**The fourth state is not a corruption, and a well-informed tool creates it deliberately.**
+Measured in [`experiments/api-created-comment-states`](../experiments/api-created-comment-states/RESULTS.md):
+`comments.create` accepts `quotedFileContent` with no `anchor` and returns it verbatim. And since
+an API-supplied anchor is stored but treated as *un-anchored* by the editors (§7), a client that
+knows this omits the useless field and keeps the quote. **So expect this shape on any file
+another tool has written to** — and do not read it as file-level: these carry real, often long
+quotations.
+
+**`quotedFileContent.mimeType` carries no information** (measured 2026-09-03). Send
+`text/plain` on create and Drive returns **`text/html`** — it normalises the field regardless of
+what the client sends, while the value stays plain text. Every comment reports `text/html`
+whatever it was created with, so **do not branch on it**. The value itself is byte-verbatim,
+including leading whitespace, embedded newlines and tabs.
 
 ### ⚠️ Still-unobserved formats
 These circulated in earlier drafts and were **not** seen in the probe. Do not rely on them:

@@ -106,6 +106,21 @@ class Reply:
         self.deleted = True; self.content = None; self.html_content = None; self.author = None
 
 
+# The four ways a comment can be attached, as a CLOSED vocabulary (#372). A boolean cannot
+# carry this: `anchor` present and `quoted_text` present are INDEPENDENT signals, so there are
+# four combinations and only three of them were ever documented.
+#
+# Closed for the same reason `_context.KINDS` is - a fifth member should be a deliberate act
+# with a measurement behind it, not an accident. All four are measured:
+# `experiments/docs-anchor-states/` for the editor-created three, and
+# `experiments/api-created-comment-states/` for `quote_only`, which only the API can produce.
+ANCHOR_FILE = "file"              # neither: about the document, not a passage
+ANCHOR_OBJECT = "object"          # anchor, no quote: an image, a drawing, a cell
+ANCHOR_TEXT = "text"              # both: the ordinary case
+ANCHOR_QUOTE_ONLY = "quote_only"  # quote, no anchor: API-created, and NOT file-level
+ANCHOR_STATES = frozenset({ANCHOR_FILE, ANCHOR_OBJECT, ANCHOR_TEXT, ANCHOR_QUOTE_ONLY})
+
+
 @dataclass
 class Comment:
     id: str
@@ -126,31 +141,67 @@ class Comment:
     _read_only: bool = field(default=False, repr=False, compare=False)
 
     @property
-    def anchored(self) -> bool:
-        """Whether Drive attached this comment to a REGION of the file, rather than the file.
+    def anchor_state(self) -> str:
+        """WHICH of the four ways this comment is attached - one of `ANCHOR_STATES`.
 
-        This is the discriminator `quoted_text` cannot provide, and the reason it matters is
-        that three different situations arrive as a falsy `quoted_text` (#361):
+        `anchor` presence and `quoted_text` presence are independent, so there are **four**
+        combinations. Three were measured from the editor on 2026-09-02
+        (`experiments/docs-anchor-states/`); the fourth was measured from the API on
+        2026-09-03 (`experiments/api-created-comment-states/`) after a consumer hit it on real
+        material (#372):
 
-        | | `anchored` | `quoted_text` |
-        |---|---|---|
-        | file-level - about the document, not a passage | `False` | `None` |
-        | anchored to a NON-TEXT object, e.g. an image    | **`True`** | `None` |
-        | anchored to text                                | `True`  | the text |
+        | `anchor` | `quoted_text` | state | means |
+        |---|---|---|---|
+        | absent | absent | `ANCHOR_FILE` | about the document, not a passage |
+        | present | absent | `ANCHOR_OBJECT` | an image, a drawing, a cell - a location, nothing to quote |
+        | present | present | `ANCHOR_TEXT` | the ordinary case |
+        | absent | **present** | `ANCHOR_QUOTE_ONLY` | **quoted a passage, recorded no anchor** |
 
-        All three MEASURED against live Docs, 2026-09-02
-        (`experiments/docs-anchor-states/RESULTS.md`). Two findings from that run are worth
-        knowing before using this:
-
-        **There is no "anchored but nothing selected" state for text.** The editor expands a
-        bare caret to its enclosing word, and refuses to comment on an empty paragraph at all.
-        So an anchored comment with no quoted text is anchored to something that is not text.
+        **`ANCHOR_QUOTE_ONLY` is API-created and is NOT file-level.** The editor cannot produce
+        it - it snaps a bare caret to the enclosing word and refuses to comment on empty space
+        - so it only ever arrives from a tool writing through the Drive API. And such a tool is
+        usually *right* to omit the anchor: an API-supplied anchor is stored verbatim and then
+        treated as un-anchored by the editors (measured 2026-07-09), so a client that knows
+        this drops the useless field and keeps the quote. Expect this state on any file another
+        tool has written to; it is not corruption.
 
         **The anchor itself is opaque** - `kix.…` in Docs, `workbook-range` in Sheets - so it
-        is a key, not a coordinate, and deliberately not exposed. `anchored` is the part of it
-        that carries information.
+        is a key, not a coordinate, and deliberately not exposed. This property is the part of
+        it that carries information.
+
+        A quote is counted as present when it is non-empty rather than merely non-`None`.
+        Drive OMITS an absent field rather than sending it empty (measured), so `""` should not
+        occur - and if it ever does it carries no passage, so it must not read as one. (This is
+        safe here in a way the rule in CLAUDE.md's invariant 9 warns about elsewhere: a quote
+        is a string, never a legitimate `False` or `0`.)
         """
-        return self.anchor is not None
+        has_quote = bool(self.quoted_text)
+        if self.anchor is not None:
+            return ANCHOR_TEXT if has_quote else ANCHOR_OBJECT
+        return ANCHOR_QUOTE_ONLY if has_quote else ANCHOR_FILE
+
+    @property
+    def anchored(self) -> bool:
+        """Whether this comment is about SOMETHING SPECIFIC, rather than about the file.
+
+        Equivalently `anchor_state != ANCHOR_FILE`. Use `anchor_state` when the difference
+        between the three attached states matters.
+
+        **This is not raw anchor presence, and the change was a bug fix (#372).** It used to be
+        `self.anchor is not None`, which reported `False` on comments carrying 244 characters of
+        quoted text that this library's own context resolution placed in a specific paragraph -
+        4 of 90 threads on one real document. `False` reads as *"there is no passage to look
+        at"*, so a consumer skipped exactly the comments a reviewer had quoted at length. Silent,
+        and in the confident direction.
+
+        Raw anchor presence was the wrong thing to expose because **nothing can act on it**: the
+        anchor string is opaque and not published, and the one anchor-derived feature here
+        (`context`) locates by quoted text instead - which is why three of those four rows
+        resolved to a paragraph correctly even while this field denied they had one.
+
+        What it answers now is the question callers ask: *is there a passage this is about?*
+        """
+        return self.anchor_state != ANCHOR_FILE
 
     @classmethod
     def from_api(cls, d: dict) -> Comment:
