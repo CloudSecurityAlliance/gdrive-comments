@@ -67,7 +67,9 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
             # A Sheet or a deck: the passage idea does not apply. A Sheets comment's context is
             # `cell_text` plus the row/column headers, which the register already carries.
             return out
-        for row, ctx in zip(out, contexts(comments, paragraphs=paragraphs)):
+        # strict=True: one context per comment is the contract, and a silent length
+        # mismatch would attach a passage to the WRONG comment - worse than an error.
+        for row, ctx in zip(out, contexts(comments, paragraphs=paragraphs), strict=True):
             row["context"] = context_out(ctx)
         return out
 
