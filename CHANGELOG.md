@@ -10,6 +10,76 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.42.0 (guards aimed one step away from the thing) — not released *(yet — flipped once PyPI confirms)*
+
+Ten findings from a review of this repository's own guards, in two waves. They are one release
+because they share a diagnosis rather than a subsystem: **in every case something was already
+being checked, and the check was one step away from what mattered.** That is why none of them
+read as a missing guard — a missing guard gets noticed.
+
+### Five checks that pointed slightly wrong (#313, #314, #315, #326, #327)
+
+**`has_write_scope` was a denylist wearing an allowlist's name (#327).** It asked *"is one of
+OUR four write scopes present?"*, so a token carrying `drive.file` — a real Drive write scope
+this project never requests — answered **False** and passed as read-only. That answer decides
+whether a cached credential is safe for a read-only posture, which is precisely what
+`CSA_GW_READ_ONLY` exists to enforce. Now a **subset check**: anything outside the read-only set
+is a write scope, heard of or not, and a scope Google adds tomorrow is handled the day it
+appears. An empty `granted` answers `True` — absence is not a licence.
+
+*This is the one caller-observable behaviour change.* A deployment handing this library a
+credential that carries scopes for other Google services will now have a read-only posture
+refuse it rather than accept it.
+
+**No tool declared `openWorldHint` (#326)** — on a server whose entire surface returns
+third-party content: document text, comment bodies, file names, tab titles, and an external
+requester's own display name. Set on the writes too, since a write returns Google's response and
+a per-tool distinction is one that drifts.
+
+**The startup notice had no branch for the default install (#315).** It had one for a profile and
+one for an overridden profile, so nearly everybody was told about the two allowlists — wide open
+*by design* since v0.31.0 — and nothing about the eleven capabilities, which are the axis that
+actually changed. It now names every enabled capability, derived from the constants rather than
+written out, and calls out the four that **cannot be undone** separately. Understating the reach
+is the direction that stops somebody narrowing it.
+
+**A refusal logged the exception message (#313),** and the reasoning it replaces was wrong in an
+instructive way: *"the caller already receives this text, so the log adds no exposure."* Same
+text, **different destinations with different governance** — the caller's copy goes to the model
+for one turn, the log goes to a cache directory this server cannot rotate, purge or read. And
+these messages carry content: the library refuses a missing tab by listing the tabs it found.
+Fixed at the boundary rather than per message, for the same reason `_untrusted.scrub` is.
+
+That fix uncovered a second bug behind it. **`ConflictError` was not on the translated ladder**,
+so it became an `UnexpectedToolError` whose message the SDK deliberately drops: a caller who
+asked for a tab name that already existed read *"Error executing tool add_tab"* and never learned
+the name had clashed. One line fixed both halves.
+
+**`apply_comment_actions` called `is_file()` before checking the switch (#314).** With
+`CSA_GW_LOCAL_READ` off, the two error strings still separated *exists* from *does not exist* —
+one bit at a time, for any path `expanduser()` can reach, including the server's own token file.
+An existence oracle inside the switch whose stated purpose is to remove local exposure.
+
+### Five guards that could not fail (#319, #322, #323, #324, #325, #348)
+
+Hand-maintained lists, replaced by **derivation with declared exceptions** — so the *exception*
+is the thing somebody has to justify, not the coverage:
+
+- the storage-touching tool set, the write-call inventory, and the `Backend`/`FakeBackend`
+  correspondence are now enumerated from the code, with named constants for the deliberate gaps;
+- two CI guards were **swallowing their own exit status** — a `tee` in a pipeline without
+  `set -o pipefail`, and a missing `--strict`;
+- the audit coverage table counted **files**, so a file did not stop reading as covered when it
+  tripled in size. It now reports the share of *lines* the audit actually saw, sized as the file
+  was **at that commit**. Roughly 3,400 of 4,061 new `src/` lines sat inside files marked fully
+  covered.
+
+That last one then failed CI in a way worth recording: **the share is reported, not gated.** A
+percentage moves when any line is added to any file in the group, so gating it would fail
+`--check` on every PR that touches `src/` for a change that says nothing about coverage — and a
+check that fails for uninteresting reasons gets regenerated reflexively instead of read. CI now
+fetches full history instead, so the mechanism is exercised by the tests rather than by the gate.
+
 ## 2026-09-03 — v0.41.0 (what a comment is actually about)
 
 Answers issues **#358** and **#361** from a consumer building on this library, and the whole
