@@ -10,6 +10,58 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.48.0 (a quote that spans a paragraph is no longer "not in the document") — not released *(yet — flipped once PyPI confirms)*
+
+**#405**, and it is the most confident possible wrong answer this library has given.
+
+One thread on real material, `anchor_state=text` — editor-created, so the quote is Drive's own
+record of a selection — carrying an **830-character** passage that crossed a paragraph boundary.
+This package's own `as_text()` found it **exactly once**. `context_kind` said:
+
+> **WE SEARCHED THE DOCUMENT AND THIS QUOTED TEXT IS NOT IN IT.**
+
+Two functions in one package, same document, same moment, opposite answers.
+
+### The cause, and the irony
+
+`_context.py` searched **within** each structural element. A quote containing the newline between
+two paragraphs is inside neither of them, so the search could not match it *by construction*.
+
+v0.44.0 had just rewritten that note to state the search rather than presume a cause, and listed
+three causes it said could not be told apart. **There was a fourth it did not contemplate —
+present, and unfindable by an element-scoped search.** So strengthening the wording made a wrong
+answer *more* convincing, which is worth keeping in mind as a hazard of writing confident notes.
+
+### The fix
+
+A new `KINDS` member, **`spanning`**: when the element-scoped search finds nothing, the quote is
+sought in the concatenation of the block texts — the same string `as_text()` builds — and the
+passage becomes **every element the match touches**, not just the one holding its start. A
+spanning quote occurring twice is `ambiguous`, not guessed at, exactly as a contained one is.
+
+The note says the selection *"crosses N structural elements"* and that it is **deliberate rather
+than sloppy**: this whole feature exists for under-selection, and somebody who dragged across a
+boundary did it on purpose. For this one kind, the quote **is** the passage — no expansion is
+inferred.
+
+### The property that should have existed, now asserted
+
+**`as_text()` and `context` must not disagree about whether a quote is PRESENT.** They may
+legitimately differ on where it is or how much to show; presence is not a judgement. Asserted as a
+property over every shape, because case-by-case testing is what let this through — the spanning
+case was simply never written, so nothing tested it.
+
+### Credit where it is due
+
+The reporter also **retracted their own hypothesis** for these disagreements, and the retraction
+was more useful than the report. Their first probe concatenated `textRun` contents with **no
+separators** — a third renderer agreeing with neither implementation, in which a spanning quote
+matches — and they nearly filed that. Redone against `as_text()`, the picture changed completely.
+They also caught a second confound: comparing a staleness verdict recorded on 2026-09-01 against
+an export from today is not a comparison between implementations. Recomputed properly, **89 of 90
+agree**, 8 of 8 on `ambiguous`, and 2 of 2 on `no_quote` — a distinction both implementations
+arrived at independently, within days, without coordination.
+
 ## 2026-09-03 — v0.47.0 (an assigned comment is finally visible)
 
 **#398.** The library did exactly what its own README warns against. That section says:

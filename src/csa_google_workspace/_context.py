@@ -65,12 +65,13 @@ KIND_TABLE = "table"                      # the whole enclosing table
 KIND_TABLE_ROW = "table_row"              # too big for the cap: the row plus the header row
 KIND_NEAREST = "nearest_text"             # the element has no text; nearest that does
 KIND_NOT_FOUND = "not_found"              # we searched the document and it is not there
+KIND_SPANNING = "spanning"                # the selection itself crosses structural boundaries
 KIND_NO_QUOTE = "no_quote"                # the comment quotes nothing, so there is no passage
 KIND_UNSUPPORTED = "unsupported"          # this document type has no passage lookup here
 KIND_AMBIGUOUS = "ambiguous"              # the quote occurs more than once
 KINDS = frozenset({KIND_PARAGRAPH, KIND_PARAGRAPHS, KIND_HEADING, KIND_TABLE, KIND_TABLE_ROW,
                    KIND_NEAREST, KIND_NOT_FOUND, KIND_AMBIGUOUS,
-                   KIND_NO_QUOTE, KIND_UNSUPPORTED})
+                   KIND_NO_QUOTE, KIND_UNSUPPORTED, KIND_SPANNING})
 
 # The last two exist so that a `context` a caller ASKED FOR always explains itself, which
 # makes `null` mean exactly one thing: nobody asked. Before, `null` meant three - "there is no
@@ -193,6 +194,49 @@ def _heading_path(blocks: list[_Block], at: int) -> tuple[str, ...]:
     return tuple(reversed(path))
 
 
+def _spanning(blocks: list[_Block], quote: str) -> tuple[int, int, int] | None:
+    """`(count, first_block, last_block)` for a quote that crosses structural elements.
+
+    **#405: a real 830-character editor selection crossed a paragraph boundary and was reported
+    as NOT IN THE DOCUMENT** — while this package's own `as_text()` found it exactly once. The
+    per-element search could not match it by construction: a quote containing the newline
+    between two paragraphs is inside neither of them.
+
+    That made it the most confident possible wrong answer. `not_found` says *"WE SEARCHED THE
+    DOCUMENT AND THIS QUOTED TEXT IS NOT IN IT"* in capitals, and listed three causes it said
+    could not be told apart. There was a fourth it did not contemplate: **present, and
+    unfindable by an element-scoped search.**
+
+    Searches the concatenation of the block texts, which is the same string `_content.doc_text`
+    builds for a single-tab document — so this function and `as_text()` cannot disagree about
+    whether a quote is present, which is the property the bug report actually asked for.
+
+    Returns `None` when the quote is not in the concatenation either, so a genuine absence is
+    still a genuine absence. Reports the **count** as well, because a spanning quote can occur
+    twice as easily as a contained one and guessing which is the same error either way.
+    """
+    joined = "".join(b.text for b in blocks)
+    count = joined.count(quote)
+    if count == 0:
+        return None
+    start = joined.index(quote)
+    end = start + len(quote)
+    # Walk the blocks accumulating offsets, and record which ones the match touches. A block
+    # is touched when it overlaps [start, end) - not merely when it contains the start, which
+    # would report only the first of three spanned paragraphs.
+    first = last = None
+    at = 0
+    for i, b in enumerate(blocks):
+        block_end = at + len(b.text)
+        if at < end and block_end > start:
+            first = i if first is None else first
+            last = i
+        at = block_end
+    if first is None or last is None:      # pragma: no cover - implied by count > 0
+        return None
+    return count, first, last
+
+
 def _paragraph_position(blocks: list[_Block], at: int) -> tuple[int | None, int]:
     """(1-based index among paragraphs, total paragraphs).
 
@@ -230,6 +274,34 @@ def build(document: dict, quote: str | None, *, paragraphs: int = 0) -> Context 
     blocks = _blocks(document)
     found = _occurrences(blocks, quote)
     if found == 0:
+        # Before declaring absence, ask whether the quote spans elements (#405). The
+        # element-scoped search above cannot see such a quote at all, and answering
+        # "not in the document" for a passage `as_text()` can find is worse than any
+        # miss - it is a confident wrong answer about the caller's own document.
+        span = _spanning(blocks, quote)
+        if span is not None:
+            count, first, last = span
+            if count > 1:
+                return Context("", KIND_AMBIGUOUS,
+                               f"The quoted text spans a structural boundary and occurs "
+                               f"{count} times in this document, so which one the comment "
+                               f"points at cannot be determined here. This is EXPECTED for a "
+                               f"repeated passage and does not mean the document is damaged; "
+                               f"the candidates are not reported for a spanning quote because "
+                               f"it has no single enclosing element to name.")
+            text = "".join(b.text for b in blocks[first:last + 1])
+            marked, truncated = _cap(_delimit(text, quote))
+            index, total = _paragraph_position(blocks, first)
+            n = last - first + 1
+            return Context(marked, KIND_SPANNING,
+                           f"The selection itself crosses {n} structural elements, so the "
+                           f"passage is exactly the {n} it touches - no expansion was inferred, "
+                           f"and for this one case the quote IS the passage. A selection like "
+                           f"this is deliberate rather than sloppy: somebody dragged across a "
+                           f"boundary on purpose."
+                           + (" Truncated at the character limit." if truncated else ""),
+                           paragraph_index=index, paragraph_total=total,
+                           heading_path=_heading_path(blocks, first), truncated=truncated)
         return Context("", KIND_NOT_FOUND,
                        "WE SEARCHED THE DOCUMENT AND THIS QUOTED TEXT IS NOT IN IT. The search "
                        "ran and completed - this is a finding, not an error and not a missing "
@@ -238,6 +310,9 @@ def build(document: dict, quote: str | None, *, paragraphs: int = 0) -> Context 
                        "comment belongs to a different revision; or the quoted text was NEVER "
                        "in this document, which is possible because whoever created the "
                        "comment supplies that field and Google validates it against nothing. "
+                       "A fourth cause - the quote spanning a paragraph boundary - USED to "
+                       "land here wrongly and no longer does (#405): a spanning quote is now "
+                       "found and reported as `spanning`. "
                        "Do not repeat the quoted text as something the document says.")
     if found > 1:
         # MEASURED while building this, on a nine-paragraph document: a comment placed with a
