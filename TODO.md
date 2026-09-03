@@ -227,8 +227,18 @@ What it has to cover, at minimum:
 - **The web editor's model**, because it is what users actually see and what every expectation is
   set by: what anchoring does when you select nothing, when you select across paragraphs, when you
   comment on an image or a table cell.
-- **The Drive API v3 comments surface** — what it gives, what it does not, and the three anchor
-  states with how to tell them apart.
+- **The Drive API v3 comments surface** — what it gives, what it does not, and the **four** anchor
+  states with how to tell them apart (the fourth, a quote with no anchor, is API-only and was
+  missed by an editor-only probe — #372).
+- **That `quoted_text` is a claim and not evidence.** `quotedFileContent` is writable, Docs renders
+  it verbatim as the document's own words, and validates it against nothing — so a
+  commenter-level actor can quote text the document never contained, and can redirect a comment's
+  apparent subject. Measured 2026-09-03, #380. Any document telling people how comments work has
+  to say this, because every naive implementation trusts that field.
+- **That an anchor can be REUSED but not MINTED.** A real `kix.*` id borrowed from an existing
+  comment is honoured and renders as properly anchored; a synthetic one is not (#379). Google's
+  "developer-defined anchors are treated as un-anchored" is about synthetic anchors only, and the
+  distinction is invisible in the docs.
 - **The native editor APIs** — per-editor anchoring, `PostAuthor.user` as a stable identity, and
   the preview gate.
 - **The XLSX-export detour in full** — export, unzip, parse `threadedComments`, walk
@@ -246,11 +256,86 @@ What it has to cover, at minimum:
 
 Source material already in the tree: `research/google-drive-comments-reference.md`,
 `research/comments-apis-2026-09.md`, `research/docs-suggestions-reference.md`,
-`experiments/anchor-probe/`, `experiments/docs-anchor-states/`, `experiments/sheets-cellmap/`,
+`experiments/anchor-probe/`, `experiments/docs-anchor-states/`,
+`experiments/api-created-comment-states/`, `experiments/sheets-cellmap/`,
 `experiments/comment-lifecycle/`, and `_cellmap.py`'s own docstring. The work is largely
 **consolidation plus the gaps that consolidating exposes** — and every claim in it should carry
 whether it was documented, measured, or inferred, because that distinction is exactly what is
 missing from everything else written on the subject.
+
+### A PUBLIC "zoo" of Drive files — the official reference corpus
+
+**Goal: a public, link-shareable Google Drive folder holding one file per state this project has
+measured**, kept indefinitely, cited by the comments reference above and by anyone reimplementing
+this. Official CSA artifacts, not throwaways.
+
+**Why it is worth real effort, and it is not convenience.** Almost every finding in this
+repository came from a document somebody had to *build by hand*, because the interesting states
+cannot be scripted: only the editor can mint a real anchor, only a human can select nothing and
+comment, only a human can put a comment on an image. Every one of those documents has been
+**trashed after use**. So each new question starts by rebuilding the fixtures, and each rebuild is
+where the last round's careful setup is silently lost — `experiments/docs-anchor-states/` and
+`experiments/api-created-comment-states/` both re-created the same numbered-paragraph document
+from scratch.
+
+**Three things it gives that the probe scripts cannot:**
+
+1. **A citable artifact.** The comments reference is meant to be the resource that does not exist;
+   a claim in it becomes checkable rather than assertable if the reader can open the file it was
+   measured on. *"Comment B renders as `Original content deleted`"* is an anecdote until anyone
+   can go and look.
+2. **A regression canary against Google.** This is the strongest argument. Every behaviour here is
+   Google's, undocumented, and can change without notice — and today nothing would tell us. A
+   scheduled read of the zoo, asserting each file still exhibits its documented state, turns
+   "Google changed the rendering of unanchored comments" from a thing a user reports into a thing
+   CI reports. That is the same reasoning as `scripts/check_controls.py`: externally-enforced
+   behaviour is asserted, not assumed.
+3. **A fixture set for the native APIs, which is where it pays off.** The open question in
+   `research/comments-apis-2026-09.md` §2.5 — *do native and Drive comments share an identity?* —
+   is unanswerable without enrolment, and the moment we have it the answer requires exactly this:
+   files with known comments, read through both surfaces and compared. Building the corpus now
+   means the preview work starts at the measurement rather than at the setup.
+
+**What must go in it** (one file per row, each self-describing in its own body):
+
+| file | holds |
+|---|---|
+| Doc — anchor states | all four: file-level, object-anchored (image), text-anchored, quote-only |
+| Doc — sloppy selections | nothing selected (caret snap), a three-word quote in a long paragraph, a selection crossing paragraphs, a one-word quote occurring four times |
+| Doc — structure | headings at several levels, a table, an empty paragraph, a comment in a table cell |
+| Doc — lifecycle | resolved, reopened, soft-deleted, a content-less action reply, a long thread |
+| Doc — suggestions | accepted-view / rejected-view divergence, a replacement that is not collapsed |
+| Doc — tabs | multiple tabs with comments on more than one |
+| Sheet — cell mapping | comments across several tabs, including the `rId5`-numbering case, plus **notes** alongside comments |
+| Sheet — headers | a table whose header row is *not* row 1, so `row_header`/`column_header` guess wrongly |
+| Slides | a comment on a slide, on a shape, and on speaker notes |
+
+**Constraints, and the first is absolute:**
+
+- **Everything synthetic. No real content, ever.** This is public, permanently, and indexable.
+  Same rule as the one forbidding extracted document data in the repo, with the stakes raised.
+- **Comment authors are visible.** Every comment carries its author's display name, so whoever
+  builds the zoo is publicly attached to it. Decide deliberately whether that is a person or a
+  role account — a role account is the better answer and needs arranging first.
+- **View-only sharing, plus a copy link.** If link-holders can comment, the corpus is polluted by
+  the first curious reader. Share read-only and publish Drive's `?copy` URL so people experiment
+  on their own duplicate. **Note that copying is itself a documented finding** — `copy_file` drops
+  every comment (#339), so a copy is *not* an equivalent fixture, and the zoo should say so.
+- **A manifest in the repo, with ids.** `experiments/zoo/MANIFEST.md`: file id, what it holds,
+  which claim it evidences, who built it, when. Otherwise it becomes a folder nobody dares change.
+- **An assertion script**, `experiments/zoo/verify.py`, read-only and runnable by anyone with the
+  link — this is what makes it a canary rather than a museum. It needs no credentials beyond a
+  read-only token.
+- **Do not trash it.** Obvious, and worth writing down given that every predecessor was trashed on
+  purpose.
+
+**Effort:** the hand-built states are a couple of hours of careful clicking, and the manifest and
+verifier are small. **Leverage:** high and compounding — it is the fixture set for #340, the
+evidence base for every claim in it, the canary for Google changing behaviour underneath us, and
+the setup for the native-API work whenever enrolment happens.
+
+Sequencing: build it **with** #340 rather than before it. Writing the reference is what reveals
+which states actually need evidence, and the zoo built speculatively would hold the wrong files.
 
 ### Parked
 
