@@ -46,6 +46,10 @@ class CommentOut(TypedDict):
     # file-level (False, null), anchored to a non-text object such as an image (True, null),
     # anchored to text (True, text). Measured 2026-09-02.
     anchored: bool
+    # Present only when the caller asked for it; `null` when the comment has no passage
+    # (file-level, or anchored to a non-text object). Off by default — the token cost is the
+    # caller's to manage, and #358 asks for exactly that.
+    context: ContextOut | None
     # The passage the comment is attached to, from Drive's `quotedFileContent`. `None` means
     # the comment is on the FILE rather than on a passage - a real and common state ("looks
     # good to me") - which is why it is not an empty string.
@@ -179,6 +183,29 @@ class InventoryOut(TypedDict):
     sheet_url: str | None
     written_path: str | None
     detail: str
+
+
+class ContextOut(TypedDict):
+    """The passage around a comment's anchor, and WHY it is that passage.
+
+    `kind` is for branching, `note` is the sentence a person reads. Both, because a consumer
+    switches on the rule that fired while a human wants the explanation — and with neither they
+    receive a passage they did not select and cannot tell the feature from a bug.
+
+    `text` marks the selection in place with `⟦…⟧`, so under-selection is visible at a glance:
+    three words at the head of a long paragraph needs no computation to spot.
+    """
+    text: str
+    kind: str            # paragraph | paragraphs | heading_and_following | table | table_row
+    #                      | nearest_text | not_found | ambiguous
+    note: str
+    paragraph_index: int | None
+    paragraph_total: int | None
+    heading_path: list[str]
+    truncated: bool
+    # Where the candidates are when `kind == "ambiguous"`. Facts, so the caller can decide:
+    # holding the comment text they can often tell which occurrence was meant, and we cannot.
+    candidates: list[dict[str, Any]]
 
 
 class NoteOut(TypedDict):
@@ -502,6 +529,7 @@ def comment_out(comment: Any) -> CommentOut:
         "linked_cell": linked.group(1) if linked else None,
         "quoted_text": getattr(comment, "quoted_text", None),
         "anchored": bool(getattr(comment, "anchored", False)),
+        "context": None,
         "replies": [reply_out(r) for r in (comment.replies or [])],
     }
 
@@ -576,6 +604,18 @@ def inventory_out(inv: Any, *, destination: str) -> InventoryOut:
             "reached": inv.reached, "row_count": len(inv.rows), "destination": destination,
             "csv": None, "sheet_id": None, "sheet_url": None, "written_path": None,
             "detail": ""}
+
+
+def context_out(ctx: Any) -> ContextOut | None:
+    """`None` passes straight through: a comment with no quoted text has no passage, and
+    inventing a `kind` for it would imply a failure where there is simply no question."""
+    if ctx is None:
+        return None
+    return {"text": ctx.text, "kind": ctx.kind, "note": ctx.note,
+            "paragraph_index": ctx.paragraph_index, "paragraph_total": ctx.paragraph_total,
+            "heading_path": list(ctx.heading_path), "truncated": ctx.truncated,
+            "candidates": [{"paragraph_index": i, "heading_path": list(p)}
+                           for i, p in ctx.candidates]}
 
 
 def notes_out(notes: list) -> NotesOut:

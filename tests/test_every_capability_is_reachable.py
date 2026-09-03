@@ -47,6 +47,12 @@ NO_TOOL_NEEDED: dict[str, str] = {
     "Slides.as_text":         "SERVED: read_file_content",
     "Doc.as_markdown":        "SERVED: read_file_content(format=) / download_file_content",
     "Doc.paragraphs":         "SERVED: read_file_content returns the text these compose",
+    # Reachable through a PARAMETER rather than a tool of its own, which is deliberate: the
+    # cost model is one document fetch per CALL, so it has to ride on an existing bulk
+    # retrieval. A `get_comment_context(commentId)` tool would invite a loop and turn one fetch
+    # into ninety (#358 is explicit that a per-comment follow-up is the thing to avoid).
+    "Doc.comment_contexts":   "SERVED: list_comments(context=true) / get_comment(context=true) "
+                              "/ export_comments(context=true)",
     "Doc.export":             "SERVED: download_file_content",
     "Sheet.export":           "SERVED: download_file_content",
     "Slides.export":          "SERVED: download_file_content",

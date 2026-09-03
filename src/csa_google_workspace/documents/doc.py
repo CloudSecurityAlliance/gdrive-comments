@@ -1,4 +1,4 @@
-from .. import _content, _formats
+from .. import _content, _context, _formats
 from .. import suggestions as _suggestions
 from ..base import Document, occurrences_changed
 
@@ -9,6 +9,22 @@ _VIEW = {"inline": "SUGGESTIONS_INLINE", "accepted": "PREVIEW_SUGGESTIONS_ACCEPT
 class Doc(Document):
     """Google Docs: read (as_text/paragraphs/suggestions) + write. Accept/reject of suggestions is not
     offered — no API endpoint exists."""
+
+    def comment_contexts(self, comments: list, *, paragraphs: int = 0) -> list:
+        """The passage around each comment's anchor — `[Context | None, …]`, aligned to input.
+
+        Takes the WHOLE LIST on purpose. Locating a quote needs the document, so this is **one**
+        fetch for ninety comments where a per-comment call would be ninety — and accessors
+        re-fetch by design (no caching layer, settled 2026-08-30), so the loop genuinely
+        re-downloads it each time. Making the batch the API is how that cost stays visible.
+
+        `None` for a comment with no quoted text: that is file-level or anchored to a non-text
+        object, and neither has a passage. See `_context` for why the anchor itself cannot be
+        used and why quoted text is nevertheless almost always present.
+        """
+        raw = self._backend.get_document(self.id)
+        return [_context.build(raw, getattr(c, "quoted_text", None), paragraphs=paragraphs)
+                for c in comments]
 
     def as_text(self, suggestions: str | None = None) -> str:
         if suggestions is not None and suggestions not in _VIEW:
