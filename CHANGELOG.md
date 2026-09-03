@@ -10,6 +10,75 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.43.0 (there is a fourth anchor state) — not released *(yet — flipped once PyPI confirms)*
+
+Answers **#372**, filed by a consumer on the first real measurement after upgrading to 0.41.0:
+**4 of 90 threads came back `anchored=false` carrying substantial `quoted_text`** — 119, 111, 244
+and 35 characters, three of which this library's own context resolution placed in a specific
+paragraph. The documented contract said `anchored=false` means the comment is about the whole
+file, so a consumer following it skipped exactly the comments a reviewer had quoted at length.
+Silent, and in the confident direction.
+
+### The contract was wrong, not the data
+
+Probed before changing anything (`experiments/api-created-comment-states/`), and the probe needed
+**no browser** — which is the whole finding. `anchor` presence and `quotedFileContent` presence
+are **independent**, so there are **four** combinations:
+
+| `anchor` | `quoted_text` | `anchor_state` | `anchored` | made by |
+|---|---|---|---|---|
+| absent | absent | `file` | `false` | editor or API |
+| present | absent | `object` | `true` | editor |
+| present | present | `text` | `true` | editor |
+| **absent** | **present** | **`quote_only`** | **`true`** | **API only** |
+
+The 2026-09-02 run that produced the three-state table could not have found the fourth: every
+comment in it was **editor-created**, and the editor cannot make that shape — it snaps a bare
+caret to the enclosing word and refuses to comment on empty space. So the table was complete for
+editor-created comments and was stated as complete for all of them. The same failure as #361, one
+level up: a claim derived from a proxy, where the proxy's coverage silently became the claim's
+scope.
+
+**And a well-informed tool creates the fourth state on purpose.** `comments.create` accepts a
+quote with no anchor and returns it verbatim — measured. Since an API-supplied anchor is stored
+and then treated as *un-anchored* by the editors (measured 2026-07-09), a client that knows this
+drops the useless field and keeps the quote. **Expect this on any file another tool has written
+to.** It is not corruption.
+
+### What changed
+
+**`Comment.anchored` now means *"is there a passage this is about?"*** rather than *"is there an
+anchor?"*. That is the one **behaviour change**, and it affects only the state that was being
+reported wrongly. Raw anchor presence was the wrong thing to expose because **nothing could act
+on it**: the anchor string is opaque and unpublished, and `context` locates by quoted text
+instead — which is why three of those four rows resolved to a paragraph correctly *while this
+field denied they had one*.
+
+**`Comment.anchor_state`** is new, and names which of the four. A **closed** vocabulary —
+`ANCHOR_FILE`, `ANCHOR_OBJECT`, `ANCHOR_TEXT`, `ANCHOR_QUOTE_ONLY`, all exported — for the same
+reason `_context.KINDS` is closed: a fifth member should arrive with a measurement behind it.
+Carried through both consumer surfaces, since #372 was reported *from the export*: a new
+`anchor_state` column in the register, and a new field on every MCP comment result.
+
+### Two findings that were not the question
+
+**`quotedFileContent.mimeType` carries no information at all.** Send `text/plain` on create and
+Drive returns **`text/html`** — it normalises the field regardless of what the client sends,
+while the value stays plain text. Every comment reports `text/html` whatever it was made with, so
+**do not branch on it**. The older note said the mimeType "is `text/html` but the value is plain
+text"; the reason is now known, and it is stronger than described.
+
+**The quote value is byte-verbatim** — leading whitespace, embedded newlines and tabs all
+round-trip unchanged. So a stored quote matches extracted text without normalisation, which is
+what `_context.py` already relies on and is now confirmed for the API-created path too.
+
+### Corroboration worth recording
+
+The reporter noted their four ids "share a prefix and differ only in the final character". Six
+comments created in one probe run did exactly the same — `AAACGezoGWc/g/k/o/s/w`, 10 of 11
+characters shared. An independent reproduction produced the same id signature from the same
+cause, which is as close as provenance in someone else's file can be got from outside.
+
 ## 2026-09-03 — v0.42.0 (guards aimed one step away from the thing)
 
 Ten findings from a review of this repository's own guards, in two waves. They are one release

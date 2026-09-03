@@ -36,7 +36,12 @@ from typing import Any
 # None for a document, for an unanchored comment, and for a spreadsheet whose relationship graph
 # could not be walked - those are three different reasons and none of them is "the first tab".
 REPORTED = ("thread_id", "reply_to", "author", "created_time", "resolved", "text",
-            "quoted_text", "anchored", "tab", "cell", "cell_text", "cell_text_by_tab",
+            # `anchor_state` sits beside `anchored` because it is the same fact at higher
+            # resolution: the boolean says whether there is a passage, this says which of the
+            # four ways it is attached - including `quote_only`, which reads as file-level to
+            # anything looking only at the boolean's OLD meaning (#372).
+            "quoted_text", "anchored", "anchor_state",
+            "tab", "cell", "cell_text", "cell_text_by_tab",
             "row_header", "column_header",
             # Off unless asked for, and dropped from the header by `used_columns` when empty —
             # a register with five blank columns is harder to read than one without them.
@@ -206,6 +211,7 @@ def comment_rows(document: Any, comments: list,
                          # TRUE/FALSE as text, never blank: a register cell has no third
                          # state, and this one is genuinely known for every comment.
                          anchored="TRUE" if getattr(comment, "anchored", False) else "FALSE",
+                         anchor_state=getattr(comment, "anchor_state", ""),
                          cell=cell, cell_text=cell_text, cell_text_by_tab=by_tab,
                          row_header=row_header, column_header=column_header,
                          **_context_cells(contexts, i)))

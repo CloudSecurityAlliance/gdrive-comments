@@ -1,9 +1,20 @@
-"""`anchored` tells the three anchor states apart, and cell headers make a cell comment readable.
+"""`anchor_state` tells the FOUR anchor states apart, and cell headers make a cell comment readable.
 
 **#361.** Three different situations arrive as a falsy `quoted_text`, and a consumer could not
 tell them apart: a comment about the whole file, a comment attached to something with no text
 (an image, a cell), and a comment on text. All three were measured against live Google on
 2026-09-02 — `experiments/docs-anchor-states/RESULTS.md`.
+
+**#372 — and there is a fourth.** `anchor` presence and `quoted_text` presence are INDEPENDENT,
+so the combinations are four, not three. The missing one is a quote with **no** anchor, and it
+only arrives from a tool writing through the Drive API — measured 2026-09-03,
+`experiments/api-created-comment-states/RESULTS.md`. The 2026-09-02 run could not have found it:
+every comment in it was editor-created, and the editor cannot produce that shape.
+
+So `anchored` stopped being raw anchor presence, because raw anchor presence reported `False` on
+comments carrying 244 characters of quoted text — *"there is no passage to look at"* about a
+passage a reviewer had quoted at length. It now answers *"is there a passage?"*, and
+`anchor_state` carries which of the four.
 
 The discriminator turned out **not** to be where the request looked. It is `anchor` PRESENCE,
 which the library already retained (`Comment.anchor`) and both consumer surfaces dropped. So the
@@ -31,7 +42,14 @@ from __future__ import annotations
 from csa_google_workspace import Workspace
 from csa_google_workspace._export import comment_rows
 from csa_google_workspace.backend import FakeBackend
-from csa_google_workspace.comments import Comment
+from csa_google_workspace.comments import (
+    ANCHOR_FILE,
+    ANCHOR_OBJECT,
+    ANCHOR_QUOTE_ONLY,
+    ANCHOR_STATES,
+    ANCHOR_TEXT,
+    Comment,
+)
 
 DOC = "application/vnd.google-apps.document"
 SHEET = "application/vnd.google-apps.spreadsheet"
@@ -51,18 +69,21 @@ class TestTheThreeAnchorStates:
         """Drive omits the key entirely rather than nulling it, so absence is the only form."""
         c = Comment.from_api(raw())
         assert c.anchored is False and c.quoted_text is None
+        assert c.anchor_state == ANCHOR_FILE
 
     def test_anchored_to_a_non_text_object_has_an_anchor_and_no_quote(self):
         """The image case, and the reason this field exists. MEASURED: a comment on an inline
         image returned `anchor: kix.y1h574n5va9q` with `quotedFileContent` absent."""
         c = Comment.from_api(raw(anchor="kix.y1h574n5va9q"))
         assert c.anchored is True and c.quoted_text is None
+        assert c.anchor_state == ANCHOR_OBJECT
 
     def test_anchored_to_text_has_both(self):
         c = Comment.from_api(raw(anchor="kix.ce7ypxwipivp",
                                  quotedFileContent={"mimeType": "text/html",
                                                     "value": "taxonomy in this"}))
         assert c.anchored is True and c.quoted_text == "taxonomy in this"
+        assert c.anchor_state == ANCHOR_TEXT
 
     def test_the_two_None_cases_are_now_distinguishable(self):
         """The whole point, stated as the comparison a consumer could not previously make."""
@@ -82,6 +103,112 @@ class TestTheThreeAnchorStates:
         position, measured 2026-09-02 against Google's own published example which does."""
         c = Comment.from_api(raw(anchor="kix.ce7ypxwipivp"))
         assert c.anchor == "kix.ce7ypxwipivp"
+
+
+class TestTheFourthAnchorState:
+    """A quote with NO anchor (#372). Measured from the API on 2026-09-03.
+
+    Every case here uses the lengths the reporter actually saw — 119, 111, 244 and 35
+    characters — because the failure was silent and length was the thing that made it obvious
+    something was wrong. A three-character fixture would pass while proving nothing about the
+    case that mattered.
+    """
+
+    # The reporter's four rows, by quoted-text length. The 35-character one came back
+    # `not_found` from context resolution, which is a separate and honest failure — it is here
+    # to pin that a short quote is still QUOTE_ONLY, not file-level.
+    LENGTHS = (119, 111, 244, 35)
+
+    def quote_only(self, length: int) -> Comment:
+        return Comment.from_api(raw(quotedFileContent={"mimeType": "text/html",
+                                                       "value": "q" * length}))
+
+    def test_a_quote_with_no_anchor_is_not_file_level(self):
+        for length in self.LENGTHS:
+            c = self.quote_only(length)
+            assert c.anchor_state == ANCHOR_QUOTE_ONLY, length
+            assert c.anchored is True, length
+            assert len(c.quoted_text or "") == length
+
+    def test_it_is_distinguishable_from_every_other_state(self):
+        """The four are four. Asserted as a set so a collapse anywhere shows up here."""
+        states = {
+            Comment.from_api(raw()).anchor_state,
+            Comment.from_api(raw(anchor="kix.abc")).anchor_state,
+            Comment.from_api(raw(anchor="kix.abc", quotedFileContent={"value": "x"})).anchor_state,
+            self.quote_only(244).anchor_state,
+        }
+        assert states == ANCHOR_STATES
+        assert len(states) == 4, "two states collapsed into one"
+
+    def test_the_vocabulary_is_closed(self):
+        """Every state a Comment can report is a declared member. A typo in one branch would
+        otherwise reach a consumer as a string nobody documented."""
+        for c in (Comment.from_api(raw()), Comment.from_api(raw(anchor="a")),
+                  Comment.from_api(raw(anchor="a", quotedFileContent={"value": "x"})),
+                  self.quote_only(10)):
+            assert c.anchor_state in ANCHOR_STATES
+
+    def test_anchored_is_false_for_exactly_one_state(self):
+        """The boolean's whole contract, stated once: it means "about the file"."""
+        assert Comment.from_api(raw()).anchored is False
+        for c in (Comment.from_api(raw(anchor="a")),
+                  Comment.from_api(raw(anchor="a", quotedFileContent={"value": "x"})),
+                  self.quote_only(244)):
+            assert c.anchored is True, c.anchor_state
+
+    def test_an_empty_quote_is_not_a_passage(self):
+        """Drive OMITS an absent field rather than sending it empty (measured), so this should
+        not occur — and if it does, it must read as file-level rather than as a passage with
+        nothing in it. The permissive reading here is the direction #372 was wrong in."""
+        c = Comment.from_api(raw(quotedFileContent={"mimeType": "text/html", "value": ""}))
+        assert c.anchor_state == ANCHOR_FILE and c.anchored is False
+
+    def test_the_anchor_is_absent_not_merely_falsy(self):
+        """`anchored` must not be rescued by an anchor that is present but empty — an empty
+        anchor is not a location."""
+        c = Comment.from_api(raw(anchor="", quotedFileContent={"value": "q" * 244}))
+        assert c.quoted_text is not None
+        assert c.anchor_state == ANCHOR_TEXT, (
+            "an empty-string anchor is still a PRESENT anchor field; Drive omits absent ones")
+
+
+class TestTheFourthStateReachesTheConsumerSurfaces:
+    """#372 was reported from the export, so the export is where it has to be visible."""
+
+    def _ws(self, comments):
+        return Workspace(FakeBackend({F: {"id": F, "name": "n", "mimeType": DOC}},
+                                     comments={F: comments},
+                                     documents={F: {"body": {"content": []}}}))
+
+    def quote_only_raw(self):
+        return raw(quotedFileContent={"mimeType": "text/html", "value": "q" * 244})
+
+    def test_the_mcp_result_carries_the_state(self):
+        from csa_google_workspace.mcp._schemas import comment_out
+        doc = self._ws([self.quote_only_raw()]).open(F)
+        out = comment_out(doc.comments.all()[0])
+        assert out["anchor_state"] == ANCHOR_QUOTE_ONLY
+        assert out["anchored"] is True, "the field the reporter branched on"
+
+    def test_the_register_carries_the_state(self):
+        doc = self._ws([self.quote_only_raw()]).open(F)
+        _, rows, _ = comment_rows(doc, list(doc.comments.all()))
+        assert rows[0]["anchor_state"] == ANCHOR_QUOTE_ONLY
+        assert rows[0]["anchored"] == "TRUE", (
+            "the exact cell that read FALSE on 4 of 90 real threads")
+
+    def test_every_state_names_itself_in_the_register(self):
+        # Distinct ids: FakeBackend keys comments by (file, id), so four rows sharing "c1"
+        # would collapse to one and the set below would pass on a single member.
+        doc = self._ws([
+            raw(id="c1"),
+            raw(id="c2", anchor="kix.a"),
+            raw(id="c3", anchor="kix.b", quotedFileContent={"value": "on text"}),
+            {**self.quote_only_raw(), "id": "c4"},
+        ]).open(F)
+        _, rows, _ = comment_rows(doc, list(doc.comments.all()))
+        assert {r["anchor_state"] for r in rows} == ANCHOR_STATES
 
 
 class TestItReachesBothConsumerSurfaces:

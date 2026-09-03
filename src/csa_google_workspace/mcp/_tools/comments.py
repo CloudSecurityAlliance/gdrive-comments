@@ -90,17 +90,20 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         of what the reviewer selected. It is `None` for a comment left on the file rather than
         on a passage ("looks good to me"), which is a different thing from an empty one.
 
-        `anchored` SAYS WHICH KIND OF `None` THAT IS, and the difference changes what you should
-        do:
-          anchored=false, quoted_text=null  the comment is about the WHOLE FILE. There is no
-                                            passage to look at, and "is this still current?" is
-                                            not a question that applies to it.
-          anchored=true,  quoted_text=null  it IS attached to a specific place, but to something
-                                            that is not text - an image, a drawing, a cell.
-                                            There is a location; there is just nothing to quote.
-          anchored=true,  quoted_text=set   the ordinary case.
-        Do not report the second as a file-level comment: it is the one where a reader most
-        needs to go and look, because the tool cannot show them what it points at.
+        `anchored` says whether there IS a passage this comment is about. `anchor_state` says
+        WHICH of four ways it is attached, and the difference changes what you should do:
+          anchor_state="file"        about the WHOLE FILE ("looks good to me"). No passage to
+                                     look at, and "is this still current?" does not apply.
+          anchor_state="object"      attached to a specific place that is not text - an image,
+                                     a drawing, a cell. There is a location; nothing to quote.
+                                     DO NOT report this as file-level: it is the one where a
+                                     reader most needs to go and look, because nothing here can
+                                     show them what it points at.
+          anchor_state="text"        the ordinary case: a passage, quoted.
+          anchor_state="quote_only"  a passage WAS quoted and no anchor was recorded. Treat it
+                                     exactly like "text" - the quote is real, and often long.
+                                     It means another tool created the comment through the API.
+        `anchored` is false ONLY for "file". Branch on `anchor_state` if you need more.
 
         TO BUILD A COMMENT REGISTER - "put the open comments in a spreadsheet so we can work
         through them" - no other tool is needed: the columns are all here (`id`, `author`,
@@ -201,8 +204,10 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         table or a transposed layout will label a cell wrongly. Check them against `cell_text`
         before quoting them as the meaning of a cell.
 
-        `anchored` distinguishes a file-level comment (false) from one attached to something
-        with no text to quote, such as an image or a cell (true, with `quoted_text` empty).
+        `anchored` is false only for a comment about the whole file. `anchor_state` says which
+        of four ways it is attached - "file", "object" (an image or a cell: a location with
+        nothing to quote), "text", or "quote_only" (a quote with no anchor, which another tool
+        created through the API and which is NOT file-level).
 
         `context=true` ADDS THE PASSAGE each comment sits in, with the selection marked
         `⟦like this⟧` inside it. `context` defaults to false because the passage costs tokens
