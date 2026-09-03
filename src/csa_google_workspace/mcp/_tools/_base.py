@@ -22,9 +22,21 @@ log = logging.getLogger(__name__)
 
 WorkspaceProviderT = Callable[[], Workspace]
 
-READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True)
-WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False)
-DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False)
+# `open_world_hint=True` on every one of them (#326), which is the annotation that says the
+# result comes from OUTSIDE this server and should be scrutinised. On a server whose entire
+# surface returns third-party content it is not a nuance: document text, comment bodies, file
+# names, tab titles and an access requester's own display name are all written by somebody else,
+# and prompt injection through them is the primary risk this project names for itself.
+#
+# It is on the WRITES too, deliberately. A write returns Google's response - ids, names, a
+# permission - so the reply is third-party content even when the request was not, and a
+# distinction that has to be re-derived per tool is one that drifts.
+READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True,
+                       open_world_hint=True)
+WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False,
+                        open_world_hint=True)
+DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False,
+                              open_world_hint=True)
 
 
 def _errors(fn):
@@ -67,6 +79,12 @@ def _errors(fn):
             raise _refused(fn, started, e, ToolError(f"permission denied: {e}")) from e
         except exc.AuthError as e:
             raise _refused(fn, started, e, ToolError(str(e))) from e
+        except exc.ConflictError as e:
+            # Added by #313, which found it as a LEAK and it was also broken: outside the
+            # ladder it became an `UnexpectedToolError` whose message the SDK drops, so a
+            # caller who asked for a tab name that already exists saw "Error executing tool
+            # add_tab" and never learned the name had clashed. Both halves fixed by one line.
+            raise _refused(fn, started, e, ToolError(f"conflict: {e}")) from e
         except exc.UnsupportedOperation as e:
             raise _refused(fn, started, e, ToolError(str(e))) from e
         except exc.ApiError as e:
@@ -87,8 +105,11 @@ def _errors(fn):
         except Exception as e:
             # Not translated — re-raised as-is, so the SDK's own handling applies. Recorded at
             # ERROR because everything above is the system working and this is not.
-            log.error("%s failed after %s: %s: %s", fn.__name__, _took(started),
-                      type(e).__name__, e)
+            # Type only, like `_refused` and for the same reason (#313): this is the record
+            # that IS emitted at the default level, so it is the one that reaches the client's
+            # cache. An untranslated exception is a bug in the ladder below, and knowing WHICH
+            # exception is what a reader needs - the message adds content, not diagnosis.
+            log.error("%s failed after %s: %s", fn.__name__, _took(started), type(e).__name__)
             raise
         log.info("%s ok in %s%s", fn.__name__, _took(started),
                  f" ({file_id})" if file_id else "")
@@ -107,11 +128,23 @@ def _refused(fn, started, cause, translated):
     working as designed. Logging them as warnings would make a correctly-configured server look
     unhealthy, and a log that cries wolf gets filtered out — taking the real warnings with it.
 
-    The message is the one the caller already receives, so this adds no exposure; it makes the
-    reason visible to whoever reads the log rather than only to the model that saw it.
+    **The MESSAGE is deliberately not logged** (#313), and the reasoning this replaces was
+    wrong in an instructive way. It said: *"the message is the one the caller already receives,
+    so this adds no exposure."* Same text, but **different destinations with different
+    governance** — the caller's copy goes to the model for one turn, while the log goes to a
+    cache directory this server cannot rotate, purge or even read, under the client's retention.
+
+    And these messages carry document content. `sheet.py` refuses a missing tab with
+    *"present: ['Q3 Layoff Plan', 'Comp Bands']"* — genuinely useful to the caller, and tab
+    titles are content, so logging them defeats the rule `_logging.py` states for itself:
+    raising the verbosity raises detail about the OPERATION, never about the CONTENT.
+
+    So the caller keeps the full message and the log gets the exception type. Fixed HERE rather
+    than by shortening each message, for the same reason `_untrusted.scrub` runs at the
+    boundary: a per-message rule is a list somebody maintains, and the next message that
+    carries a title will not be on it.
     """
-    log.info("%s refused after %s: %s: %s", fn.__name__, _took(started),
-             type(cause).__name__, cause)
+    log.info("%s refused after %s: %s", fn.__name__, _took(started), type(cause).__name__)
     return translated
 
 

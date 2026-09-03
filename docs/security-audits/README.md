@@ -55,10 +55,10 @@ looked for, which is the reason this table exists.
 | `src/csa_google_workspace/` — top level | **partial** — 22/24 at 2026-09-01 · 85% of lines |
 | `documents/` — per-type content | 2026-07-22 · claude-code |
 | `mcp/` — server, auth flow, config, resources | **partial** — 15/16 at 2026-09-01 · 91% of lines |
-| `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code · 63% of lines |
+| `mcp/_tools/` — the tool registrations | 2026-08-27 · claude-code · 62% of lines |
 | `demo/` | 2026-08-27 · claude-code · 86% of lines |
-| `tests/` as code | **partial** — 13/125 at 2026-09-01 · 17% of lines |
-| `.github/workflows/` | 2026-09-01 · codex · 95% of lines |
+| `tests/` as code | **partial** — 13/126 at 2026-09-01 · 17% of lines |
+| `.github/workflows/` | 2026-09-01 · codex · 94% of lines |
 | packaging and secret-scanning config | 2026-08-27 · claude-code · 85% of lines |
 | `scripts/` | 2026-09-01 · codex · 86% of lines |
 | `experiments/` | **not yet audited** |

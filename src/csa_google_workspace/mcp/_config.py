@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from .. import auth
 from ..allowlist import ALL_SYNONYMS, AllowlistError, Listing, parse_setting
 from ..exceptions import AuthError
-from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, PROFILES, Policy, Scope, resolve_profile
+from ..policy import ALL_CAPABILITIES, DEFAULT_ENABLED, IRREVERSIBLE, PROFILES, Policy, Scope, resolve_profile
 from ..workspace import Workspace
 from . import _flavours
 
@@ -380,6 +380,26 @@ def startup_warnings(settings: Settings) -> list[str]:
     if policy is None:
         return []
     out: list[str] = []
+    if settings.capability_source == "default":
+        # #315: NEITHER branch below fired on a default install - the first needs a profile,
+        # the second needs a profile that was overridden - so the operator was told about the
+        # two axes that were ALWAYS open by choice and nothing at all about the one that
+        # actually changed in v0.31.0, which is the one carrying every irreversible operation.
+        #
+        # Derived from the constants rather than written out, so it cannot go stale the way the
+        # sentence it replaces did (RR-003). The irreversible members are named separately
+        # because "all eleven capabilities" understates what that includes, and understating
+        # the reach is the dangerous direction: an operator who believes the default is narrow
+        # does not narrow it.
+        enabled = sorted(policy.enabled)
+        irreversible = sorted(IRREVERSIBLE & policy.enabled)
+        out.append(f"capabilities: ALL {len(enabled)} enabled by default — "
+                   f"{', '.join(enabled)}. Set CSA_GW_PROFILE or CSA_GW_CAPABILITIES to narrow "
+                   f"this.")
+        if irreversible:
+            out.append(f"  of those, {len(irreversible)} CANNOT BE UNDONE through this server: "
+                       f"{', '.join(irreversible)}. Drive's own revision history and trash are "
+                       f"what recovers from them, not this tool.")
     if settings.profile and settings.capability_source == "profile":
         out.append(f"profile: {settings.profile} — "
                    f"{', '.join(sorted(PROFILES[settings.profile])) or 'no mutations at all'}")

@@ -54,10 +54,29 @@ def token_path_for(token_path: str, read_only: bool) -> str:
 def has_write_scope(granted: list[str]) -> bool:
     """Does this credential carry any scope that can change something?
 
-    The `.readonly` variants are the only read-safe ones we ever request, so anything else in
-    our own scope space is a write scope.
+    **A SUBSET CHECK, not an allowlist of known write scopes (#327).** The previous version
+    asked *"does the token carry one of OUR four write scopes?"*, which is a denylist wearing
+    different clothes — and a denylist can be walked around by anything not on it. A token
+    carrying `drive.file`, a real write scope this project happens never to request, answered
+    **False** and passed as read-only.
+
+    That mattered because of where it is used: deciding whether a cached credential is safe for
+    a read-only posture (`:130`). A token that can write, accepted as one that cannot, is the
+    exact failure `CSA_GW_READ_ONLY=1` exists to prevent.
+
+    So the question is inverted. Anything **outside** the read-only set is treated as a write
+    scope, whether or not this project has heard of it. An unlisted scope can no longer outflank
+    the check, and a scope Google adds tomorrow is handled correctly the day it appears.
+
+    A credential with **no** scopes reported is not a licence: `granted` is empty on some
+    refresh paths, and answering "no write scopes" there would be the permissive reading of
+    missing information. It answers `True` — the conservative direction, matching the rule this
+    codebase follows everywhere that absence and denial look alike.
     """
-    return any(scope in set(granted or []) for scope in _RW)
+    scopes = set(granted or [])
+    if not scopes:
+        return True
+    return not scopes <= set(scopes_for(read_only=True))
 
 
 def needs_reconsent(granted: list[str], required: list[str]) -> bool:
