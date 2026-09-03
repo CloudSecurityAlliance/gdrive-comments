@@ -1170,6 +1170,130 @@ This library is a building block for MCP servers / agents / automations acting *
 | [`PROVENANCE.md`](./PROVENANCE.md) | Who built this and how, how to verify a release's attestation yourself, the yank policy, and what the secret scanners say about the history. |
 | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | An index of decisions — when each was settled, what evidence settled it, and which earlier belief it replaced. |
 
+## Why comment retrieval is trickier than it looks
+
+If you have tried to build comment tooling against Google Workspace and it did not work properly,
+**that is the expected outcome, and it is not your fault.** The obvious approach fails in ways
+that look like success — which is the worst failure mode, because nothing errors.
+
+This section is the short version. Every claim here is either **measured** against live Google or
+sourced, and the long version lives in
+[`research/google-drive-comments-reference.md`](./research/google-drive-comments-reference.md),
+[`research/comments-apis-2026-09.md`](./research/comments-apis-2026-09.md) and the runnable probes
+in [`experiments/`](./experiments/). Where Google's documentation and a probe disagree, the probe
+wins.
+
+### The anchor is a key, not a coordinate
+
+An anchor tells you *that* a comment is attached to something. It does not tell you **where**.
+
+- **Docs**: `kix.ce7ypxwipivp` — an opaque id, not JSON, carrying no position (measured 2026-09-02)
+- **Sheets**: `{"type":"workbook-range","uid":0,"range":"1453957822"}` — structured, but `range` is
+  an opaque internal id and **not** decodable to `B11` (measured 2026-07-09)
+
+**Google's own published example does not match what the editors produce.** The guide shows
+`{"region": {"kind": "drive#commentRegion", "line": <n>, "rev": "head"}}` — a real position. No UI
+comment we have ever seen looks like that. Code written from the documentation will parse
+something that never arrives.
+
+Google also states plainly that anchors are immutable and *"position relative to content cannot be
+guaranteed between revisions"* — so the anchor is documented as a **hint**, not ground truth.
+
+### Writing an anchor appears to work and does not
+
+You can send an anchor with a comment. Drive **stores it verbatim** and returns it to you intact —
+so a round-trip test passes. But the editors treat a custom anchor as **unanchored**: in the UI the
+comment lands on A1, or floats free.
+
+Google says so — *"Google Workspace editor apps treat these comments as un-anchored comments"* —
+and it is measured in [`experiments/anchor-probe/`](./experiments/anchor-probe/). This is the trap
+that has defeated several other implementations, because the API gives no error at all.
+
+### So which cell is a Sheets comment on? Export the spreadsheet and parse it
+
+There is no API that tells you. The reliable route is: export as `.xlsx`, unzip, parse
+`xl/threadedComments/threadedComment*.xml`, and read the `ref` — which **is** real A1 notation.
+
+This library does that for you (`comment.location`, `sheet.comments_by_cell()`), and three things
+inside it are worth knowing before anyone reimplements it:
+
+- to learn **which tab** a comment is on you must walk `workbook.xml` →
+  `_rels/workbook.xml.rels` → each sheet's rels → its `threadedComments` part;
+- **`r:id` is not sequential** — a real Google export numbers the *first* sheet `rId5`, so
+  guessing the mapping gives you the wrong tab;
+- relationship `Target`s are **relative**, and a sheet with no comments has no relationship at all.
+
+It degrades asymmetrically on purpose: a damaged graph costs you the *tab*, never the *cell*, and
+an unresolved tab stays empty rather than defaulting to the first sheet.
+
+### Three different things arrive as an empty `quoted_text`
+
+Distinguishable by whether an **anchor** is present — not by the quoted text, which is where most
+code looks:
+
+| situation | `anchored` | `quoted_text` |
+|---|---|---|
+| a comment on the **whole file** | `false` | empty |
+| attached to a **non-text object** — an image, a cell | **`true`** | empty |
+| attached to text | `true` | the text |
+
+Conflating the first two turns *"look here, carefully"* into *"there is nothing to look at."*
+Drive **omits** absent fields rather than sending `null`, so absence has exactly one form.
+
+### The editor quietly fixes sloppy selections, which helps
+
+Measured 2026-09-02: comment with **nothing selected** and Docs expands the anchor to the
+enclosing **word**. Try to comment on an empty paragraph and Docs **refuses** — no comment box
+appears at all.
+
+So there is no "anchored but nothing selected" state for text, and quoted text is available
+wherever text is. That is what makes `context=true` possible at all.
+
+### But a short quote may not be placeable
+
+Because the anchor carries no position, a comment can only be located by finding its quoted text —
+and if that text occurs **more than once**, there is no tiebreaker. A one-word quote is ambiguous
+almost immediately: in a **nine-paragraph** test document, the word a caret snapped to occurred
+four times.
+
+So the comments that most need context are the ones most at risk of not getting any. This library
+reports that as `context_kind: "ambiguous"` with the **candidate locations**, rather than picking
+one — a marker in the wrong place is worse than no marker, because it is not visibly wrong.
+
+### Notes are not comments, and a file full of notes reports zero comments
+
+A Sheets **note** has no author, no thread, and cannot be replied to or resolved. The Drive
+comments API **does not see notes at all** — measured: a file carrying a note returns *zero*
+comments.
+
+A tool that reports "no comments" on a sheet covered in notes is telling the truth and giving
+exactly the wrong impression. Use `list_notes`, and `export_comments` will tell you in `caveats`
+when it is not showing them.
+
+### Other measured behaviours that break naive code
+
+- **`resolved` is absent** on a comment that was never resolved — not `false`. Read a missing
+  field as unresolved, or every open thread looks broken.
+- **Soft delete strips the content *and* the author.** A deleted comment is a tombstone: the id
+  and timestamps survive, the rest does not. Models have to allow it.
+- **Resolve and reopen are replies**, not a `PATCH` — an "action reply" that may carry no text at
+  all. A blank reply is a state change, not a mistake.
+- **`author.email` is usually absent even when you request it**, so "everything Bob said" is
+  really "everything by this display name" — which is neither unique nor stable.
+- **`mentionedEmailAddresses` and `assigneeEmailAddress` exist but only if you ask.** Omit them
+  from the field mask and structured @mentions look like they do not exist. We concluded exactly
+  that in an early probe and were wrong.
+- **Every comments method requires an explicit `fields` spec**, and `replies` alone returns
+  replies *empty* — the sub-fields have to be named.
+
+### And there is no cross-file comment search
+
+`comments.list` is a sub-resource of a single file. There is no `/comments` collection, and
+`files.list`'s query language has no comment predicate. *"Show me everything Bob said across these
+forty documents"* requires iterating files and joining locally — which is **absent by
+construction**, not merely missing. Google could not ship it in their own server without building
+the same thing.
+
 ## Three things worth knowing
 
 1. **Comments are a Google Drive API v3 concern — not the Sheets/Docs/Slides APIs** (those handle content). One comment API serves all three file types. (Sheets *notes* are separate and out of scope.) *(As of 2026-09 the editor APIs **do** have native comment surfaces, in Developer Preview — see [`research/comments-apis-2026-09.md`](./research/comments-apis-2026-09.md). This statement describes what this library uses, which is Drive, deliberately.)*
