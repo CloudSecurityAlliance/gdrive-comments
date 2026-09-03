@@ -53,7 +53,15 @@ jobs:
           # propagate, so a release would still have caught it; the dead detector was the
           # weekly one.
           set -o pipefail
-          python scripts/check_controls.py | tee controls.txt
+          # --strict here and NOT in release.yml (#348). check_controls exits 0 when a control
+          # is merely UNVERIFIABLE, and this is the one job that runs with nobody watching: on
+          # the day CONTROLS_TOKEN expires, branch protection silently stops being checked and
+          # a non-strict job stays green. That is #316's shape one layer up - a detector that
+          # cannot report the thing it exists to detect.
+          #
+          # A RELEASE is a different judgement: blocking a publish because an EXTERNAL control
+          # cannot be verified right now would make an unrelated outage a release outage.
+          python scripts/check_controls.py --strict | tee controls.txt
       - name: Publish the result to the run summary
         if: always()
         run: |

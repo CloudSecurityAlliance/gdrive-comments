@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -197,6 +198,97 @@ def render_index(audits: list[Audit]) -> str:
     return "\n".join([header, *rows])
 
 
+def lines_at(commit: str, paths: list[str]) -> dict[str, int]:
+    """Line count of each path AS IT WAS at `commit`, or `{}` if that commit is unavailable.
+
+    #322: the table counts FILES, and a file does not stop being listed as covered when it
+    triples in size. Roughly 3,400 of 4,061 new `src/` lines sat inside files marked fully
+    covered, because coverage was recorded per file when those files were smaller.
+
+    Counting lines TODAY would not fix it - it would count growth the audit never read as
+    covered. So the honest number is the size the file was WHEN THE AUDIT SAW IT, which git
+    still has, against the size it is now.
+
+    One `git grep -c ''` for every path at once (~12ms for the whole tree), because a call per
+    file would put this in the seconds and the script runs in `--check` on every PR.
+
+    **Returns `{}` rather than raising when the commit is absent**, which is the normal state in
+    CI: `actions/checkout` fetches shallow, so an audit's `target_commit` is usually not there.
+    The caller then reports file coverage alone rather than a wrong percentage - degrading to
+    the older, weaker claim instead of inventing a number.
+    """
+    if not commit or not paths:
+        return {}
+    try:
+        out = subprocess.run(["git", "grep", "-c", "", commit, "--", *paths],
+                             capture_output=True, text=True, cwd=ROOT, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    counts: dict[str, int] = {}
+    for line in out.stdout.splitlines():
+        # `<commit>:<path>:<count>`
+        _, _, rest = line.partition(":")
+        path, _, count = rest.rpartition(":")
+        if path and count.isdigit():
+            counts[path] = int(count)
+    return counts
+
+
+def lines_now(paths: list[str]) -> dict[str, int]:
+    out = {}
+    for path in paths:
+        target = ROOT / path
+        if target.exists():
+            try:
+                out[path] = len(target.read_text(encoding="utf-8", errors="replace").splitlines())
+            except OSError:
+                pass
+    return out
+
+
+def line_share(audit: Audit, members: list[str]) -> str:
+    """` · NN% of lines` for a group, or `""` when it cannot be computed honestly."""
+    covered = [f for f in members if audit.covers(f)]
+    then = lines_at(str(audit.meta.get("target_commit") or ""), covered)
+    if not then:
+        return ""
+    now = lines_now(members)
+    total = sum(now.values())
+    if not total:
+        return ""
+    # Only lines the audit actually read: a covered file's size AT THAT COMMIT, capped at its
+    # size now so a file that SHRANK cannot report more than 100%.
+    seen = sum(min(then.get(f, 0), now.get(f, 0)) for f in covered)
+    return f" · {round(100 * seen / total)}% of lines"
+
+
+SHARE = re.compile(r" · \d+% of lines")
+
+
+def without_shares(text: str) -> str:
+    """The index with every ` · NN% of lines` removed, which is what `--check` compares.
+
+    The line share is **reported but not gated**, and that is the same judgement the comment
+    in `render_coverage` already records about the file count — one step further, because a
+    percentage is sharper than a count. A share moves when ANY line is added to ANY file in
+    the group, so gating it would fail `--check` on every PR that touches `src/`, for a
+    change that says nothing about coverage. CLAUDE.md names the cost of that directly: a
+    check that fails for uninteresting reasons trains people to regenerate reflexively
+    rather than read.
+
+    What stays gated is every claim that only moves when coverage really moves: the audit
+    list, which audit first covered a group, and a `partial — n/m` verdict, which by
+    definition exists only where there IS a gap.
+
+    It also makes `--check` work in CI at all without depending on clone depth. A shallow
+    checkout cannot resolve an audit's `target_commit`, so `lines_at` returns `{}` and the
+    shares vanish from the generated table — which, compared verbatim, reads as "stale" when
+    nothing is stale. (CI fetches full history so the SHARES ARE STILL EXERCISED by
+    `tests/test_audit_index.py`; this only stops a depth change from breaking the gate.)
+    """
+    return SHARE.sub("", text)
+
+
 def render_coverage(audits: list[Audit], files: list[str]) -> str:
     oldest_first = sorted(audits, key=lambda a: a.date)
     # No standalone file-count column, deliberately. It made the table churn on every PR that
@@ -218,13 +310,15 @@ def render_coverage(audits: list[Audit], files: list[str]) -> str:
         full = [a for a in oldest_first
                 if all(a.covers(f) for f in members)]
         if full:
-            verdict = f"{full[0].date} · {full[0].meta.get('tool', '?')}"
+            verdict = (f"{full[0].date} · {full[0].meta.get('tool', '?')}"
+                       f"{line_share(full[0], members)}")
         else:
             best = max(oldest_first,
                        key=lambda a: sum(1 for f in members if a.covers(f)),
                        default=None)
             count = sum(1 for f in members if best.covers(f)) if best else 0
             verdict = (f"**partial** — {count}/{len(members)} at {best.date}"
+                       f"{line_share(best, members) if best else ''}"
                        if count else "**not yet audited**")
         rows.append(f"| {name} | {verdict} |")
     return "\n".join([header, *rows])
@@ -258,7 +352,9 @@ def main() -> int:
     updated = splice(updated, COVERAGE_BEGIN, COVERAGE_END, render_coverage(audits, files))
 
     if args.check:
-        if updated == current:
+        # Compared WITHOUT the line shares - see `without_shares` for why the percentage is
+        # reported and not gated.
+        if without_shares(updated) == without_shares(current):
             print(f"Index is current ({len(audits)} audit record(s)).")
             return 0
         print("docs/security-audits/README.md is out of date. Run:\n"

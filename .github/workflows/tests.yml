@@ -16,6 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Full history, because two guards read it. `gen_audit_index.py` sizes each file AS
+          # IT WAS at the audit that covered it (#322), and `check_release_history.py`
+          # reconciles this file against the tags. The default depth-1 checkout has neither,
+          # and both degrade QUIETLY - a line share silently vanishes, so the strongest claim
+          # in the coverage table would never actually be verified in CI.
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
@@ -64,6 +71,13 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Full history, because two guards read it. `gen_audit_index.py` sizes each file AS
+          # IT WAS at the audit that covered it (#322), and `check_release_history.py`
+          # reconciles this file against the tags. The default depth-1 checkout has neither,
+          # and both degrade QUIETLY - a line share silently vanishes, so the strongest claim
+          # in the coverage table would never actually be verified in CI.
+          fetch-depth: 0
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
