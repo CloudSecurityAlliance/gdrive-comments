@@ -50,6 +50,51 @@ whenever the document reflows.
 3. **Geometry from the API.** Character offsets from `documents.get`, mapped to page coordinates,
    then mouse-drag to select. Most work, most fragile, last resort.
 
+## IT WORKS — the recipe, found 2026-09-03 after the focus problem was removed
+
+**The earlier failure was contention for the keyboard, not the technique.** The machine's owner
+was using the laptop while automation ran, so focus moved mid-sequence and every keystroke landed
+somewhere else. With the machine left alone, the same keys work. **That is worth knowing before
+anyone concludes canvas rendering makes this impossible — it does not.**
+
+### The working sequence
+
+```
+1. dblclick  .kix-page-paginated >> nth=N     selects a WORD wherever it lands
+2. (optional) Shift+Meta+ArrowRight           extends to end of line - keyboard DOES work
+3. click     #insertCommentButton             opens the comment draft
+4. type into [aria-label="Comment draft"]
+5. click     [aria-label="Post Comment"]
+```
+
+**`#insertCommentButton`'s `aria-disabled` is the selection oracle.** Canvas gives no
+`getSelection()` and draws the highlight on the canvas, so there is no DOM way to ask *"is
+anything selected?"* — but the button is disabled when nothing is and enabled when something is.
+Check it before every comment; it turns a silent no-op into a fact.
+
+### Two things that will waste your time
+
+**Pick a page that actually has text.** `dblclick` at the centre of a page whose lower half is
+blank selects nothing and the button stays disabled. The last page of a document is usually the
+wrong choice for exactly this reason.
+
+**Double-clicking non-text still anchors.** MEASURED: a double-click that landed on a
+non-textual part of the page produced a comment with a real `kix.*` anchor and **no quoted
+text** — the `object` state. So the `object` state does **not** require an image, as the
+specimen assumed; it requires anchoring to something with nothing quotable. That was found by
+accident and is now the fastest way to produce that state deliberately.
+
+### What it produced
+
+All four anchor states on one file, which this project had never had together:
+
+| comment | state | anchor | quoted text |
+|---|---|---|---|
+| A (API) | `file` | — | — |
+| B, C (API) | `quote_only` | — | present |
+| EDITOR-1 (browser) | `object` | `kix.zfrg5l4hj8f2` | — |
+| EDITOR-2 (browser) | `text` | `kix.1vzp53ylhunj` | present |
+
 ## The judgement, recorded
 
 For **fifteen placements**, a human with the file open does it in a few minutes, and every
@@ -57,4 +102,5 @@ specimen already carries its own instructions in its own text. Automating it is 
 the corpus needs **rebuilding repeatedly** — and that is a real prospect, since `--rewrite`
 breaks every hand-placed anchor — but it was not worth blocking the corpus on.
 
-**So: hands first, automation later, and this file so later is cheaper.**
+*(Superseded by the section above — automation works. The judgement stands only for the case
+where somebody is using the machine: automation and a human cannot share one keyboard.)*
