@@ -6,8 +6,8 @@
 tools are allowed, and **only those tools are advertised** — the rest are never registered.
 
 The second half is the point, and it is what an earlier framing of this feature missed. Matching
-names is not a drop-in replacement: a model shown 36 tools behaves differently from one shown 8,
-however identical the eight are. It plans differently, reaches for things that are not there in
+names is not a drop-in replacement: a model shown 52 tools behaves differently from one shown 11,
+however identical the eleven are. It plans differently, reaches for things that are not there in
 the server it is standing in for, and spends context on schemas it will never call. Advertising
 without allowing would be a lie; allowing without advertising is what this server did until now.
 
@@ -136,7 +136,7 @@ def describe(flavour: str, published: int, hidden: int) -> str:
     """The counted form, for `describe_configuration` and `csa-gw://config`.
 
     The count is what makes it actionable. "Restricted to Google's surface" tells somebody
-    nothing they can act on; "8 published, 28 hidden" tells them the tool they wanted almost
+    nothing they can act on; "11 published, 41 hidden" tells them the tool they wanted almost
     certainly exists and is switched off — the difference between reporting a limitation and
     reporting a configuration.
     """
