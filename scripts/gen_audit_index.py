@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -261,6 +262,33 @@ def line_share(audit: Audit, members: list[str]) -> str:
     return f" · {round(100 * seen / total)}% of lines"
 
 
+SHARE = re.compile(r" · \d+% of lines")
+
+
+def without_shares(text: str) -> str:
+    """The index with every ` · NN% of lines` removed, which is what `--check` compares.
+
+    The line share is **reported but not gated**, and that is the same judgement the comment
+    in `render_coverage` already records about the file count — one step further, because a
+    percentage is sharper than a count. A share moves when ANY line is added to ANY file in
+    the group, so gating it would fail `--check` on every PR that touches `src/`, for a
+    change that says nothing about coverage. CLAUDE.md names the cost of that directly: a
+    check that fails for uninteresting reasons trains people to regenerate reflexively
+    rather than read.
+
+    What stays gated is every claim that only moves when coverage really moves: the audit
+    list, which audit first covered a group, and a `partial — n/m` verdict, which by
+    definition exists only where there IS a gap.
+
+    It also makes `--check` work in CI at all without depending on clone depth. A shallow
+    checkout cannot resolve an audit's `target_commit`, so `lines_at` returns `{}` and the
+    shares vanish from the generated table — which, compared verbatim, reads as "stale" when
+    nothing is stale. (CI fetches full history so the SHARES ARE STILL EXERCISED by
+    `tests/test_audit_index.py`; this only stops a depth change from breaking the gate.)
+    """
+    return SHARE.sub("", text)
+
+
 def render_coverage(audits: list[Audit], files: list[str]) -> str:
     oldest_first = sorted(audits, key=lambda a: a.date)
     # No standalone file-count column, deliberately. It made the table churn on every PR that
@@ -324,7 +352,9 @@ def main() -> int:
     updated = splice(updated, COVERAGE_BEGIN, COVERAGE_END, render_coverage(audits, files))
 
     if args.check:
-        if updated == current:
+        # Compared WITHOUT the line shares - see `without_shares` for why the percentage is
+        # reported and not gated.
+        if without_shares(updated) == without_shares(current):
             print(f"Index is current ({len(audits)} audit record(s)).")
             return 0
         print("docs/security-audits/README.md is out of date. Run:\n"

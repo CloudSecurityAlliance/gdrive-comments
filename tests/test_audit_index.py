@@ -33,6 +33,7 @@ the wiring.
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -277,6 +278,37 @@ class TestTheCommittedIndexIsCurrent:
         assert result.returncode == 0, (
             f"the committed index is stale. Run `python scripts/gen_audit_index.py`.\n"
             f"{result.stdout}{result.stderr}")
+
+    def test_check_mode_ignores_a_line_share_and_not_a_coverage_verdict(self, gen):
+        """The share is reported, not gated — and the distinction has to be asserted, because
+        both live in the same table cell and a normaliser aimed slightly wide would stop
+        gating the verdict too.
+
+        Gating the percentage would fail `--check` on every PR that adds a line to `src/`,
+        for a change that says nothing about coverage. That is the same reasoning that
+        removed the standalone file-count column, one step further because a percentage moves
+        more readily than a count.
+        """
+        table = gen.render_coverage(gen.load_audits(), gen.tracked_files())
+        assert "% of lines" in table, "a full clone should produce shares to strip"
+
+        # A share that changed: not a difference `--check` cares about.
+        moved = re.sub(r" · \d+% of lines", " · 3% of lines", table)
+        assert moved != table, "the fixture did not actually change"
+        assert gen.without_shares(moved) == gen.without_shares(table)
+
+        # A verdict that changed: exactly what it must still catch.
+        verdict = table.replace("**not yet audited**", "2026-08-27 · claude-code", 1)
+        assert verdict != table, "the fixture did not actually change"
+        assert gen.without_shares(verdict) != gen.without_shares(table)
+
+    def test_the_partial_count_is_still_gated(self, gen):
+        """`partial — n/m` is a count, and it stays inside the comparison: unlike a line
+        share it only moves when there IS a gap, which is information."""
+        table = gen.render_coverage(gen.load_audits(), gen.tracked_files())
+        assert "partial" in table, "no partial verdict to compare against"
+        changed = table.replace("**partial** — ", "**partial** — 1/", 1)
+        assert gen.without_shares(changed) != gen.without_shares(table)
 
     def test_check_mode_does_not_write(self):
         """CI must never rewrite the file it is checking - the committed copy has to stay the
