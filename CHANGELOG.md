@@ -10,6 +10,52 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-03 — v0.46.0 (T44 adopted, and two threats close) — not released *(yet — flipped once PyPI confirms)*
+
+Threat-register work, plus the one code change needed to make a status claim honest.
+
+### T44 — false provenance via `quotedFileContent`
+
+Adopted from **#380** into §4, and recorded in **§0b** with its provenance — the first threat
+*added* to the register rather than promoted within it, so the section that existed empty and
+saying so now has an entry.
+
+It is deliberately **not** folded into T2 or T34. T2 is injected instructions inside
+honestly-attributed text; T34 is impersonating a reviewer inside the fence. T44 is the
+*attribution to the document* being the forgery, which is the property a model is most likely to
+trust. Status `unmitigated`: the documentation is corrected on every surface and
+`create_comment` still declines to write the field, but the injection itself is unchanged.
+
+### T39 and T40 both close
+
+**T40 → `mitigated`.** The `CSA_GW_LOCAL_READ` refusal now fires before `expanduser()` or
+`is_file()` is reached (#314), and names no path — a message that varies with the input is the
+oracle in a smaller form.
+
+**T39 → `mitigated`**, and this release contains the last piece. #313 closed the MCP boundary, but
+`Sheet._cell_map` sits **below** that boundary and was still logging an exception *message* at
+WARNING — and a `CsaWorkspaceError` arriving there can carry a tab-title list. It now logs the
+exception **type**, like everywhere else. That was the only other site.
+
+The audit's own note on T39 said `tests/test_logging_level.py` asserts the property against
+`FakeBackend`, *"which cannot produce the failing values"* — which is exactly why the defect
+survived. There is now a test that drives a backend which **does**, so the `mitigated` claim is
+checkable rather than asserted.
+
+### The count of the threats was wrong by seven, and nothing noticed
+
+`CLAUDE.md` said *"36 enumerated threats"* from the adoption of the re-scored 43-threat register
+until now, while `SECURITY.md` beside it said 43. Two files, one number, disagreeing — and
+`check_doc_claims.py` exempts `THREAT_MODEL.md` from its count checks on purpose, because a number
+inside a threat's text is a quotation of what the audit wrote. That exemption is why the count of
+the *threats themselves* went unchecked.
+
+`tests/test_threat_model.py` now asserts every document stating a threat count agrees with §4 —
+including that the claim is **present at all**, since a count that quietly disappears would
+otherwise pass by absence. It also asserts the living model is *supposed* to exceed the snapshot
+by exactly the §0b additions, stated as its own test so nobody "fixes" the guard by pointing it at
+the baseline.
+
 ## 2026-09-03 — v0.45.0 (`append_text` was writing to the START of every Google Doc)
 
 Two defects on one seam — **#391** found while investigating **#390** — and the cause of both is a

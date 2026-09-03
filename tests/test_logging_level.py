@@ -216,3 +216,66 @@ class TestTheOperationIsLoggedAndTheContentIsNot:
             for handler in list(logger.handlers):
                 if getattr(handler, "_csa_gw", False):
                     logger.removeHandler(handler)
+
+
+class TestExceptionMessagesAreNotLoggedBelowTheBoundaryEither:
+    """The library's own `WARNING` sites log the exception TYPE, never its message.
+
+    **The audit's F7 note on T39 was that `tests/test_logging_level.py` asserts the
+    operation-never-content property against `FakeBackend`, which cannot produce the failing
+    values.** That was accurate, and it is why the defect survived here: the tests above drive a
+    fake whose exceptions carry nothing worth redacting.
+
+    #313 closed the MCP boundary — `_base.py` logs `type(e).__name__` on every path. But
+    `Sheet._cell_map` sits **below** that boundary, so the boundary fix never reached it, and it
+    was logging `e` at WARNING: a `CsaWorkspaceError` arriving there can carry a tab-title list,
+    and `sheet.py` builds exactly such messages elsewhere (`present: ['Q3 Layoff Plan', …]`).
+
+    So this drives a backend that DOES raise a content-bearing exception on that path. T39 is
+    recorded as `mitigated` in `THREAT_MODEL.md`, and this is what makes that claim checkable
+    rather than asserted.
+    """
+
+    SHEET = "application/vnd.google-apps.spreadsheet"
+    SECRET = "Q3 Layoff Plan"
+
+    def a_sheet_whose_export_fails_with_content(self):
+        from csa_google_workspace import Workspace
+        from csa_google_workspace import exceptions as exc
+        from csa_google_workspace.backend import FakeBackend
+
+        secret = self.SECRET
+
+        class LeakyExport(FakeBackend):
+            def export_file(self, file_id, mime_type):
+                raise exc.NotFoundError(f"no tab named 'x'; present: ['{secret}']")
+
+        be = LeakyExport({"s": {"id": "s", "name": "Grid", "mimeType": self.SHEET}},
+                         comments={"s": [{"id": "c1", "content": "hi",
+                                          "author": {"displayName": "A"}}]})
+        return Workspace(be).open("s")
+
+    def test_the_tab_title_does_not_reach_the_log(self, caplog):
+        sheet = self.a_sheet_whose_export_fails_with_content()
+        with caplog.at_level(logging.DEBUG, logger="csa_google_workspace"):
+            list(sheet.comments)          # drives _cell_map, which swallows and warns
+        assert caplog.text, "nothing was logged, so this assertion would pass vacuously"
+        assert self.SECRET not in caplog.text, (
+            "a tab title reached a log this process cannot rotate or purge (T39)")
+
+    def test_but_the_exception_TYPE_still_is(self, caplog):
+        """The operation detail has to survive, or the fix is just deleting the diagnostic."""
+        sheet = self.a_sheet_whose_export_fails_with_content()
+        with caplog.at_level(logging.DEBUG, logger="csa_google_workspace"):
+            list(sheet.comments)
+        assert "NotFoundError" in caplog.text
+        assert "cell mapping unavailable" in caplog.text
+
+    def test_and_the_degrade_still_happens(self, caplog):
+        """Losing the message must not change the behaviour it was describing: the comments
+        still come back, with no location, rather than the call failing."""
+        sheet = self.a_sheet_whose_export_fails_with_content()
+        with caplog.at_level(logging.DEBUG, logger="csa_google_workspace"):
+            comments = list(sheet.comments)
+        assert [c.id for c in comments] == ["c1"]
+        assert comments[0].location is None

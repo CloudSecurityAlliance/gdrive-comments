@@ -211,8 +211,15 @@ class Sheet(Document):
             # transient/malformed/malicious/export-cap: degrade to location=None WITHOUT
             # memoizing (so a later call retries), and record why so callers can tell this
             # apart from a genuine no-match (spec §8: location=None + a recorded warning).
-            log.warning("cell mapping unavailable for sheet %s (%s: %s); "
-                        "comments will have location=None", self.id, type(e).__name__, e)
+            # TYPE ONLY, not the message - the same rule #313 applied at the MCP boundary,
+            # and this site is BELOW that boundary so the boundary scrub never covered it.
+            # `_logging.py` states the rule for itself: raising the verbosity raises detail
+            # about the OPERATION, never about the CONTENT. A `CsaWorkspaceError` reaching
+            # here can carry a tab-title list, and the log goes to a directory this process
+            # cannot rotate or purge. The type plus the sheet id is what an operator needs to
+            # tell a transient export failure from a malformed archive.
+            log.warning("cell mapping unavailable for sheet %s (%s); "
+                        "comments will have location=None", self.id, type(e).__name__)
             return {}
         comments = [Comment.from_api(d) for d in raw]
         self._cell_map_cache = _cellmap.match_locations(comments, roots)   # pure; a bug here propagates
