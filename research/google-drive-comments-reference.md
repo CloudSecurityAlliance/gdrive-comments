@@ -238,8 +238,17 @@ nothing:
    confirmed bold through the Docs API: the value carried no markup. So a stored quote can be
    matched directly against extracted plain text — which is what staleness detection depends on.
 
-Consequently the only anchored comments **without** quoted text are those on **non-text objects**:
-a comment on an inline image returned `anchor: kix.y1h574n5va9q` with `quotedFileContent` **absent**.
+Consequently an anchored comment **without** quoted text is one anchored to something with
+nothing quotable: a comment on an inline image returned `anchor: kix.y1h574n5va9q` with
+`quotedFileContent` **absent**.
+
+**It does not have to be an image, and that is broader than this paragraph originally said.**
+MEASURED 2026-09-03: a double-click that landed on a non-textual part of a page — no image
+involved — produced `anchor: kix.zfrg5l4hj8f2` with `quotedFileContent` absent, i.e. the same
+`object` state. So the rule is *"anchored to something with nothing to quote"*, and an image is
+one instance of that rather than the definition. Found by accident while automating the editor
+(`experiments/zoo/AUTOMATING-THE-EDITOR.md`), which is also now the cheapest way to produce the
+state deliberately.
 
 ### The FOUR anchor states, and how to tell them apart (MEASURED 2026-09-02 and 2026-09-03)
 
@@ -249,7 +258,7 @@ combinations. `quoted_text` alone distinguishes none of them.
 | state | `anchor` | `quotedFileContent` | produced by |
 |---|---|---|---|
 | file-level (no anchor at all) | key **absent** | key **absent** | editor or API |
-| anchored to a non-text object (image) | present | key **absent** | editor |
+| anchored to something with nothing quotable (an image — but **not only** an image) | present | key **absent** | editor |
 | anchored to text (including a bare caret) | present | present | editor |
 | **quoted, no anchor** | key **absent** | **present** | **API only** |
 
