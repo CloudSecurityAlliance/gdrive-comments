@@ -60,6 +60,8 @@ all rejected as *unknown fields*, identically to a made-up control.
 | Comment with nothing selected → anchor expands to the enclosing word | MEASURED 2026-09-02 | `docs-anchor-states/` |
 | Comment on an empty paragraph → editor **refuses**, no box appears | MEASURED 2026-09-02 | `docs-anchor-states/` |
 | Comment on an inline image → anchor present, no quoted text | MEASURED 2026-09-02 | `docs-anchor-states/` |
+| **The `object` state needs no image** — anchoring to any non-textual part of a page gives an anchor with no quoted text | MEASURED 2026-09-03 | `experiments/zoo/` |
+| The editor CAN be driven by automation; canvas rendering does not prevent it | MEASURED 2026-09-03 | `zoo/AUTOMATING-THE-EDITOR.md` — the recipe, and the `aria-disabled` selection oracle |
 | Editor-created comment carries **both** anchor and quoted text | MEASURED 2026-07-20, again 2026-09-03 | `docs-suggestions/`, `api-created-comment-states/` |
 | An API-created comment renders as **"Original content deleted"** | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | Those comments are **filtered out of the default sidebar** — visible only under "show all comments", and leave no marker in the body | MEASURED 2026-09-03 | `api-created-comment-states/` |

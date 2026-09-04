@@ -96,8 +96,9 @@ SPECIMENS: dict[str, dict] = {
               "to a document that never contained them.",
               "An object-anchored comment, once an image is added and commented on by hand.",
               "A text-anchored comment, once somebody selects a sentence and comments."],
-        by_hand=["Insert any image, click it, and comment on it. That is the only way to "
-                 "produce the object-anchored state — the API cannot.",
+        by_hand=["An image comment, for the classic form of the object state. NOT the only "
+                 "way to produce it - measured 2026-09-03, anchoring to any non-textual part "
+                 "of the page gives an anchor with no quoted text - but the clearest one.",
                  "Select the whole of paragraph P2 below and comment on it, for the ordinary "
                  "text-anchored state.",
                  "Click inside P1 without selecting anything and comment. The editor expands "
