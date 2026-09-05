@@ -175,6 +175,20 @@ comments **because they built their own tool, used the API, did not understand a
 cell identity, and never thought to export as XLSX and read them a second time.** Writing that down
 is what makes the difference credible.
 
+### Developer Preview is OFF the near-term list · decided 2026-09-04
+
+**Nothing gated behind Google's Developer Preview Program is worked on before 1.0.0** (CINO).
+The reason is not effort, it is audience: **most users of this library will not be enrolled**, so
+building against the preview would ship a capability most people cannot use — and worse, a tool
+description promising something that refuses for reasons the operator cannot fix.
+
+That covers accept/reject of suggestions, native per-editor comments, and Sheets
+`insertComment.coordinate`. All three are recorded as **UPSTREAM, gated rather than impossible**
+in the refusal messages (`exceptions.UnsupportedOperation`), which is the honest state and needs
+no further work to stay true.
+
+Revisit when either the feature reaches GA, or a consumer says they are enrolled and blocked.
+
 ### Native editor comment APIs — post-1.0, behind a flag · decided 2026-09-02
 
 Google's Docs, Sheets and Slides APIs each gained a **native** comment surface in Developer
