@@ -331,7 +331,28 @@ not optional and it is the one place the rig can do real harm.
 
 ## 9. What exists, and what has to be built
 
-**Exists and is directly usable today:**
+**Built 2026-09-05: [`Run-full-test-suite.sh`](../../../Run-full-test-suite.sh)** — the runner,
+in the same shape as the CSA Cloudflare backup script (`--check` / `--ai` / prereqs with install
+hints / verify credentials are *live* rather than merely present). It resolves the version,
+installs it, **asserts the import path**, checks MCP registration, probes both tokens with a real
+API call, runs the layers, and can hand the results to Claude Code to triage.
+
+It also detects the OS and points at **CSA DesktopSetup** when tooling is missing, because a new
+person should get one instruction rather than six:
+
+```bash
+./Run-full-test-suite.sh --check              # prerequisites only
+./Run-full-test-suite.sh --setup              # install/upgrade + register with Claude Code
+./Run-full-test-suite.sh                      # latest PyPI release, unattended layers
+./Run-full-test-suite.sh --version 0.50.0     # bisect a regression
+./Run-full-test-suite.sh --claude             # triage failures and file issues
+```
+
+**It found a real bug on its first run** — see #433: the live integration suite cannot create its
+throwaway files, because it reaches through `ws._backend._services`, which `PolicyBackend`
+refuses. That is the suite that would have caught the v0.51.1 P0.
+
+**The underlying commands, if you would rather run them directly:**
 
 ```bash
 # L1 — offline
