@@ -67,3 +67,27 @@ def test_slide_text_recurses_into_tables_and_element_groups():
     assert "shape text" in text
     assert "cell text" in text
     assert "grouped text" in text
+
+
+def test_slide_exposes_its_own_page_object_id():
+    """`Slide.object_id` is the PAGE id, as against the shapes on it (#433).
+
+    Every create* request — `createShape`, `createTable`, `createImage` — takes a
+    `pageObjectId`, so without this the public `Slides.batch_update` cannot target a slide
+    and a caller has to reach into `_raw`. The live suite was doing exactly that, through the
+    backend rather than the model, and broke when `PolicyBackend` began refusing it.
+    """
+    pres = {"slides": [
+        {"objectId": "p", "pageElements": [{"objectId": "box1", "shape": {}}]},
+        {"objectId": "g2d1a", "pageElements": []},
+    ]}
+    deck = Workspace(FakeBackend(META, presentations={"p": pres})).open("p")
+    assert [s.object_id for s in deck.slides] == ["p", "g2d1a"]
+    # and it is distinct from the shapes ON the slide, which is the whole point
+    assert deck.slides[0].object_id not in deck.slides[0].shape_ids
+
+
+def test_slide_object_id_is_none_when_absent_rather_than_raising():
+    """A malformed page should not take the whole deck down — `slides` is a read path."""
+    deck = Workspace(FakeBackend(META, presentations={"p": {"slides": [{}]}})).open("p")
+    assert deck.slides[0].object_id is None
