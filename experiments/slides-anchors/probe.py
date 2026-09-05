@@ -50,9 +50,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from googleapiclient.discovery import build            # noqa: E402
+from googleapiclient.discovery import build  # noqa: E402
 
-from csa_google_workspace.auth import load_cached_credentials   # noqa: E402
+from csa_google_workspace.auth import load_cached_credentials  # noqa: E402
 
 TOKEN = os.environ.get("CSA_GW_TOKEN", "~/.csa_google_workspace/token.json")
 

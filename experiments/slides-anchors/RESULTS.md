@@ -83,22 +83,29 @@ are different comments requiring different fixes.
 Same failure shape as invariant 9 and the `read_only` docstring: the value is present, plausible,
 and wrong in a direction nothing checks.
 
-## 3. `subtype: "text"` is present exactly when quoted text is
+## 3. `subtype: "text"` implies quoted text — but NOT the reverse
 
-Across all six, with no exceptions:
+*(This section first said the two were present "exactly when" the other was, "across all six,
+with no exceptions". **That was wrong**, and it was wrong in the way this repository keeps
+catching: six samples that happened to agree, stated as a biconditional. §9's multi-select case
+is the counterexample. The corrected table is below; what the first pass measured is unchanged.)*
 
 | anchor | `quotedFileContent` | this library's `anchor_state` |
 |---|---|---|
 | `type: "page"` | absent | `object` |
-| `type: "shape"`, no subtype | absent | `object` |
+| `type: "shape"`, no subtype, one target | absent | `object` |
 | `type: "shape"`, `subtype: "text"` | **present** | `text` |
+| `type: "shape"`, no subtype, **two targets** | **present** (§9) | `text` |
 | absent (API-created) | absent | `file` |
 
-So the four-state model **holds on Slides** — `file`, `object` and `text` are all reachable, and
+So `subtype: "text"` → a quote is present. A quote present does **not** imply `subtype: "text"`.
+
+The four-state model **holds on Slides** — `file`, `object` and `text` are all reachable, and
 `quote_only` remains API-only as it is everywhere else. `anchor_state` has been reporting truth
 for decks; it was just never checked.
 
-But see §5: it is *lossy* here in a way it is not on Docs.
+But see §5 and §9: it is *lossy* here in a way it is not on Docs, and the multi-select row above
+is the sharpest case — a comment on two whole shapes reports `anchor_state: "text"`.
 
 ## 4. Selecting a shape does NOT give you an object anchor — if the shape has text
 
@@ -166,3 +173,108 @@ one, and this repository has stated it as the latter.
   back — one click hit `speakernotes-bottom-spacer` instead of `speakernotes-workspace`, 6px
   away, and produced a comment that *looked* fine and was attached to the wrong element. Verify
   by reading the anchor, never by the fact that a comment appeared.
+
+---
+
+# Second pass — the claims the first pass ASSERTED but never measured
+
+**2026-09-05, later the same day.** The first pass shipped two sentences that were inferences
+dressed as findings, in the specimen's own provenance text and in the v0.51.0 changelog:
+
+> changing a shape's text keeps the comment attached and only makes its quote stale; DELETING the
+> shape is what orphans it
+
+Neither half had been tested. Both are now, on a **throwaway deck** (`1FJmPm17…`, since the tests
+destroy their subjects) rather than on the published specimen. Four more gaps closed with them.
+
+## 9. A comment can name TWO targets, and then a quote appears with no `subtype`
+
+Two shapes selected together (click, then shift-click), one comment:
+
+```
+{"type":"shape","uid":1788627102429,"page":"p","targets":["shapeMultiA","shapeMultiB"]}
+quoted: "MULTI A"
+```
+
+Three things at once:
+
+* **`targets` really is plural** — #427 flagged the multi-target shape as unknown; it is a plain
+  list of object ids, in selection order.
+* **No `subtype`, yet `quotedFileContent` is present.** This is the counterexample that breaks
+  §3's original biconditional. The editor quotes the text of the *first* selected shape while
+  anchoring to both as objects.
+* **`anchor_state` therefore reports `text` for a comment on two whole shapes** — because it
+  reads quote-presence, and the quote is there. Not a lie the model can currently avoid; it is
+  §6's lossiness showing up as an actively misleading value rather than a merely incomplete one.
+
+## 10. `page` names the real slide — confirmed against a second slide
+
+The whole first pass was a **one-slide** deck, where `page: "p"` is equally consistent with
+*"names the slide"* and *"always names the first slide"*. A comment on a shape on slide 2:
+
+```
+{"type":"shape","subtype":"text","uid":…,"page":"slideTwo","targets":["shapeOnTwo"]}
+```
+
+`page` tracks the slide. So §2's finding is exactly as narrow as it was stated: `page` is right
+about *which slide*, and wrong only about **notes vs body**.
+
+## 11. An image behaves like any other shape
+
+```
+{"type":"shape","uid":…,"page":"p","targets":["imgOne"]}   quoted: null
+```
+
+`type` is `"shape"` for an image too — nothing in the anchor says *image*. This is the realistic
+`object` case that §4 said would be rare; it needed no purpose-built empty ellipse.
+
+## 12. NEITHER mutation changes the payload, and NOTHING marks the comment
+
+The two claims under test. `shapeEdit`'s text was replaced wholesale (so the quoted string exists
+nowhere in the deck) and `shapeDelete` was removed entirely (`deleteObject`).
+
+**Before and after are byte-identical:**
+
+```
+EDIT2    {"type":"shape","subtype":"text","page":"p","targets":["shapeEdit"]}    quoted ". This text"
+DELETE2  {"type":"shape","subtype":"text","page":"p","targets":["shapeDelete"]}  quoted "after a comment"
+```
+
+`shapeDelete` no longer appears in `presentations.get`. The anchor still names it.
+
+**And the editor shows both as ordinary, healthy comments.** No *"Original content deleted"*, no
+orphan marker, no strikethrough — each still displays its quote as the sidebar card header, so a
+reviewer reads *"after a comment"* as though that text were in the deck. It is not.
+
+### What that means for the claim that was published
+
+*"Changing the text keeps the comment attached"* — true, and it makes the quote stale. Fine.
+
+***"Deleting the shape is what orphans it"* — wrong, or at least it implies something false.**
+Nothing orphans it in any observable way. The correct statement is the opposite in tone: a Slides
+comment pointing at a **deleted** object is indistinguishable, in both the API payload and the
+editor sidebar, from one pointing at a live object. The danger is not that a comment breaks
+loudly; it is that it keeps looking fine while referring to content that is gone.
+
+This is consistent with the already-recorded *"no orphan / anchor-validity signal exists on the
+resource"* (2026-09-03, `api-created-comment-states/`) — that finding simply also holds for a
+target destroyed **after** the fact, on a third editor.
+
+### The consequence for #427
+
+It converts one of that issue's constraints from a precaution into a measured requirement.
+Resolving `targets` against `presentations.get` is the **only** way to know whether a Slides
+comment still points at anything — and since a dangling target is invisible everywhere else, a
+resolver must report it explicitly rather than dropping the comment or silently reporting it as
+file-level.
+
+## 13. Two notes for anyone driving the Slides editor
+
+* **A double-click does not reliably select a word** — it often lands as a bare caret, and the
+  first double-click into a shape only enters text-edit mode. `Alt+Shift+ArrowRight` (extend by
+  word) is deterministic where hit-testing a glyph box is not, and a screenshot is still the only
+  selection oracle.
+* Verify **every** placement by reading its anchor back before building on it. Two of the four
+  comments in this pass landed on the wrong element on the first attempt — one became a
+  whole-slide comment, the other attached to the layout placeholder `i0` — and both looked
+  entirely normal in the sidebar.
