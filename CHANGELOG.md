@@ -10,6 +10,69 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-05 — v0.51.1 (every comment write was broken; they work again) — not released *(yet — flipped once PyPI confirms)*
+
+**If you are on v0.47.0–v0.51.0, upgrade.** `create_comment`, `edit_comment`, `reply`, `resolve`
+and `reopen` — every comment write this library has — returned
+`400 Invalid field selection mentioned_email_addresses` against real Google. Reads were
+unaffected. Nothing else changes.
+
+### What broke, and why nothing noticed for five releases
+
+v0.47.0 (#398) added `mentionedEmailAddresses` and `assigneeEmailAddress` to the comment and
+reply field masks so that structured @mentions and assignments would stop reading as absent.
+That was right for reads and fatal for writes, because **Drive accepts those two names on
+`list`/`get` and refuses them on `create`/`update`** — measured 2026-09-05 across all six
+endpoints, and refused at **any depth**, so hiding one inside `replies(...)` does not help
+either.
+
+The masks were shared between reads and writes, so every write started asking for a field the
+write endpoint rejects.
+
+**`FakeBackend` does not validate field masks.** The whole unit suite therefore exercised a
+double that accepts anything, and stayed green through five releases while the real API refused
+every call. That is invariant 4's stated blind spot — *"behavior only `ApiBackend` has needs a
+stub-service test"* — and it is the second time this exact seam has let a live-only failure
+through (the first was `Workspace.open()` leaking a raw `HttpError`).
+
+It was found by using the library, not by testing it: a `resolve()` call in an unrelated probe
+returned a 400.
+
+### The fix
+
+`ApiBackend._write_mask()` derives a write mask from a read mask by removing
+`_WRITE_REFUSED` at every depth, dropping any nested spec it empties. **Derived, not a second
+hand-maintained mask** — a parallel list that can fall behind the first is the defect shape this
+repository keeps finding, and it would have to be updated in two places the next time a field is
+added.
+
+`tests/test_apibackend_contract.py` now asserts the derivation, that the read masks still request
+both fields, and that no write call site passes a raw read mask — that last one catches a *new*
+write method written by copying an existing one.
+
+*(The first version of `_write_mask` stripped only the top level, reasoning that a write's
+response carries no `replies` so a nested occurrence could not matter. Live Google rejected it on
+the first call. Recorded because it is the same mistake the previous release had to retract, made
+again inside the fix for it, and caught in minutes only because the fix was tried against the
+real API before being believed.)*
+
+### Measured while finding it
+
+Four editor behaviours nobody here had observed, two of which shipped code already depended on:
+
+- **An editor @mention populates `mentionedEmailAddresses`, and an assignment populates
+  `assigneeEmailAddress` as well** — an assignment *is* a mention plus a checkbox, so both fields
+  arrive together. `Comment.assignee_email` / `mentioned_emails` (v0.47.0) had never been seen
+  carrying a real value.
+- **Resolving does NOT clear the assignee.** A resolved thread keeps it, so *"assigned to X"* in
+  a register does not mean outstanding work.
+- **Mentioning someone who lacks access freezes the comment box** — Post *and* Cancel go
+  disabled while Google resolves access, with no recovery but a reload. Google's own wording:
+  *"Your @mention will add people to this discussion and send an email."*
+- **A cross-paragraph comment is an ordinary `kix.*` anchor whose quote contains a literal
+  newline** — and `_context` returns `kind: spanning` correctly against a real one, which
+  `KIND_SPANNING` (v0.48.0, #405) had never been tested against.
+
 ## 2026-09-05 — v0.51.0 (a too-long comment is not a permission problem)
 
 **CONSUMERS: a 403 you used to catch as `AccessError` may now arrive as `InvalidInputError`.**

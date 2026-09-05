@@ -104,3 +104,55 @@ breaks every hand-placed anchor — but it was not worth blocking the corpus on.
 
 *(Superseded by the section above — automation works. The judgement stands only for the case
 where somebody is using the machine: automation and a human cannot share one keyboard.)*
+
+---
+
+## Slides is a DIFFERENT editor, and an easier one — measured 2026-09-05
+
+Everything above is about **Docs**. Slides shares the comment UI and almost nothing else, and the
+differences all run in the direction of "easier", so do not carry the Docs workarounds over.
+
+| | Docs | Slides |
+|---|---|---|
+| rendering | **canvas** (`.kix-canvas-tile-content`), no DOM text | **SVG** — 21 SVGs, 0 canvases |
+| finding a target | hit-test a coordinate and hope | **`#editor-<objectId>`** — the API object id IS the DOM id |
+| `#insertCommentButton` | `aria-disabled` is the selection oracle | **enabled with nothing selected**; oracle for nothing |
+| that button when a shape is selected | n/a | **invisible** — the toolbar swaps to shape controls |
+
+**The DOM-to-API bridge is the whole story.** A shape created through the API as `zooShape1` is
+the SVG group `#editor-zooShape1`, so targets are selected **by id**, never by coordinate. That
+removes the entire class of "did my click land on the right thing" problem — for objects.
+
+**Use `⌘+Option+M`, not the button.** It works in every selection state, including the ones where
+the button is not rendered, and it does not move focus off the selection.
+
+### Two corrections to the recipe above, learned the hard way
+
+**1. A double-click does NOT reliably select a word.** In Slides the first double-click into a
+shape only enters text-edit mode, and subsequent ones often leave a bare caret. `getSelection()`
+is empty in both editors, so there is no way to notice from the DOM.
+
+Use **`Alt+Shift+ArrowRight`** (extend by word), repeated. It is deterministic where hit-testing a
+glyph box is not, and it composes — two presses give two words. Click once to place the caret,
+then extend.
+
+**2. Verify EVERY placement by reading its anchor back.** This is the important one.
+
+Of ten comments placed across two decks, **four landed on the wrong element on the first attempt**
+and *every one of them looked completely normal in the sidebar*:
+
+- a click 6px low hit `speakernotes-bottom-spacer` instead of `speakernotes-workspace`, and
+  produced a comment anchored to a shape on the slide while purporting to be about the notes;
+- another became a whole-slide `type: "page"` comment because the caret never entered the shape;
+- a third attached to the layout placeholder `i0` rather than the intended text box.
+
+A comment appearing is **not** evidence it went where you meant. Read `comments.list` and check
+`targets` before building anything on the placement — including before writing down what it means.
+
+### Getting a real selection oracle in Slides
+
+There isn't a DOM one. What works:
+
+- **for objects** — select by `#editor-<objectId>` and trust it;
+- **for text** — take a screenshot of the shape's bounding box and look. A selection highlight is
+  visible; a caret is a 1px line. This is slow and it is the only honest check.

@@ -68,10 +68,13 @@ all rejected as *unknown fields*, identically to a made-up control.
 | Those comments are **filtered out of the default sidebar** — visible only under "show all comments", and leave no marker in the body | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | A comment reusing a **real** `kix.*` anchor renders as properly anchored | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | `quotedFileContent` is displayed **verbatim** beside a valid anchor, unvalidated | MEASURED 2026-09-03 | `api-created-comment-states/` |
-| Comment across a paragraph boundary — what the anchor and quote look like | **UNKNOWN** | probe written, state never placed |
+| Comment across a paragraph boundary — anchor is an ordinary `kix.*`, quote contains a literal `\n` | MEASURED 2026-09-05 | zoo `docs-sloppy-selections`; `_context` returns `kind: spanning` correctly against it |
 | Comment in a **table cell** — from the editor | **UNKNOWN** | probe written, state never placed |
 | How a **resolved** thread renders, and whether resolve-by-API differs | **UNKNOWN** | — |
-| **@mention** and **assignment** ("action item") in the editor | **UNKNOWN** | see the gap section |
+| **@mention** populates `mentionedEmailAddresses`; **assignment** populates `assigneeEmailAddress` **as well as** the mention | MEASURED 2026-09-05 | an assignment IS a mention plus a checkbox — both fields set together |
+| **Resolving does NOT clear the assignee** | MEASURED 2026-09-05 | a resolved thread keeps `assigneeEmailAddress`, so "assigned to X" does not mean outstanding |
+| Mentioning someone **without access** freezes the comment box — Post *and* Cancel disabled, no recovery without a reload | MEASURED 2026-09-05 | Google's own text: *"Your @mention will add people to this discussion and send an email"* |
+| **Drive refuses `mentionedEmailAddresses` / `assigneeEmailAddress` in a WRITE's response mask**, at any depth, while accepting them on read | MEASURED 2026-09-05 | all six endpoints; this had broken every comment write since v0.47.0 |
 | Whether an API-created comment sends **email notification** | **UNKNOWN** | see the gap section |
 | Whether the editor's version history shows more than the API's two revisions | **UNKNOWN** | strongly suspected yes; `revisions/` |
 
@@ -111,6 +114,8 @@ all rejected as *unknown fields*, identically to a made-up control.
 | Replacing a shape's text leaves the comment attached and its quote stale, with no signal either | MEASURED 2026-09-05 | ditto §12 |
 | Whether a Drive-API comment can be **assigned** at create | **UNKNOWN** | — |
 | Rate limits and pagination behaviour at scale (hundreds of threads) | **UNKNOWN** | consumer reports 90 threads working |
+| Whether a comment survives **cut-and-paste** of its target — does the object id change? | **UNKNOWN** | raised 2026-09-05; matters because a Slides anchor IS the object id, so paste-as-new-id would silently orphan every comment on a moved shape |
+| Whether a comment survives its target being moved to **another slide / another file** | **UNKNOWN** | ditto; `copy_file` already drops comments entirely (#339) |
 
 ## Coverage: the native comment APIs (Developer Preview)
 
@@ -146,9 +151,26 @@ real fields), and **`fields=*` omits them**. Zero occurrences in `src/`. So **an
 structured @mentions read as absent. The README already warns about exactly this trap and our own
 mask falls into it. *Functional gap, not just a documentation one.*
 
-**2. The editor states nobody has placed.** Cross-paragraph selection, a table-cell comment, a
-resolved thread, an @mention, an assignment. Each needs a human in a browser — which is precisely
-the argument for the zoo (#388), and the reason the zoo should be built *with* #340.
+**2. The editor states nobody has placed — and TWO SHIPPED FEATURES rest on them.** This is the
+top gap now, and it is not about completeness. Promoted 2026-09-05, because that day showed twice
+what an unmeasured claim is worth: a Slides finding published as fact was contradicted by the
+first probe that looked, and so was a "no exceptions" biconditional drawn from six agreeing
+samples.
+
+| shipped | derived from | never observed |
+|---|---|---|
+| `Comment.assignee_email` / `mentioned_emails` (v0.47.0, #398) | the field mask + Google's docs | an editor **@mention** or **assignment** actually populating either |
+| `_context.KIND_SPANNING` (v0.48.0, #405) | reading `as_text()` output | a real **cross-paragraph anchor** from the editor |
+
+Both are in the table above as UNKNOWN. Both are code a consumer can already call, returning
+values nobody has seen the real form of. That is the same footing as the two claims retracted on
+2026-09-05, with the difference that these are behaviour rather than prose.
+
+Also unplaced: a table-cell comment, a resolved thread (and whether resolve-by-API renders
+differently), the caret-to-word case, and an anchored lifecycle thread.
+
+**No longer blocked on a human** — see the blocker table below. The zoo specimens are built and
+each carries its own instructions in its own text (#388, and the reason it pairs with #340).
 
 **3. Notification behaviour is completely unknown.** Does a Drive-API comment email anybody? Both
 answers are operationally serious: if it does, an AI review pass could notify a whole team without
@@ -176,7 +198,7 @@ Worth stating plainly so nobody plans around it:
 | blocked on | what it would unlock |
 |---|---|
 | **Developer Preview enrolment** | every behavioural question about native comments, and the identity/dedup question |
-| **A human in a browser** | the unplaced editor states — and this is cheap, it is just not scriptable |
+| ~~**A human in a browser**~~ **— no longer a blocker** | the unplaced editor states. *(This row said they were "not scriptable". Measured 2026-09-03 and again 2026-09-05: they are — ten placements across Docs and Slides, recipe in `experiments/zoo/AUTOMATING-THE-EDITOR.md`. The real cost is not a human, it is that **four of ten landed on the wrong element and looked fine**, so every placement needs its anchor read back.)* |
 | **A second Google account** | notification behaviour, and cross-user attribution |
 | **A Workspace admin** | audit-log attribution (Drive Activity API needs `drive.activity.readonly`; admin reports are a separate surface) |
 

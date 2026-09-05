@@ -655,6 +655,58 @@ class ApiBackend:
           "mentionedEmailAddresses,assigneeEmailAddress," \
           "author(displayName,emailAddress,me,photoLink)"
 
+    # Drive accepts these two on READ (`list`, `get`) and REFUSES them on WRITE (`create`,
+    # `update`) — for comments AND replies, all four measured 2026-09-05. Asking for one in a
+    # write's response mask is a hard `400 Invalid field selection mentioned_email_addresses`,
+    # so v0.47.0 adding them to the shared masks broke create_comment, update_comment,
+    # create_reply and update_reply — every comment write this library has.
+    #
+    # Nothing caught it for five releases: FakeBackend does not validate field masks, so the
+    # whole unit suite exercised a double that accepts anything (invariant 4). The guard is in
+    # tests/test_apibackend_contract.py, and it asserts the DERIVATION below rather than
+    # re-listing the safe fields — a second hand-maintained mask is the defect shape this
+    # repository keeps finding.
+    _WRITE_REFUSED = ("mentionedEmailAddresses", "assigneeEmailAddress")
+
+    @classmethod
+    def _write_mask(cls, mask: str) -> str:
+        """The read mask minus the fields Drive refuses in a write's response mask.
+
+        Derived, never hand-written. **Strips at every depth**, because the refusal is by
+        NAME and not by position: `fields=id,replies(mentionedEmailAddresses)` on
+        `comments.create` is refused exactly as the top-level form is (measured 2026-09-05 —
+        the first version of this method stripped only the top level on the assumption that a
+        nested one could not matter, and live Google rejected it immediately).
+        """
+        out, i, n = [], 0, len(mask)
+        while i < n:
+            j = i
+            while j < n and mask[j] not in ",(":
+                j += 1
+            name = mask[i:j]
+            if j < n and mask[j] == "(":                 # a nested spec: name(...)
+                depth, k = 0, j
+                while k < n:
+                    if mask[k] == "(":
+                        depth += 1
+                    elif mask[k] == ")":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    k += 1
+                if name not in cls._WRITE_REFUSED:
+                    inner = cls._write_mask(mask[j + 1:k])
+                    if inner:                            # drop a spec emptied by the strip
+                        out.append(f"{name}({inner})")
+                i = k + 1
+                if i < n and mask[i] == ",":
+                    i += 1
+            else:
+                if name and name not in cls._WRITE_REFUSED:
+                    out.append(name)
+                i = j + 1
+        return ",".join(out)
+
     def _comments(self):
         return self._services.drive.comments()
 
@@ -684,7 +736,8 @@ class ApiBackend:
 
     def create_comment(self, file_id, content):
         return _errors.call(self._comments().create(
-            fileId=file_id, body={"content": content}, fields=self._CF).execute,
+            fileId=file_id, body={"content": content},
+            fields=self._write_mask(self._CF)).execute,
             idempotent=False)
 
     def create_reply(self, file_id, comment_id, content=None, action=None):
@@ -694,18 +747,20 @@ class ApiBackend:
         if action:
             body["action"] = action
         return _errors.call(self._services.drive.replies().create(
-            fileId=file_id, commentId=comment_id, body=body, fields=self._RF).execute,
+            fileId=file_id, commentId=comment_id, body=body,
+            fields=self._write_mask(self._RF)).execute,
             idempotent=False)
 
     def update_comment(self, file_id, comment_id, content):
         return _errors.call(self._comments().update(
-            fileId=file_id, commentId=comment_id, body={"content": content}, fields=self._CF).execute,
+            fileId=file_id, commentId=comment_id, body={"content": content},
+            fields=self._write_mask(self._CF)).execute,
             idempotent=False)
 
     def update_reply(self, file_id, comment_id, reply_id, content):
         return _errors.call(self._services.drive.replies().update(
             fileId=file_id, commentId=comment_id, replyId=reply_id,
-            body={"content": content}, fields=self._RF).execute,
+            body={"content": content}, fields=self._write_mask(self._RF)).execute,
             idempotent=False)
 
     def delete_comment(self, file_id, comment_id):
