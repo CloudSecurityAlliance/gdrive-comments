@@ -68,10 +68,13 @@ all rejected as *unknown fields*, identically to a made-up control.
 | Those comments are **filtered out of the default sidebar** — visible only under "show all comments", and leave no marker in the body | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | A comment reusing a **real** `kix.*` anchor renders as properly anchored | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | `quotedFileContent` is displayed **verbatim** beside a valid anchor, unvalidated | MEASURED 2026-09-03 | `api-created-comment-states/` |
-| Comment across a paragraph boundary — what the anchor and quote look like | **UNKNOWN** | probe written, state never placed |
+| Comment across a paragraph boundary — anchor is an ordinary `kix.*`, quote contains a literal `\n` | MEASURED 2026-09-05 | zoo `docs-sloppy-selections`; `_context` returns `kind: spanning` correctly against it |
 | Comment in a **table cell** — from the editor | **UNKNOWN** | probe written, state never placed |
 | How a **resolved** thread renders, and whether resolve-by-API differs | **UNKNOWN** | — |
-| **@mention** and **assignment** ("action item") in the editor | **UNKNOWN** | see the gap section |
+| **@mention** populates `mentionedEmailAddresses`; **assignment** populates `assigneeEmailAddress` **as well as** the mention | MEASURED 2026-09-05 | an assignment IS a mention plus a checkbox — both fields set together |
+| **Resolving does NOT clear the assignee** | MEASURED 2026-09-05 | a resolved thread keeps `assigneeEmailAddress`, so "assigned to X" does not mean outstanding |
+| Mentioning someone **without access** freezes the comment box — Post *and* Cancel disabled, no recovery without a reload | MEASURED 2026-09-05 | Google's own text: *"Your @mention will add people to this discussion and send an email"* |
+| **Drive refuses `mentionedEmailAddresses` / `assigneeEmailAddress` in a WRITE's response mask**, at any depth, while accepting them on read | MEASURED 2026-09-05 | all six endpoints; this had broken every comment write since v0.47.0 |
 | Whether an API-created comment sends **email notification** | **UNKNOWN** | see the gap section |
 | Whether the editor's version history shows more than the API's two revisions | **UNKNOWN** | strongly suspected yes; `revisions/` |
 

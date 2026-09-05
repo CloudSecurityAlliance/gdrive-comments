@@ -642,3 +642,94 @@ def test_get_document_still_passes_the_suggestions_view_mode():
     ApiBackend(_S(docs)).get_document("f", "SUGGESTIONS_INLINE")
     assert docs.calls[0]["suggestionsViewMode"] == "SUGGESTIONS_INLINE"
     assert docs.calls[0]["includeTabsContent"] is True
+
+
+class TestWriteMasksOmitFieldsDriveRefusesOnWrite:
+    """Drive accepts `mentionedEmailAddresses` / `assigneeEmailAddress` on READ and refuses
+    them on WRITE. Measured 2026-09-05 against the live API, all six endpoints:
+
+        comments.list  accepted     comments.create  REFUSED
+        comments.get   accepted     comments.update  REFUSED
+        replies.list   accepted     replies.create   REFUSED
+                                    replies.update   REFUSED
+
+    Asking for one in a write's response mask is a hard
+    `400 Invalid field selection mentioned_email_addresses`. v0.47.0 (#398) added both to the
+    shared masks, which broke create_comment, update_comment, create_reply and update_reply —
+    every comment write — for five releases.
+
+    Nothing caught it because `FakeBackend` does not validate field masks, so the entire unit
+    suite exercised a double that accepts anything. That is invariant 4's blind spot exactly,
+    and this class is the guard for it.
+    """
+
+    def test_the_read_masks_still_request_both_fields(self):
+        # The other half of the bargain: if these ever fall out of the READ masks, structured
+        # @mentions and assignments silently read as absent, which is the bug #398 fixed.
+        for mask in (ApiBackend._CF, ApiBackend._RF):
+            for name in ApiBackend._WRITE_REFUSED:
+                assert f"{name}," in mask or mask.endswith(name), f"{name} missing from a read mask"
+
+    def test_write_masks_contain_neither_refused_field(self):
+        for read_mask in (ApiBackend._CF, ApiBackend._RF):
+            written = ApiBackend._write_mask(read_mask)
+            for name in ApiBackend._WRITE_REFUSED:
+                # Not a substring test: `assigneeEmailAddress` is legal INSIDE `replies(...)`,
+                # so the check has to be against the top-level field list. Splitting on a bare
+                # comma would also fail on the nested `author(...)`, which is why the depth
+                # walk exists in the first place.
+                top = _top_level_fields(written)
+                assert name not in top, f"{name} survived into a write mask: {written}"
+
+    def test_write_mask_keeps_everything_else(self):
+        kept = _top_level_fields(ApiBackend._write_mask(ApiBackend._CF))
+        for expected in ("id", "anchor", "content", "resolved", "quotedFileContent"):
+            assert expected in kept
+        # And it must not damage the nested spec, which a naive string replace would.
+        assert "replies(" in ApiBackend._write_mask(ApiBackend._CF)
+
+    def test_the_strip_reaches_NESTED_occurrences_too(self):
+        """The refusal is by NAME, not by position — measured 2026-09-05.
+
+        `fields=id,replies(mentionedEmailAddresses)` on `comments.create` is refused exactly
+        as the top-level form is. The first version of `_write_mask` stripped only the top
+        level, on the assumption that a nested occurrence could not matter to a write whose
+        response carries no replies. Live Google rejected it on the first call.
+        """
+        written = ApiBackend._write_mask(ApiBackend._CF)
+        for name in ApiBackend._WRITE_REFUSED:
+            assert name not in written, f"{name} survived anywhere in {written}"
+
+    def test_a_spec_emptied_by_the_strip_is_dropped_entirely(self):
+        # `replies(mentionedEmailAddresses)` must not become the syntactically invalid
+        # `replies()`, which Drive would refuse for a different reason and confuse the next
+        # person to read the error.
+        assert ApiBackend._write_mask("id,replies(mentionedEmailAddresses)") == "id"
+        assert ApiBackend._write_mask("id,replies(id,assigneeEmailAddress)") == "id,replies(id)"
+
+    def test_every_write_call_site_uses_the_derived_mask(self):
+        """A new write method that reaches for the raw read mask reintroduces the bug."""
+        import inspect
+        src = inspect.getsource(ApiBackend)
+        for method in ("def create_comment", "def create_reply",
+                       "def update_comment", "def update_reply"):
+            start = src.index(method)
+            body = src[start:start + 600]
+            assert "_write_mask(" in body, f"{method} does not use the derived write mask"
+            assert "fields=self._CF)" not in body and "fields=self._RF)" not in body, \
+                f"{method} passes a raw READ mask to a write"
+
+
+def _top_level_fields(mask: str) -> set[str]:
+    depth, out, field = 0, [], []
+    for ch in mask:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append("".join(field)); field = []
+        else:
+            field.append(ch)
+    out.append("".join(field))
+    return {f.split("(")[0] for f in out}
