@@ -49,7 +49,8 @@ def _parse_since(value: str | None):
 def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
                            export_dir: str | None = None,
                            local_read: bool = True, local_write: bool = True) -> None:
-    def _with_context(document, comments: list, out: list, paragraphs: int) -> list:
+    def _with_context(document, comments: list, out: list, paragraphs: int,
+                      markers: bool = True) -> list:
         """Attach a context passage to each comment, fetching the document ONCE.
 
         That is the whole cost model, and the reason `context` is a parameter on the bulk
@@ -87,7 +88,7 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         # strict=True: one context per comment is the contract, and a silent length
         # mismatch would attach a passage to the WRONG comment - worse than an error.
         for row, ctx in zip(out, contexts(comments, paragraphs=paragraphs), strict=True):
-            row["context"] = context_out(ctx)
+            row["context"] = context_out(ctx, markers=markers)
         return out
 
     @app.tool(annotations=READ)
@@ -96,7 +97,8 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
                       author: str | None = None,
                       includeDeleted: bool = False,
                       context: bool = False,
-                      contextParagraphs: int = 0) -> CommentsOut:
+                      contextParagraphs: int = 0,
+                      contextMarkers: bool = True) -> CommentsOut:
         """Comments on a file, newest thread first, each with its replies.
 
         `resolved=False` lists only open threads, which is what a triage pass wants;
@@ -158,7 +160,8 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
                                              include_deleted=includeDeleted))
         out = [comment_out(c) for c in comments]
         if context:
-            out = _with_context(doc, comments, out, contextParagraphs)
+            out = _with_context(doc, comments, out, contextParagraphs,
+                                markers=contextMarkers)
         return {"comments": out}
 
     @app.tool(annotations=READ)
@@ -166,7 +169,8 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
     def get_comment(fileId: str, commentId: str,
                     includeDeleted: bool = False,
                     context: bool = False,
-                    contextParagraphs: int = 0) -> CommentOut:
+                    contextParagraphs: int = 0,
+                    contextMarkers: bool = True) -> CommentOut:
         """One comment thread: the top-level comment and every reply, in order.
 
         Replies include the ACTION replies Google writes when somebody resolves or reopens a
@@ -182,7 +186,8 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         comment = doc.comments.get(commentId, include_deleted=includeDeleted)
         out = comment_out(comment)
         if context:
-            out = _with_context(doc, [comment], [out], contextParagraphs)[0]
+            out = _with_context(doc, [comment], [out], contextParagraphs,
+                                markers=contextMarkers)[0]
         return out
 
     # WRITE, not READ. Three of that annotation's fields were false: destination="file" and
@@ -237,7 +242,22 @@ def register_comment_tools(app: MCPServer, get_workspace: WorkspaceProviderT,
         created through the API and which is NOT file-level).
 
         `context=true` ADDS THE PASSAGE each comment sits in, with the selection marked
-        `⟦like this⟧` inside it. `context` defaults to false because the passage costs tokens
+        between U+27E6 and U+27E7 - `⟦like this⟧`. **Pass `contextMarkers=false` to omit
+        them**, which you want whenever you MATCH ON THE TEXT rather than show it to a person:
+        60 of 76 honest quotes once read as fabrications because a consumer did not know the
+        two characters were there.
+
+        WHICH TEXT IS THIS? The same rendering `read_file_content` returns - strip the markers
+        and `context` is a literal SUBSTRING of it. It is NOT the same as
+        `download_file_content(exportMimeType="text/markdown")`, which is Drive's own converter
+        and escapes punctuation and adds emphasis. So to check whether a quoted passage is
+        really in the document, compare against `read_file_content`. `describe_output_contract`
+        says this too, at runtime.
+
+        `context_kind` is an OPEN vocabulary that gains members - `spanning` arrived in 0.48.0.
+        Degrade on a value you do not recognise rather than raising.
+
+        `context` defaults to false because the passage costs tokens
         and most calls do not need it. REACH FOR IT WHEN:
           - the quoted text is SHORT relative to what the comment claims - three words
             attached to a paragraph-length point means the reviewer under-selected, and the

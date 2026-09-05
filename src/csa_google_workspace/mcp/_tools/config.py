@@ -24,14 +24,42 @@ from .._resources import CEILING_URI, CONFIG_URI, HELP_URI, render_ceiling, rend
 from .._schemas import (
     AllowlistsPreviewOut,
     ConfigOut,
+    ContractOut,
     ResourceOut,
     allowlist_preview_out,
+    contract_out,
 )
 from ._base import READ, WorkspaceProviderT, _errors
 
 
 def register_config_tools(app: MCPServer, settings: Settings,
                           get_workspace: WorkspaceProviderT | None = None) -> None:
+    @app.tool(annotations=READ)
+    @_errors
+    def describe_output_contract() -> ContractOut:
+        """WHAT SHAPE this server's results take — vocabularies, columns, and which text.
+
+        CALL THIS BEFORE PINNING ANYTHING about a result's shape, and again after upgrading.
+        It exists because a consumer pinned a contract file and it went stale in four days,
+        with no way to notice except diffing two real payloads (#422).
+
+        THE VOCABULARIES ARE OPEN AND WILL GAIN MEMBERS. `context_kind` gained `spanning` in
+        0.48.0, because a quote crossing a paragraph boundary was being reported as absent from
+        its own document. If you branch on these values, DEGRADE on an unrecognised one rather
+        than raising - a consumer that raised would have crashed on that release. The export
+        column set grows the same way.
+
+        THERE ARE TWO TEXT RENDERINGS, NOT THREE, which is the part most worth knowing:
+          read_file_content            the Docs API's content, walked. No escaping, no emphasis.
+          context (in comment results) THE SAME rendering, plus the selection markers. Strip
+                                       those two characters and it is a literal SUBSTRING of
+                                       read_file_content.
+          download_file_content(markdown)  DIFFERENT - Drive's own converter. It escapes
+                                       punctuation and adds emphasis markers.
+        So to check "is this quoted passage really in the document", compare `context` against
+        `read_file_content`, not against the markdown export."""
+        return contract_out(__version__)
+
     @app.tool(annotations=READ)
     def describe_configuration() -> ConfigOut:
         """What this server is allowed to read and change, and why anything refused was refused.

@@ -10,6 +10,55 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-04 — v0.50.0 (the output contract is legible) — not released *(yet — flipped once PyPI confirms)*
+
+**CONSUMERS: `context_kind` and `anchor_state` are OPEN vocabularies and WILL gain members.
+The export column set grows the same way. Call `describe_output_contract` to read the current
+ones from the server you are talking to.** That line is at the top because #422 is precisely
+about release notes written as *"here is the improvement"* rather than *"here is what changes
+for you"*.
+
+Answers **#421** and **#422**, both from the first real consumer of the `context` columns —
+building an anti-hallucination check over a 90-thread review. Neither is a bug. Both are the
+interface failing to say something true.
+
+### #421 — 60 of 76 honest quotes read as fabrications
+
+They compared `context` against `download_file_content(markdown)`. Two problems: that export is
+Drive's own converter, which escapes punctuation (`=` → `\=`) and adds emphasis; and `context`
+carries selection markers documented **nowhere**.
+
+**The answer is better than they hoped, and is now asserted as a property: there are TWO
+renderings, not three.** `read_file_content` and `context` are the *same* one — strip the two
+markers and `context` is a literal **substring** of it. Only the markdown export differs.
+
+So the fix for that check is not normalisation, it is comparing against the right surface.
+
+- **`contextMarkers=false`** on `list_comments` and `get_comment` omits the markers, for
+  anything that matches on text rather than showing it to a person.
+- Every description now says **which rendering it returns** and that they are not
+  interchangeable.
+- `tests/test_output_contract.py` asserts the substring property, so if the two surfaces ever
+  diverge it fails here rather than in somebody's corpus.
+
+### #422 — a pinned contract went stale in four days
+
+`context_kind` gained `spanning` (v0.48.0) and the column set grew by two (v0.47.0). Both were
+in the release notes; neither was discoverable from the interface. Their consumer **raises** on
+an unknown `context_kind` rather than guessing where a comment points — the right call, and it
+means a new member takes a whole run down. They survived by reading release notes while still on
+an old version, which is luck plus a habit rather than something the interface told them.
+
+**`describe_output_contract`** returns, at runtime: both vocabularies with their current members,
+**which release added each**, the export column lists, the selection markers, and which rendering
+each surface produces. Derived from the constants, so it cannot go stale — except the
+version map, which a test forces to stay complete.
+
+### Also
+
+The vocabularies are declared open in the tool descriptions, not just in the contract, because a
+description that reads as a closed set is what a consumer designs against.
+
 ## 2026-09-03 — v0.49.0 (what GOOGLE will refuse, not what we are configured not to do)
 
 Wave 4's read side: **#336**, **#337** and **#338** together, because they are one idea.

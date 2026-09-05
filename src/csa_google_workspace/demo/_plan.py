@@ -97,6 +97,11 @@ def per_type(kind: str) -> list[Step]:
              captures=lambda s, out, key=key: s.update({key: out["id"],
                                                         f"{key}_url": out.get("url")}),
              group=kind),
+        Step("describe_output_contract", lambda s: {},
+             "Ask the server what SHAPE its answers take",
+             "The vocabularies are OPEN and gain members - `spanning` arrived in 0.48.0 - so a "
+             "consumer that treats them as closed breaks on upgrade. This is that contract, "
+             "readable at runtime instead of diffed between two payloads.", group=kind),
         Step("get_file_metadata", lambda s, key=key: {"fileId": s[key]},
              f"Read the {label}'s metadata",
              "Name, type, and when it changed - without fetching the content, which for a "
