@@ -105,6 +105,10 @@ all rejected as *unknown fields*, identically to a made-up control.
 | **A Slides anchor's `page` names the SLIDE even for a speaker-notes comment** — only `targets` tells them apart | MEASURED 2026-09-05 | ditto §2 |
 | A Slides table-cell comment anchors to the **table**, with no row/column | MEASURED 2026-09-05 | ditto §5 |
 | The Slides editor does **not** orphan an API-created comment, though the Docs editor does | MEASURED 2026-09-05 | ditto §7 |
+| A Slides `targets` can hold **two object ids** (shift-select), and then a quote is present with **no `subtype`** | MEASURED 2026-09-05 | ditto §9 — breaks the biconditional §3 first claimed |
+| A Slides anchor's `page` tracks the real slide (confirmed on a 2-slide deck) | MEASURED 2026-09-05 | ditto §10 |
+| **Deleting a comment's target shape changes NOTHING** — anchor unchanged, payload identical, editor still renders it normally with its stale quote | MEASURED 2026-09-05 | ditto §12 |
+| Replacing a shape's text leaves the comment attached and its quote stale, with no signal either | MEASURED 2026-09-05 | ditto §12 |
 | Whether a Drive-API comment can be **assigned** at create | **UNKNOWN** | — |
 | Rate limits and pagination behaviour at scale (hundreds of threads) | **UNKNOWN** | consumer reports 90 threads working |
 

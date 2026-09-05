@@ -55,8 +55,13 @@ direction nothing checks.
 
 Also measured, and each corrects something stated more broadly than it was ever tested:
 
-- **`subtype: "text"` appears exactly when quoted text does**, so the four-state model does hold
-  on a third editor — `anchor_state` has been reporting truth for decks, it was just never checked.
+- **`subtype: "text"` implies quoted text**, so the four-state model does hold on a third editor
+  — `anchor_state` has been reporting truth for decks, it was just never checked. *(This entry
+  first said the two appeared "exactly when" the other did. **The reverse does not hold**, found
+  later the same day: a comment placed with TWO shapes selected carries a quote with no `subtype`
+  and two entries in `targets`, and so reports `anchor_state: "text"` while being a comment on
+  two whole objects. Corrected here rather than in a later entry, because the wrong version is
+  what a reader finds first. `experiments/slides-anchors/RESULTS.md` §9.)*
 - **Selecting a shape does not give you an object anchor if the shape has text** — Slides anchors
   to the word under the cursor, the same family as the Docs caret-to-word behaviour. The `object`
   state is reachable only through an element with nothing to quote.

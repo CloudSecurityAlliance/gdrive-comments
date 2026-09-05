@@ -72,8 +72,12 @@ AXES: dict[str, dict[str, str]] = {
                   "ids that appear verbatim in `presentations.get`. Slides is the only one of "
                   "the three editors whose anchors are readable (measured 2026-09-05)."),
         rewrite=("Because the anchor names the object rather than the text, changing a shape's "
-                 "text keeps the comment attached and only makes its quote stale; DELETING the "
-                 "shape is what orphans it."),
+                 "text leaves the comment attached and its quote stale. Deleting the shape "
+                 "does NOT visibly break anything either, which is worse: measured "
+                 "2026-09-05, the anchor still names the deleted object, the payload is "
+                 "byte-identical, and the editor still draws the comment normally with its "
+                 "old quote as the card header. A comment here can look perfectly healthy "
+                 "while pointing at content that no longer exists."),
         editor="Google Slides editor",
         orphans=("but on this editor that is nearly invisible: the Slides sidebar shows an "
                  "API-created comment normally, with no \"Original content deleted\" banner — "
@@ -374,14 +378,22 @@ SLIDE_SPECIMENS: dict[str, dict] = {
                 "comment targets `i3`, an element of `p:notes`, and still reports `page: p`. "
                 "Code that trusts `page` reports a note about the narration as a note about the "
                 "deck, and nothing looks wrong.",
-                "**`subtype: \"text\"` appears exactly when quoted text does** - so the four "
-                "states (file / object / text / quote-only) do hold here.",
+                "**`subtype: \"text\"` implies quoted text, but NOT the reverse.** The four "
+                "states (file / object / text / quote-only) do all hold here. But a comment "
+                "placed with TWO shapes selected has no `subtype`, two entries in `targets`, "
+                "AND a quote of the first one - so it reports anchor_state `text` while being "
+                "a comment on two whole objects.",
                 "**Selecting a shape does not give you an object anchor if the shape has text.** "
                 "The comment on zooShape1 was placed with the object selected and blue handles "
                 "showing, and Slides anchored it to the word under the cursor anyway. The "
                 "text-less ellipse is the only way to reach an anchored comment with no quote.",
                 "**A table cell anchors to the TABLE.** No row, no column. The quoted word is "
                 "the only cell-level signal, and it is ambiguous the moment it appears twice.",
+                "**A comment can name TWO targets**, and a dangling one is invisible. "
+                "Measured on a throwaway deck: shift-selecting two shapes gives "
+                "`targets: [a, b]`; and after the target shape is DELETED the anchor still "
+                "names it, the payload does not change, and the editor still shows the "
+                "comment normally. Nothing anywhere says the target is gone.",
                 "**The Slides editor does not orphan an API-created comment.** The file-level "
                 "comment you are reading was made through the Drive API and the sidebar shows it "
                 "normally - where the Docs editor would render it as \"Original content "
