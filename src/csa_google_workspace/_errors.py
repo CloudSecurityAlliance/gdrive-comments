@@ -9,6 +9,19 @@ from . import exceptions as exc
 _RETRYABLE = {429, 500, 502, 503, 504}
 _MAX_ATTEMPTS = 4
 
+# 403 reasons that mean "what you sent is wrong", not "you may not do this". Google files both
+# under the same status, so without this set a too-long comment is reported as a permission
+# problem and an embedder re-runs OAuth to fix something no credential can fix.
+#
+# A SET rather than an `if reason == ...` because the next member is a matter of time, and
+# because the members must be reasons that are ALWAYS about the payload: a reason that is
+# sometimes about permission belongs in the AccessError branch, where being wrong is safe.
+# Add only what has been observed from the live API — a guessed reason string never fires, and
+# looks like coverage.
+_INPUT_REFUSED = frozenset({
+    "commentLengthLimitExceeded",   # measured 2026-09-05, ~4096 UTF-8 bytes
+})
+
 
 def _reason_and_message(err: HttpError):
     try:
@@ -65,6 +78,8 @@ def translate_http_error(err: HttpError) -> exc.CsaWorkspaceError:
         if reason == "SERVICE_DISABLED":
             # legacy format: message contains an activation URL; surface it whole.
             return exc.ServiceDisabledError(service="(see message)", activation_url=message)
+        if reason in _INPUT_REFUSED:
+            return exc.InvalidInputError(message or reason)
         return exc.AccessError(message or "insufficient permission")
     if status == 429:
         return exc.RateLimitError(retry_after=_retry_after(err))

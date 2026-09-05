@@ -176,7 +176,7 @@ def main() -> int:
     manifest = []
     for name, spec in SPECIMENS.items():
         text = body(spec["title"], spec["what"], spec["why"], spec["look"],
-                    spec["by_hand"], spec["material"], date=TODAY)
+                    spec["by_hand"], spec["material"], date=TODAY, axis="docs")
         # The quote a quote-only comment will carry: real text from this document, so the
         # specimen shows an HONEST quote-only comment beside a fabricated one.
         spec = dict(spec, quote_present=spec["material"][0][:80])

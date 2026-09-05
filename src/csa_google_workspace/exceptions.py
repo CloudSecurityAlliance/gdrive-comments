@@ -41,6 +41,24 @@ class ConflictError(CsaWorkspaceError):
     """
 
 
+class InvalidInputError(CsaWorkspaceError):
+    """The request was refused because of WHAT WAS SENT, not because of who sent it.
+
+    Its own type because **Google returns 403 for this**, and a 403 otherwise means *permission*.
+    Measured 2026-09-05: posting a comment body over the limit returns
+    ``403 commentLengthLimitExceeded``, *"Comment content is limited to 4096 bytes in UTF-8
+    encoding."* Without this type that arrives as `AccessError`, and an embedder that catches
+    `AccessError` does the wrong thing twice over — it tells the user they lack access to a file
+    they can plainly edit, and it may re-run the OAuth flow to fix a problem no credential can
+    fix. The remedy is to send less text.
+
+    The 4096 bytes are **UTF-8 bytes, not characters**, so a comment of emoji or CJK text hits
+    the limit at roughly a quarter of the length an ASCII one does. Google's own message is
+    preserved verbatim in `str(e)`, because it states the current limit and this docstring only
+    states the limit as measured on one day.
+    """
+
+
 class AccessError(CsaWorkspaceError):
     """Insufficient permission (403) — not shared, wrong scope, or editing another's comment."""
 

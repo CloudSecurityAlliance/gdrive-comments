@@ -139,7 +139,17 @@ def stage_offset_header(sheets, file_id: str) -> None:
 
 
 def stage_deck(slides, file_id: str) -> None:
-    """A deck with a shape, text inside it, and speaker notes — three comment targets."""
+    """A deck with every kind of comment target: shape, text, table, empty shape, notes.
+
+    `zooNoText` and `zooTable` are not decoration. Measured 2026-09-05
+    (`experiments/slides-anchors/`):
+
+    * selecting a shape that HAS text does not produce an object-anchored comment — Slides
+      anchors to the word under the cursor instead — so a shape with **nothing to quote** is
+      the only way to reach the `object` anchor state on a deck;
+    * a table is the only way to ask whether a Slides anchor addresses a **cell**. (It does
+      not; it names the table.)
+    """
     pres = slides.presentations().get(presentationId=file_id).execute()
     first = pres["slides"][0]["objectId"]
     slides.presentations().batchUpdate(presentationId=file_id, body={"requests": [
@@ -153,6 +163,30 @@ def stage_deck(slides, file_id: str) -> None:
         {"insertText": {"objectId": "zooShape1",
                         "text": "Text inside a shape. Comment on this text, and on the shape "
                                 "itself, and compare the two anchors."}},
+        # The no-text case. An ELLIPSE because it obviously holds no text, where an empty
+        # TEXT_BOX looks like a mistake somebody should fix.
+        {"createShape": {"objectId": "zooNoText", "shapeType": "ELLIPSE",
+                         "elementProperties": {
+                             "pageObjectId": first,
+                             "size": {"width": {"magnitude": 2000000, "unit": "EMU"},
+                                      "height": {"magnitude": 1200000, "unit": "EMU"}},
+                             "transform": {"scaleX": 1, "scaleY": 1, "translateX": 5800000,
+                                           "translateY": 3200000, "unit": "EMU"}}}},
+        {"createTable": {"objectId": "zooTable", "rows": 2, "columns": 2,
+                         "elementProperties": {
+                             "pageObjectId": first,
+                             "size": {"width": {"magnitude": 3000000, "unit": "EMU"},
+                                      "height": {"magnitude": 1000000, "unit": "EMU"}},
+                             "transform": {"scaleX": 1, "scaleY": 1, "translateX": 500000,
+                                           "translateY": 3400000, "unit": "EMU"}}}},
+        {"insertText": {"objectId": "zooTable", "text": "Header alpha",
+                        "cellLocation": {"rowIndex": 0, "columnIndex": 0}}},
+        {"insertText": {"objectId": "zooTable", "text": "Header beta",
+                        "cellLocation": {"rowIndex": 0, "columnIndex": 1}}},
+        {"insertText": {"objectId": "zooTable", "text": "Comment on this cell",
+                        "cellLocation": {"rowIndex": 1, "columnIndex": 0}}},
+        {"insertText": {"objectId": "zooTable", "text": "Leave this one alone",
+                        "cellLocation": {"rowIndex": 1, "columnIndex": 1}}},
     ]}).execute()
     # Speaker notes live on a separate page; its id has to be read back.
     pres = slides.presentations().get(presentationId=file_id).execute()
@@ -165,6 +199,87 @@ def stage_deck(slides, file_id: str) -> None:
                                         "here too, and see whether the anchor differs."}}]}
             ).execute()
             break
+
+
+# Measured on this deck at 8pt in a 8.5M x 4.7M EMU box: about 3200 characters reach the
+# bottom edge of the slide. 2400 leaves room for a heading and for the next paragraph to be a
+# long one, since the split lands on a blank line and never mid-sentence.
+_PAGE_BUDGET = 2400
+
+
+def _paginate(text: str) -> list[str]:
+    """Split the specimen into slide-sized chunks on blank lines.
+
+    On a blank line rather than a character count because the alternative is a page break in
+    the middle of a measured finding, and a reader who sees half of one has been told something
+    false rather than something incomplete. A single paragraph longer than the budget is
+    emitted whole and allowed to overflow — truncating documentation to fit its container is
+    the failure this whole exercise is correcting.
+    """
+    pages: list[str] = []
+    current = ""
+    for block in text.split("\n\n"):
+        candidate = f"{current}\n\n{block}" if current else block
+        if current and len(candidate) > _PAGE_BUDGET:
+            pages.append(current)
+            current = block
+        else:
+            current = candidate
+    if current:
+        pages.append(current)
+    return pages
+
+
+def document_deck(slides, drive, file_id: str, text: str) -> None:
+    """Put the specimen's documentation on a README SLIDE, and a pointer in a comment.
+
+    A file-level comment was the obvious home and it does not fit: **Drive caps comment content
+    at 4096 UTF-8 bytes** (measured 2026-09-05 — `403 commentLengthLimitExceeded`, which this
+    library now raises as `InvalidInputError` rather than letting it masquerade as a permission
+    problem). The documentation is 4972 bytes, so the medium chose itself.
+
+    Same shape as the decision the Sheets specimens already made — documentation went to a
+    README *tab* there — and the same placement rule for the same reason: the README goes
+    **LAST**. A README tab at index 0 silently changed what every unqualified A1 read returned,
+    and a README slide at index 0 would silently change what "the first slide" means to
+    everything that opens this deck, including the thumbnail.
+
+    The pointer comment is kept because it is the only part of a deck a Drive-level tool sees
+    without opening it — and it is deliberately SHORT, so it cannot drift past the cap again.
+    """
+    pages = _paginate(text)
+    pres = slides.presentations().get(presentationId=file_id).execute()
+    index = len(pres.get("slides", []))
+    requests: list[dict] = []
+    for n, chunk in enumerate(pages, 1):
+        slide_id, box_id = f"zooReadme{n}", f"zooReadmeText{n}"
+        heading = f"README ({n} of {len(pages)})\n\n"
+        requests += [
+            {"createSlide": {"objectId": slide_id, "insertionIndex": index + n - 1,
+                             "slideLayoutReference": {"predefinedLayout": "BLANK"}}},
+            {"createShape": {"objectId": box_id, "shapeType": "TEXT_BOX",
+                             "elementProperties": {
+                                 "pageObjectId": slide_id,
+                                 "size": {"width": {"magnitude": 8500000, "unit": "EMU"},
+                                          "height": {"magnitude": 4700000, "unit": "EMU"}},
+                                 "transform": {"scaleX": 1, "scaleY": 1, "translateX": 300000,
+                                               "translateY": 200000, "unit": "EMU"}}}},
+            {"insertText": {"objectId": box_id, "text": heading + chunk}},
+            # 8pt with the text PAGINATED to fit. Font size alone cannot solve this: the whole
+            # specimen at a size that fits one slide is unreadable, and Slides does not clip
+            # overflow, it just draws it outside the canvas — so a single slide LOOKS fine in
+            # the editor and loses its last third in presentation and thumbnail views.
+            {"updateTextStyle": {"objectId": box_id,
+                                 "style": {"fontSize": {"magnitude": 8, "unit": "PT"}},
+                                 "textRange": {"type": "ALL"}, "fields": "fontSize"}},
+        ]
+    slides.presentations().batchUpdate(presentationId=file_id,
+                                       body={"requests": requests}).execute()
+    drive.comments().create(fileId=file_id, body={"content": (
+        "SPECIMEN — comments on a deck. The documentation for this file is on its LAST slide, "
+        "titled README, because Drive caps a comment at 4096 UTF-8 bytes and the explanation is "
+        "longer than that. Findings are in experiments/slides-anchors/RESULTS.md in the "
+        "csa-google-workspace repository.")}, fields="id").execute()
 
 
 def main() -> int:
@@ -223,7 +338,7 @@ def main() -> int:
         {"addSheet": {"properties": {"title": "README", "index": 99}}}]}).execute()
         spec = SHEET_SPECIMENS[name]
         text = body(spec["title"], spec["what"], spec["why"], spec["look"], spec["by_hand"],
-                    spec["material"], date=TODAY)
+                    spec["material"], date=TODAY, axis="sheets")
         sheets.spreadsheets().values().update(
             spreadsheetId=fid, range="README!A1", valueInputOption="RAW",
             body={"values": [[line] for line in text.split("\n")]}).execute()
@@ -243,10 +358,10 @@ def main() -> int:
         if existing:
             continue
         spec = SLIDE_SPECIMENS[name]
-        drive.comments().create(fileId=fid, body={"content": body(
-            spec["title"], spec["what"], spec["why"], spec["look"], spec["by_hand"],
-            spec["material"], date=TODAY)}, fields="id").execute()
-        print(f"  documented {name} in a file-level comment")
+        text = body(spec["title"], spec["what"], spec["why"], spec["look"], spec["by_hand"],
+                    spec["material"], date=TODAY, axis="slides", placed=spec.get("placed"))
+        document_deck(slides, drive, fid, text)
+        print(f"  documented {name} on a README SLIDE (see the note in document_deck)")
 
     out = os.path.join(os.path.dirname(__file__), "manifest_more.json")
     with open(out, "w", encoding="utf-8") as fh:

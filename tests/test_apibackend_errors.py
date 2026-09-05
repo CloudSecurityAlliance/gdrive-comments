@@ -67,6 +67,8 @@ class _Services:
     (404, "notFound", exc.NotFoundError),
     (403, "insufficientPermissions", exc.AccessError),
     (403, "SERVICE_DISABLED", exc.ServiceDisabledError),
+    # Google files "your payload is wrong" under 403 alongside "you may not do this".
+    (403, "commentLengthLimitExceeded", exc.InvalidInputError),
 ])
 def test_get_file_metadata_translates_http_error(status, reason, expected):
     backend = ApiBackend(_Services(err=_http_error(status, reason, "boom")))
@@ -78,3 +80,36 @@ def test_get_file_metadata_returns_metadata_on_success():
     meta = {"id": "abc", "name": "Doc", "mimeType": "application/vnd.google-apps.document"}
     backend = ApiBackend(_Services(result=meta))
     assert backend.get_file_metadata("abc") == meta
+
+
+def test_a_too_long_comment_is_not_reported_as_a_permission_problem():
+    """403 `commentLengthLimitExceeded` must NOT arrive as AccessError.
+
+    Measured 2026-09-05: Drive caps comment content at 4096 UTF-8 bytes and refuses a longer
+    one with a 403. Every other 403 this library sees means *permission*, so without the
+    `_INPUT_REFUSED` branch this lands in the `AccessError` catch-all — and an embedder that
+    catches AccessError tells the user they cannot access a file they can plainly edit, and may
+    re-run the OAuth flow to fix something no credential can fix. The remedy is to send less
+    text, so the type has to say so.
+    """
+    message = "Comment content is limited to 4096 bytes in UTF-8 encoding."
+    backend = ApiBackend(_Services(err=_http_error(403, "commentLengthLimitExceeded", message)))
+    with pytest.raises(exc.InvalidInputError) as caught:
+        backend.get_file_metadata("any-id")
+    # NOT an AccessError, and Google's own wording survives - it states the live limit, where
+    # anything we hard-code states the limit as it was on the day somebody measured it.
+    assert not isinstance(caught.value, exc.AccessError)
+    assert message in str(caught.value)
+
+
+def test_an_ordinary_403_is_still_an_access_error():
+    """The guard above must not have widened 403 into "probably the caller's fault".
+
+    Empty is the case to test: if `_INPUT_REFUSED` were ever emptied or its membership check
+    inverted, the parametrised case above would still pass on the OTHER rows while this one
+    catches the regression that matters - a genuine permission denial being reported as bad
+    input, which sends the user to fix their text instead of their access.
+    """
+    backend = ApiBackend(_Services(err=_http_error(403, "insufficientFilePermissions", "nope")))
+    with pytest.raises(exc.AccessError):
+        backend.get_file_metadata("any-id")

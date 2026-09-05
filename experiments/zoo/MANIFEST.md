@@ -36,7 +36,23 @@ same numbered-paragraph fixture from scratch.
 
 Still to build (they need a browser, a second account, or both — see
 `research/comments-knowledge-map.md`): `docs-suggestions`, `docs-tabs`, `sheets-cell-mapping`,
-`sheets-header-not-row-1`, `slides-comments`.
+`sheets-header-not-row-1`.
+
+**`slides-comments` is DONE** (2026-09-05). Six comments placed through the editor on every kind
+of target a deck has — the slide, a shape, text inside that shape, a shape with no text, a table
+cell and the speaker notes — and the raw anchors read back. It is the specimen that changed a
+belief rather than confirming one: a Slides anchor is **readable**, where Docs and Sheets anchors
+are opaque. Findings in [`../slides-anchors/RESULTS.md`](../slides-anchors/RESULTS.md), and the
+deck's own README slides say the same thing to anyone who opens the link.
+
+Two things about that file differ from every other specimen, both forced rather than chosen:
+
+* **its documentation is on README SLIDES, not in a file-level comment** — Drive caps comment
+  content at **4096 UTF-8 bytes** (measured 2026-09-05; the library now raises `InvalidInputError`
+  for it instead of letting a 403 masquerade as a permission problem) and the text is 4972;
+* **it is paginated across three slides**, because a slide is a fixed canvas and Slides does not
+  clip overflow — it draws it outside the slide, so one long README *looks* right in the editor
+  and silently loses its last third in presentation and thumbnail views.
 
 ## What the script can and cannot do
 
