@@ -101,6 +101,9 @@ EXPECTED_ABSENT = {
     # Test gates. Real, but defined in tests/ rather than src/.
     "CSA_GW_INTEGRATION": "gate for tests/integration/, defined in the test suite",
     "CSA_GW_OAUTH": "gate for tests/oauth/, defined in the test suite",
+    "CSA_GW_TEST_FOLDER": "where tests/integration/ creates its throwaway files; unset "
+                          "means a dated folder per run. Test-only by design: the "
+                          "library has no opinion about where a caller puts files",
     "CSA_GW_MCP_LIVE": "proposed by the MCP spec for a gated live smoke test; never built",
 }
 

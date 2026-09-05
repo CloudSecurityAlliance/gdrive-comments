@@ -285,6 +285,16 @@ What actually bounds it:
 - **Trash, never delete.** Everything the rig removes goes to Drive's trash, recoverable for 30
   days. Nothing calls `files.delete`.
 - **A dedicated folder** for anything the rig creates, so a human can see and empty it.
+  Implemented 2026-09-05: `CSA_GW_TEST_FOLDER` (or `--folder <id|url>`) puts every throwaway
+  inside a folder you choose, and **a run never trashes a folder it did not create**. With it
+  unset the suite makes a dated folder per run — `csa-google-workspace conformance
+  YYYY-MM-DD HHMMSSZ` — and removes it at the end. Loose files in My Drive root, which is what
+  it used to do, are unauditable and indistinguishable from a person's own work.
+  *(The ordering works because each throwaway trashes itself on exit, so the folder is empty
+  by teardown — Drive leaves a trashed folder's children loose in My Drive otherwise.)*
+- **The READ side can point at the public zoo.** The specimens are synthetic, public and cited
+  by id, so they are the right corpus for anything that only reads — L4 already does this, and
+  L2-RO's read half should too rather than touching a private document.
 - **The allowlist and capabilities** narrow what the *library* will do, and should be set as
   tightly as the layers allow. Note the honest limit already recorded in `README.md`: this is a
   ceiling below Drive's, and it binds our calls, not another client's.

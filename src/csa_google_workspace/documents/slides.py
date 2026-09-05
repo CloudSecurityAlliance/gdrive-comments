@@ -16,6 +16,21 @@ class Slide:
         return _content.slide_notes(self._raw)
 
     @property
+    def object_id(self) -> str | None:
+        """This slide's own objectId — the PAGE, as against the shapes on it.
+
+        Needed by anything that adds an element rather than editing one: `createShape`,
+        `createTable` and `createImage` all take a `pageObjectId`, so without this the public
+        `Slides.batch_update` cannot target a slide and a caller has to reach into `_raw`.
+        That gap is why the live suite was reaching around the public API (#433).
+
+        It is also the id a Slides comment anchor names — `{"type":"page","pages":["p"]}` for a
+        whole-slide comment, and the `page` field of a shape anchor (measured 2026-09-05,
+        `experiments/slides-anchors/`), which is what makes an anchor resolvable to a slide.
+        """
+        return self._raw.get("objectId")
+
+    @property
     def shape_ids(self) -> list[str]:
         """objectIds of the text-capable shapes on this slide, for use with
         `Slides.insert_text(object_id, ...)`. (Slides content is shape-addressed, unlike

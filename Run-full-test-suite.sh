@@ -17,6 +17,8 @@
 #   ./Run-full-test-suite.sh --version 0.50.0    # a specific release, for bisecting
 #   ./Run-full-test-suite.sh --version tree      # this working checkout
 #   ./Run-full-test-suite.sh --layers 2,2ro      # just these layers
+#   ./Run-full-test-suite.sh --folder <id|url>   # create test files in THIS Drive folder
+#                                                # (default: a dated folder, trashed after)
 #   ./Run-full-test-suite.sh --ai                # machine-readable timestamped output
 #   ./Run-full-test-suite.sh --claude            # hand the results to Claude Code to triage
 #
@@ -117,6 +119,7 @@ while [[ $# -gt 0 ]]; do
         --claude)   LAUNCH_CLAUDE=true; shift ;;
         --version)  VERSION_SPEC="$2"; shift 2 ;;
         --layers)   LAYERS="$2"; shift 2 ;;
+        --folder)   export CSA_GW_TEST_FOLDER="$2"; shift 2 ;;
         --help|-h)
             sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -248,13 +251,23 @@ fi
 # =====================================================================
 # Reinstall when the target differs from what is installed — which is also what makes a
 # nightly run pick up a release cut since yesterday, without anyone passing --setup.
-INSTALLED=""
-[[ -x "$RIG_VENV/bin/python" ]] && INSTALLED="$("$RIG_VENV/bin/python" -c \
-    'import csa_google_workspace as w; print(w.__version__)' 2>/dev/null || true)"
+# Compare the version AND the KIND of install. They are separate questions and the version
+# alone is not enough: a checkout and the wheel built from it share a version number, so
+# switching to --version tree against a matching wheel would skip the reinstall entirely and
+# the import assertion below would (correctly) refuse the run. Caught by that assertion.
+INSTALLED="" ; INSTALLED_MODE=""
+if [[ -x "$RIG_VENV/bin/python" ]]; then
+    INSTALLED="$("$RIG_VENV/bin/python" -c \
+        'import csa_google_workspace as w; print(w.__version__)' 2>/dev/null || true)"
+    INSTALLED_MODE="$("$RIG_VENV/bin/python" -c \
+        'import csa_google_workspace as w; print("wheel" if "site-packages" in w.__file__ else "tree")' \
+        2>/dev/null || true)"
+fi
+[[ "$VERSION_SPEC" == "tree" ]] && WANT_MODE=tree || WANT_MODE=wheel
 
-if $SETUP || [[ "$INSTALLED" != "$VERSION" ]]; then
+if $SETUP || [[ "$INSTALLED" != "$VERSION" || "$INSTALLED_MODE" != "$WANT_MODE" ]]; then
     step "Installing the artifact under test..."
-    [[ -n "$INSTALLED" ]] && info "installed: $INSTALLED -> wanted: $VERSION"
+    [[ -n "$INSTALLED" ]] && info "installed: $INSTALLED ($INSTALLED_MODE) -> wanted: $VERSION ($WANT_MODE)"
 
     rm -rf "$RIG_VENV"
     python3 -m venv "$RIG_VENV"
@@ -401,6 +414,15 @@ else
     info "  CSA_GW_READ_ONLY=1 csa-google-workspace-mcp login"
 fi
 
+# Where the live layers will create files. Loose in My Drive root is the wrong answer for
+# something running unattended; the suite defaults to a dated folder it removes afterwards.
+if [[ -n "$CSA_GW_TEST_FOLDER" ]]; then
+    pass "test files -> your folder $CSA_GW_TEST_FOLDER (kept, never trashed by a run)"
+else
+    info "test files -> a dated folder, created per run and trashed at the end"
+    info "  --folder <id|url> to use a standing folder you can inspect instead"
+fi
+
 echo ""
 if ! $PREREQ_OK; then
     if $AI_MODE; then echo "[$(timestamp)] COMPLETE: prerequisites missing"; else
@@ -444,6 +466,7 @@ run_layer 1 "offline unit suite" \
 if $CREDS_RW_OK; then
     run_layer 2 "live integration suite — FULL READ/WRITE" \
         env CSA_GW_INTEGRATION=1 CSA_GW_CLIENT_SECRETS="$CLIENT_SECRETS" \
+        CSA_GW_TEST_FOLDER="$CSA_GW_TEST_FOLDER" \
         "$PY_BIN" -m pytest -q -o pythonpath= tests/integration/
 else
     wants 2 && { warn "L2 skipped — no live read-write token"; RESULTS+=("L2 SKIP"); }
