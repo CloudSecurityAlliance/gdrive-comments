@@ -231,6 +231,33 @@ around it quietly.
 
 ## Working in this repo
 
+- **EVERY ISSUE GETS A WRITTEN REPLY ON THE ISSUE — fixed, not fixed, or answered.** Adopted
+  2026-09-04 (CINO). A commit message is found by somebody already in the code; **an issue is
+  found by somebody who has the problem**, and that is a different person. Closing an issue
+  with a bare merge throws away the reasoning at exactly the point it becomes reusable.
+
+  What a proper reply carries:
+  - **What changed, and where** — the PR, the release, and a link somebody can install.
+  - **Verified how.** *"Shipped"* is a claim; *"verified from a clean venv against the
+    published wheel, here is the output"* is a fact. Prefer the second.
+  - **What was NOT done, and why** — as its own paragraph, not an omission. #421 asked for four
+    things and got three; the fourth was declined on a shape argument, and saying so kept it a
+    live option instead of an oversight.
+  - **The reasoning, when it is the valuable part.** #421 asked *"is the difference
+    deliberate?"* and the useful answer was that there were **two** renderings, not the three
+    they saw — which changed their fix from normalisation to using a different call. The
+    finding was worth more than the patch.
+  - **A correction, if the issue's premise or an earlier reply was wrong** — including one of
+    ours. #413 claimed *"nothing in this repository mentions"* the approvals resource; it was
+    in a research file, in a row calling it the most interesting thing in the document. That
+    correction is on the issue, because the wrong version is what a reader finds first.
+  - **What the reporter got right.** *"It passed 774 unit tests, because those compared our own
+    text against our own text"* named a failure, its cost, and why a suite could not catch it.
+    Say when a report does that; it is how you get more of them.
+
+  Do this for issues **we** file too — an audit finding, a probe result, a decision. The chain
+  of evidence is the point, and a self-filed issue with no outcome recorded is the same dead end
+  as an unanswered one.
 - **Branch + PR for every change** (never commit to `main`); merge when CI is green. Branch names use conventional prefixes (`feat/`, `fix/`, `docs/`, `chore/`).
 - **Commits** use conventional prefixes with short imperative subjects — the set actually in use is `docs:` · `feat:` · `fix:` · `test:` · `ci:` · `chore:` · `security:` · `enh:` · `release:` (e.g. `fix: preserve deleted comment metadata`). A PR body should say what behavior changed, which tests were run, link the related plan/spec, and call out any Google API or credential implications.
 - **Public API is the package root.** Anything users are meant to touch is re-exported from `csa_google_workspace/__init__.py` and listed in `__all__` — including the types embedders need for custom backends (`Backend`, `Document`, `CommentCollection`, `DetachedError`). Adding a user-facing type means adding it there. Note that `tests/test_public_api.py` only asserts a required **subset** of `__all__` — it will not catch a new type you forgot to export, so that step is on you.
