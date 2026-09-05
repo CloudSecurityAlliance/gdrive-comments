@@ -469,6 +469,30 @@ vacuous for a document anyone has been working in. So the snapshot decision is n
 optimisation for exactness — **it is the whole feature**, and there is no version of this that
 rests on Drive's history.
 
+### The conformance rig — a dedicated machine, agreed 2026-09-05
+
+Spec: [`docs/superpowers/specs/2026-09-05-conformance-rig.md`](docs/superpowers/specs/2026-09-05-conformance-rig.md).
+
+**Why it is now a priority rather than a nice-to-have:** every comment write was broken from
+v0.47.0 to v0.51.0 — five releases, green CI throughout, because `FakeBackend` does not validate
+field masks. `tests/integration/` would have caught it on its first test and had not been run in
+five releases, because running it needs a browser login, a real Drive and a human to opt in.
+
+Kurt is standing up a dedicated Mac. What it must do, in order: install **the latest PyPI
+release** into a clean venv, **prove it is testing that wheel and not a checkout** (§3 — the
+non-obvious part), run the live layers, and file **one deduplicated, redacted issue** per genuine
+failure.
+
+**Default posture is full read/write**, plus a separate layer (§5a) that proves the read-only
+posture is refused **by Google** rather than by our own client guard. Nothing today tests that:
+`tests/oauth/` covers read-only and its own docstring says it blocks writes *"at the client
+guard"*, and #327 is the proof that this is not hypothetical — `has_write_scope` once accepted a
+token carrying `drive.file` as read-only.
+
+To build: `scripts/conformance.py`, the output redaction pass, the issue filer, **L2-RO**, the L7
+editor layer, and `launchd` scheduling. The individual layers already run by hand today — §9 lists the
+commands, and L3/L4 were verified on 2026-09-05.
+
 ### Parked
 
 - **#297** prompt-injection research — got a real down payment in #312 (control-sequence
