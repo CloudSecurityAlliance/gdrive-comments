@@ -61,6 +61,9 @@ TOOL_CAPABILITIES: dict[str, str | None] = {
     "list_protected_ranges": None,
     "get_file_restrictions": None,
     "get_shared_drive": None,
+    # A read of THIS SERVER'S OWN SHAPE - no Google call at all, so not even a file is
+    # touched. It exists so a consumer can stop diffing payloads to learn the contract.
+    "describe_output_contract": None,
     "export_comments": None,
     # Also `None`, for the same reason and with the same lossiness: reading is ungated,
     # but destination="sheet" creates a Drive file and so needs `file.create`. A

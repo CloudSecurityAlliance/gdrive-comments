@@ -13,6 +13,7 @@ import re
 import sys
 from typing import Any
 
+from .. import _context, _export
 from ..comments import ANCHOR_FILE
 from . import _untrusted
 
@@ -240,6 +241,20 @@ class NoteOut(TypedDict):
     tab: str
     cell: str
     text: str
+
+
+class ContractOut(TypedDict):
+    version: str
+    context_kinds: list[str]
+    context_kinds_extensible: bool
+    context_kinds_added_in: dict[str, str]
+    anchor_states: list[str]
+    export_columns_reported: list[str]
+    export_columns_fillable: list[str]
+    export_columns_added_in: dict[str, str]
+    selection_markers: dict[str, str]
+    renderings: dict[str, str]
+    detail: str
 
 
 class ProtectedRangeOut(TypedDict):
@@ -689,7 +704,7 @@ def inventory_out(inv: Any, *, destination: str) -> InventoryOut:
             "detail": ""}
 
 
-def context_out(ctx: Any) -> ContextOut | None:
+def context_out(ctx: Any, markers: bool = True) -> ContextOut | None:
     """A context that was ASKED FOR always explains itself, so `null` means only "not asked".
 
     This used to pass `None` straight through, reasoning that a comment with no quoted text has
@@ -704,11 +719,81 @@ def context_out(ctx: Any) -> ContextOut | None:
     """
     if ctx is None:
         return None
-    return {"text": ctx.text, "kind": ctx.kind, "note": ctx.note,
+    text = ctx.text
+    if not markers:
+        # #421: the markers are for a HUMAN reading a register. A consumer matching on text
+        # has to strip them, and 60 of 76 honest quotes read as fabrications when somebody
+        # did not know they were there. Stripped at the boundary so the caller never has to
+        # know the characters - knowing them is the thing that was hard to discover.
+        text = text.replace(_context.OPEN, "").replace(_context.CLOSE, "")
+    return {"text": text, "kind": ctx.kind, "note": ctx.note,
             "paragraph_index": ctx.paragraph_index, "paragraph_total": ctx.paragraph_total,
             "heading_path": list(ctx.heading_path), "truncated": ctx.truncated,
             "candidates": [{"paragraph_index": i, "heading_path": list(p)}
                            for i, p in ctx.candidates]}
+
+
+# WHEN each member arrived. Hand-maintained, and the only hand-maintained thing here - the
+# members themselves are derived from the constants, so this maps them to a release rather than
+# restating them. A consumer pinning a contract needs the DATE of a change, not just its
+# presence: "did this appear after the version I tested against?" is the question.
+# `tests/test_output_contract.py` fails if a member exists with no entry here.
+CONTEXT_KIND_ADDED_IN = {
+    "paragraph": "0.41.0", "paragraphs": "0.41.0", "heading_and_following": "0.41.0",
+    "table": "0.41.0", "table_row": "0.41.0", "nearest_text": "0.41.0",
+    "not_found": "0.41.0", "ambiguous": "0.41.0",
+    "no_quote": "0.44.0", "unsupported": "0.44.0",
+    "spanning": "0.48.0",
+}
+EXPORT_COLUMN_ADDED_IN = {
+    "anchor_state": "0.43.0", "assigned_to": "0.47.0", "mentions": "0.47.0",
+}
+
+# WHICH TEXT each surface returns, because a consumer comparing one against another needs to
+# know they are not interchangeable - and the answer is less alarming than it looks: there are
+# TWO renderings, not three. `read_file_content` and `context` are the SAME one.
+RENDERINGS = {
+    "read_file_content":
+        "docs-api-text: the Docs API's structured content walked and concatenated. No escaping, "
+        "no emphasis markers.",
+    "export_comments.context / list_comments(context=true).context":
+        "docs-api-text PLUS the selection markers - the SAME rendering as read_file_content. "
+        "Strip the two markers and it is a literal substring of it.",
+    "download_file_content(exportMimeType='text/markdown')":
+        "drive-export-markdown: Drive's own converter. DIFFERENT - it escapes punctuation "
+        "(`=` becomes `\\=`) and adds emphasis markers. Do not compare this against the other "
+        "two without normalising.",
+}
+
+
+def contract_out(version: str) -> ContractOut:
+    """What shape this server's results take — readable at runtime rather than diffed.
+
+    #422: a consumer pinned a contract file and it went stale in four days — one vocabulary
+    member and two columns. Their refresh was "diff two real payloads and look carefully",
+    which only catches a change after it has landed. This is the same information, asked for.
+    """
+    from ..comments import ANCHOR_STATES
+    return {
+        "version": version,
+        "context_kinds": sorted(_context.KINDS),
+        "context_kinds_extensible": True,
+        "context_kinds_added_in": dict(CONTEXT_KIND_ADDED_IN),
+        "anchor_states": sorted(ANCHOR_STATES),
+        "export_columns_reported": list(_export.REPORTED),
+        "export_columns_fillable": list(_export.ACTIONS) + list(_export.COMPLETED),
+        "export_columns_added_in": dict(EXPORT_COLUMN_ADDED_IN),
+        "selection_markers": {"open": _context.OPEN, "close": _context.CLOSE,
+                              "appears_in": "context only"},
+        "renderings": dict(RENDERINGS),
+        "detail": (
+            f"context_kind is an OPEN vocabulary with {len(_context.KINDS)} members today and "
+            f"it WILL gain more - `spanning` arrived in 0.48.0 because a quote crossing a "
+            f"paragraph boundary was being reported as absent from its own document. Degrade "
+            f"on an unrecognised value rather than raising, or re-read this before upgrading. "
+            f"The export column set grows the same way. And there are TWO text renderings, not "
+            f"three: read_file_content and context are the same one."),
+    }
 
 
 def protected_ranges_out(file_id: str, ranges: list) -> ProtectedRangesOut:

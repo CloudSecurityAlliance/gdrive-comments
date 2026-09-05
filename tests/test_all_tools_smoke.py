@@ -51,6 +51,7 @@ ARGS: dict[str, dict] = {
     "comments_by_cell":      {"fileId": SHEET, "cell": "A1"},
     "list_suggestions":      {"fileId": DOC},
     "list_notes":            {"fileId": SHEET},
+    "describe_output_contract": {},
     "list_protected_ranges": {"fileId": SHEET},
     "get_file_restrictions": {"fileId": DOC},
     # A drive id the fixture does not seed, so this exercises the NOT-FOUND path - which is the
