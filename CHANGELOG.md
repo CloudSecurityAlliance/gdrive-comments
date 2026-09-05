@@ -10,6 +10,76 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-05 — v0.51.0 (a too-long comment is not a permission problem) — not released *(yet — flipped once PyPI confirms)*
+
+**CONSUMERS: a 403 you used to catch as `AccessError` may now arrive as `InvalidInputError`.**
+That is the only behavioural change, and it is a narrowing rather than a new failure — nothing
+that used to succeed now fails.
+
+### `InvalidInputError` — because Google files "your payload is wrong" under 403
+
+Measured while writing documentation into a comment: Drive caps comment content at **4096 UTF-8
+bytes** and refuses a longer one with `403 commentLengthLimitExceeded`. Every other 403 this
+library sees means *permission*, so that landed in the `AccessError` catch-all — and an embedder
+catching `AccessError` does the wrong thing twice: it tells the user they cannot access a file
+they can plainly edit, and it may re-run the OAuth flow to fix something **no credential can
+fix**. The remedy is to send less text, so the type now says so.
+
+The limit is in **UTF-8 bytes, not characters**, so a comment of emoji or CJK text hits it at
+roughly a quarter of the length an ASCII one does. Google's own message is preserved in
+`str(e)`, because it states the live limit where anything hard-coded here states the limit as it
+was on the day somebody measured it.
+
+`_INPUT_REFUSED` is a frozenset with one measured member rather than an equality check, because
+the next member is a matter of time — and it takes only reasons that are **always** about the
+payload. A reason that is sometimes about permission belongs in the `AccessError` branch, where
+being wrong is the safe direction.
+
+### Slides comments were never probed, and Slides turns out to be the exception (#400)
+
+Six comments placed by hand through the editor on every target a deck has — the slide, a shape,
+text inside that shape, a shape with no text, a table cell, the speaker notes — then read back
+raw. Full transcript in [`experiments/slides-anchors/`](experiments/slides-anchors/RESULTS.md).
+
+**A Slides anchor is readable, and it is the only one that is.** Docs anchors are opaque `kix.*`
+ids and Sheets `range`s are opaque internal ids; a Slides anchor is plain JSON naming object ids
+that appear verbatim in `presentations.get`. So a Slides comment resolves to its element with a
+JSON parse and one call, where Docs needs a quoted-text search and Sheets an XLSX export. This
+project had generalised the opaque-anchor rule from two editors to three.
+
+**`page` names the SLIDE, not the page the target lives on.** A speaker-notes comment reports
+`page: "p"` while targeting an element of `p:notes`. The field that looks like it answers *where
+is this* reports a note about the narration as a note about the deck, and only resolving
+`targets` tells them apart. Same failure shape as invariant 9: present, plausible, and wrong in a
+direction nothing checks.
+
+Also measured, and each corrects something stated more broadly than it was ever tested:
+
+- **`subtype: "text"` appears exactly when quoted text does**, so the four-state model does hold
+  on a third editor — `anchor_state` has been reporting truth for decks, it was just never checked.
+- **Selecting a shape does not give you an object anchor if the shape has text** — Slides anchors
+  to the word under the cursor, the same family as the Docs caret-to-word behaviour. The `object`
+  state is reachable only through an element with nothing to quote.
+- **A table cell anchors to the TABLE**, with no row or column anywhere.
+- **The Slides editor does not orphan an API-created comment.** *"It renders as Original content
+  deleted"* is a **Docs** statement; this repository had recorded it as a Workspace one.
+
+### The specimen corpus was describing itself wrongly
+
+The zoo's provenance block was Docs prose applied verbatim to every specimen: it told a reader of
+the deck that its body came from `documents.batchUpdate` and that a rewrite would break its
+anchors by *"shifting every character index"* — when a Slides anchor names object ids and carries
+no index, and when **a Docs anchor carries no character index either**, which is this project's
+own headline finding. The conclusion was right and the stated reason contradicted the measurement.
+
+`body()` now takes an `axis`, and `AXES` carries per-editor wording for what wrote the file, what
+a comment attaches to, what a rewrite costs, and how that editor renders an API-created comment.
+A typo raises `KeyError`; silently falling back to the Docs wording is the defect being fixed.
+
+The deck's documentation moved to **README slides** — a file-level comment cannot hold it (see
+above), and it is **paginated**, because Slides does not clip overflow. It draws it outside the
+slide, so one long README looks right in the editor and loses its last third everywhere else.
+
 ## 2026-09-04 — v0.50.0 (the output contract is legible)
 
 **CONSUMERS: `context_kind` and `anchor_state` are OPEN vocabularies and WILL gain members.

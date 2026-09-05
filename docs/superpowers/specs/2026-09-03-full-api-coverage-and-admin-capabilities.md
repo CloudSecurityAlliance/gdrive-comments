@@ -195,7 +195,7 @@ silently absent. Register, from measurements already in this repository:
 
 | UI-only capability | measured | why it matters here |
 |---|---|---|
-| **Minting a real comment anchor** | 2026-07-09, 2026-09-03 | The big one. An API-supplied anchor is stored verbatim and then treated as un-anchored; only the editor produces one that works. Every comment this library creates therefore renders as *"Original content deleted"*, shows no quote, and is filtered from the default sidebar. **But**: a real `kix.*` anchor *reused* from an existing comment IS honoured — so this is partially reachable. |
+| **Minting a real comment anchor** | 2026-07-09, 2026-09-03 | The big one. An API-supplied anchor is stored verbatim and then treated as un-anchored; only the editor produces one that works. Every comment this library creates therefore renders as *"Original content deleted"*, shows no quote, and is filtered from the default sidebar — **in Docs**; the Slides editor shows the same comment normally (measured 2026-09-05, `experiments/slides-anchors/` §7). **But**: a real `kix.*` anchor *reused* from an existing comment IS honoured — so this is partially reachable. |
 | **Assigning a comment** | 2026-09-03 | `comments.create` accepts `assigneeEmailAddress`, returns 200, and **stores nothing**. An action item — the one comment state carrying an obligation — can be read but not created. |
 | **Commenting on an image or other non-text object** | 2026-09-02 | The `object` anchor state is editor-only. |
 | **Accept / reject a suggestion** | 2026-09-02 | Not on the GA API; exists in Developer Preview, so gated rather than impossible. |

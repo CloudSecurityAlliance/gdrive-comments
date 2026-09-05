@@ -1230,13 +1230,23 @@ sourced, and the long version lives in
 in [`experiments/`](./experiments/). Where Google's documentation and a probe disagree, the probe
 wins.
 
-### The anchor is a key, not a coordinate
+### The anchor is a key, not a coordinate — except on Slides
 
-An anchor tells you *that* a comment is attached to something. It does not tell you **where**.
+On two of the three editors an anchor tells you *that* a comment is attached to something,
+without telling you **where**. On the third it tells you exactly where, and that asymmetry is
+easy to miss because the field has one name.
 
 - **Docs**: `kix.ce7ypxwipivp` — an opaque id, not JSON, carrying no position (measured 2026-09-02)
 - **Sheets**: `{"type":"workbook-range","uid":0,"range":"1453957822"}` — structured, but `range` is
   an opaque internal id and **not** decodable to `B11` (measured 2026-07-09)
+- **Slides**: `{"type":"shape","subtype":"text","page":"p","targets":["zooShape1"]}` — **resolvable.**
+  `targets` names real object ids that appear verbatim in `presentations.get` (measured 2026-09-05)
+
+Two traps in the Slides one, both measured. **`page` names the SLIDE, not the page the target
+lives on** — a comment on the speaker notes still reports `"page": "p"`, and only resolving
+`targets` reveals it belongs to `p:notes`, so code that trusts `page` reports a note about the
+narration as a note about the deck. And **a comment in a table cell anchors to the table**, with
+no row or column anywhere; the quoted word is the only cell-level signal there is.
 
 **Google's own published example does not match what the editors produce.** The guide shows
 `{"region": {"kind": "drive#commentRegion", "line": <n>, "rev": "head"}}` — a real position. No UI

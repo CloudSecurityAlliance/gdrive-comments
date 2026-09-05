@@ -63,7 +63,8 @@ all rejected as *unknown fields*, identically to a made-up control.
 | **The `object` state needs no image** — anchoring to any non-textual part of a page gives an anchor with no quoted text | MEASURED 2026-09-03 | `experiments/zoo/` |
 | The editor CAN be driven by automation; canvas rendering does not prevent it | MEASURED 2026-09-03 | `zoo/AUTOMATING-THE-EDITOR.md` — the recipe, and the `aria-disabled` selection oracle |
 | Editor-created comment carries **both** anchor and quoted text | MEASURED 2026-07-20, again 2026-09-03 | `docs-suggestions/`, `api-created-comment-states/` |
-| An API-created comment renders as **"Original content deleted"** | MEASURED 2026-09-03 | `api-created-comment-states/` |
+| An API-created comment renders as **"Original content deleted"** — **in the DOCS editor** | MEASURED 2026-09-03 | `api-created-comment-states/` |
+| The **SLIDES** editor renders the same comment normally, with no orphan treatment | MEASURED 2026-09-05 | `slides-anchors/` §7 — so this is a Docs statement, not a Workspace one |
 | Those comments are **filtered out of the default sidebar** — visible only under "show all comments", and leave no marker in the body | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | A comment reusing a **real** `kix.*` anchor renders as properly anchored | MEASURED 2026-09-03 | `api-created-comment-states/` |
 | `quotedFileContent` is displayed **verbatim** beside a valid anchor, unvalidated | MEASURED 2026-09-03 | `api-created-comment-states/` |
@@ -99,7 +100,11 @@ all rejected as *unknown fields*, identically to a made-up control.
 | Sheets comment → cell needs the XLSX-export detour, incl. the three-hop rels walk | MEASURED 2026-07-21 | `sheets-cellmap/`, `_cellmap.py` |
 | **An UNQUALIFIED A1 range reads the FIRST tab — so inserting a tab at index 0 silently changes what every unqualified read returns** | MEASURED 2026-09-03 | `experiments/zoo/` — found when a README tab added at index 0 made a verifier read the documentation and report the data missing |
 | Notes are not comments: a file with a note returns **zero** comments | MEASURED 2026-09-02 | `docs-anchor-states/probe_notes.py` |
-| What a **comment on a Slides shape / slide / speaker notes** looks like | **UNKNOWN** | never probed |
+| What a **comment on a Slides shape / slide / speaker notes / table cell** looks like | MEASURED 2026-09-05 | `slides-anchors/` — #400 |
+| **A Slides anchor is RESOLVABLE** — `targets` names real API object ids, unlike Docs and Sheets | MEASURED 2026-09-05 | ditto §1 |
+| **A Slides anchor's `page` names the SLIDE even for a speaker-notes comment** — only `targets` tells them apart | MEASURED 2026-09-05 | ditto §2 |
+| A Slides table-cell comment anchors to the **table**, with no row/column | MEASURED 2026-09-05 | ditto §5 |
+| The Slides editor does **not** orphan an API-created comment, though the Docs editor does | MEASURED 2026-09-05 | ditto §7 |
 | Whether a Drive-API comment can be **assigned** at create | **UNKNOWN** | — |
 | Rate limits and pagination behaviour at scale (hundreds of threads) | **UNKNOWN** | consumer reports 90 threads working |
 
@@ -147,9 +152,15 @@ intending to; if it does not, humans may never learn the comments exist — whic
 "Original content deleted" finding, since they are filtered from the default view as well. Testable
 with a second account.
 
-**4. Slides comments have never been probed at all.** We support them through the uniform Drive
-axis and have never looked at what an anchor on a shape, a slide or speaker notes actually
-contains.
+*(**4. Slides comments have never been probed at all.** — closed 2026-09-05 by
+[`slides-anchors/`](../experiments/slides-anchors/RESULTS.md), #400. The four-state model held;
+what it found instead was that a Slides anchor is the one that is **readable**, and that its
+`page` field names the slide even when the comment is on the speaker notes.)*
+
+**4. Which element tree a Slides comment belongs to is not in the anchor.** Resolving `targets`
+against `presentations.get` is the only way to tell a speaker-notes comment from a slide-body
+one, and the library does not do it — `anchor_state` collapses "the whole slide" and "that one
+ellipse" into the same `object`.
 
 **5. Scale.** Everything measured here is on documents of tens of comments. A consumer has run 90
 threads. Pagination, rate limits and the XLSX detour's cost at hundreds are unmeasured.

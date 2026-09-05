@@ -27,41 +27,109 @@ Everything in it is synthetic. There is no real content here and there never sho
 Maintained by CSA's CINO office. If something here is wrong, that is a finding: please say so."""
 
 
+# Per-axis, because this block was found on 2026-09-05 to be Docs prose applied verbatim to a
+# spreadsheet and a deck: it told a reader of the deck that its body came from
+# `documents.batchUpdate` and that its anchors were character-indexed, when a Slides anchor
+# names object ids and survives a text change (`experiments/slides-anchors/`). A specimen whose
+# whole purpose is to describe itself accurately is the worst possible place for boilerplate.
+#
+# The `orphans` field is per-axis for the same reason and it is NOT cosmetic: the Docs editor
+# renders an API-created comment as "Original content deleted" and the Slides editor does not,
+# so the sentence telling a reader "if it looks broken, that is the specimen working" is only
+# true on one of them.
+AXES: dict[str, dict[str, str]] = {
+    "docs": dict(
+        apis="Drive and Docs",
+        written=("The body you are reading was written by one `documents.batchUpdate` — a single "
+                 "`insertText` at index 1, then `updateParagraphStyle` on each heading. Nothing "
+                 "was typed by hand."),
+        attached=("A comment here is attached to a RANGE OF TEXT, addressed by an opaque `kix.*` "
+                  "id that carries no position of its own."),
+        rewrite=("Replacing this text destroys the ranges those ids resolve to, so every "
+                 "hand-placed comment on the file is orphaned."),
+        editor="Google Docs editor",
+        orphans=("so it renders in the sidebar as \"Original content deleted\", shows no quoted "
+                 "text, draws no marker in the document body, and is filtered out of the default "
+                 "sidebar view"),
+    ),
+    "sheets": dict(
+        apis="Drive and Sheets",
+        written=("The tabs you are reading were written by `spreadsheets.values.update`. Nothing "
+                 "was typed by hand."),
+        attached=("A comment here is attached to a CELL, addressed by an opaque `workbook-range` "
+                  "id that cannot be decoded to A1 — recovering the cell needs an XLSX export."),
+        rewrite=("Rewriting a cell's value leaves the comment on the cell and makes its quoted "
+                 "text stale, which is a quieter kind of wrong than an orphan."),
+        editor="Google Sheets editor",
+        orphans=("so it does not anchor to a cell: the editor treats it as a comment on the "
+                 "whole file"),
+    ),
+    "slides": dict(
+        apis="Drive and Slides",
+        written=("The slide you are reading was built by `presentations.batchUpdate` — "
+                 "`createShape`, `createTable` and `insertText`. Nothing was typed by hand."),
+        attached=("A comment here is attached to a PAGE ELEMENT BY OBJECT ID — `targets` names "
+                  "ids that appear verbatim in `presentations.get`. Slides is the only one of "
+                  "the three editors whose anchors are readable (measured 2026-09-05)."),
+        rewrite=("Because the anchor names the object rather than the text, changing a shape's "
+                 "text keeps the comment attached and only makes its quote stale; DELETING the "
+                 "shape is what orphans it."),
+        editor="Google Slides editor",
+        orphans=("but on this editor that is nearly invisible: the Slides sidebar shows an "
+                 "API-created comment normally, with no \"Original content deleted\" banner — "
+                 "the opposite of what the Docs editor does"),
+    ),
+}
+
 PROVENANCE = """HOW THIS FILE WAS MADE
 Created {date} by `experiments/zoo/build.py` in the csa-google-workspace repository, running as
-an ordinary user against the live Drive, Docs and Sheets APIs. Re-running that script finds this
-file by name and leaves it alone; only `--rewrite` replaces this text, and doing so shifts every
-character index and therefore breaks every hand-placed anchor on the file.
+an ordinary user against the live {apis} APIs. Re-running that script finds this file by name
+and leaves it alone; only `--rewrite` replaces this text.
 
-The body you are reading was written by one `documents.batchUpdate` — a single `insertText` at
-index 1, then `updateParagraphStyle` on each heading. Nothing was typed by hand.
+{written}
+
+WHAT A COMMENT HERE IS ATTACHED TO, AND WHAT A REWRITE COSTS
+{attached}
+{rewrite}
 
 WHICH COMMENTS CAME FROM WHERE, AND WHY IT MATTERS
 Comments labelled A, B and C were created through the **Drive API** (`comments.create`). Any
-other comment on this file was placed **by a human in the Google Docs editor**.
+other comment on this file was placed **by a human in the {editor}**.
 
 That distinction is not bookkeeping — it is the finding. An API-created comment cannot carry a
 real anchor: Drive stores whatever anchor you send and the editors then treat the comment as
-un-anchored, so it renders in the sidebar as "Original content deleted", shows no quoted text,
-draws no marker in the document body, and is filtered out of the default sidebar view. Only the
-editor mints an anchor that works. So if a comment here looks broken, check its label first: an
-A/B/C comment looking broken is the specimen working."""
+un-anchored, {orphans}. Only the editor mints an anchor that works. So if a comment here looks
+broken, check its label first: an A/B/C comment looking broken is the specimen working."""
 
 
 def body(title: str, what: str, why: str, look: list[str], by_hand: list[str],
-         material: list[str], date: str) -> str:
+         material: list[str], date: str, axis: str = "docs",
+         placed: list[str] | None = None) -> str:
     """Assemble one specimen's text. Plain paragraphs; headings are styled afterwards.
 
     Order is deliberate: what it is, why it exists, what to look at, **how it was made**, what
     is still missing, then the material. Provenance sits before the material because a reader
     who has not yet learned that A/B/C are API-created will misread the sidebar.
+
+    `axis` selects the provenance wording — see `AXES`. It defaults to `"docs"` only because
+    that is what the Docs specimens pass; a caller building a Sheet or a deck MUST pass its own,
+    and `AXES[axis]` raising a `KeyError` on a typo is deliberate. Silently falling back to the
+    Docs wording is exactly the defect this parameter was introduced to fix.
     """
     parts = [HEADER.format(title=title), "", "WHAT THIS IS", what, "",
              "WHY IT EXISTS", why, "", "WHAT TO LOOK AT"]
     parts += [f"{i}. {line}" for i, line in enumerate(look, 1)]
-    parts += ["", PROVENANCE.format(date=date), "", "STILL TO BE PLACED BY HAND"]
-    parts += ([f"- {line}" for line in by_hand] if by_hand
-              else ["Nothing. Every comment on this file was created through the API."])
+    parts += ["", PROVENANCE.format(date=date, **AXES[axis])]
+    # A specimen whose hand-placements are DONE is a record, not a to-do, and saying "still to
+    # be placed" over six comments that are visibly already there is the specimen contradicting
+    # itself in front of the reader. `placed` is how a finished one says what was found.
+    if placed:
+        parts += ["", "WHAT THE HAND-PLACED COMMENTS FOUND"]
+        parts += [f"- {line}" for line in placed]
+    if by_hand or not placed:
+        parts += ["", "STILL TO BE PLACED BY HAND"]
+        parts += ([f"- {line}" for line in by_hand] if by_hand
+                  else ["Nothing. Every comment on this file was created through the API."])
     parts += ["", "MATERIAL TO ANCHOR AGAINST"]
     parts += material
     parts += ["", FOOTER]
@@ -282,22 +350,42 @@ SHEET_SPECIMENS: dict[str, dict] = {
 
 SLIDE_SPECIMENS: dict[str, dict] = {
     "slides-comments": dict(
-        title="comments on a deck - never before probed",
-        what=("A three-slide deck with a shape, text inside the shape, and speaker notes, so a "
-              "comment can be placed on each and the anchor compared."),
-        why=("**Nothing in this project has ever looked at what a Slides comment contains.** "
-             "We support them through the uniform Drive axis and everything said about them is "
-             "generalised from the Docs and Sheets measurements - which is precisely the "
-             "reasoning that produced a three-anchor-state table that turned out to have four "
-             "members. Docs anchors are `kix.*`, Sheets are `workbook-range`; Slides is a third "
-             "addressing model and no one here has seen one."),
-        look=["A comment on the slide itself.",
-              "A comment on a shape.",
-              "A comment on text INSIDE a shape - does it carry quoted text?",
-              "A comment on the speaker notes, which are a separate element tree."],
-        by_hand=["All four. Only the editor anchors a comment, and this is the whole point of "
-                 "the specimen: place one on the slide, one on the shape, one on text inside "
-                 "the shape, and one on the speaker notes, then we read the raw anchors and "
-                 "find out what a Slides anchor actually looks like."],
-        material=["(the deck is the material - see the slides)"]),
+        title="comments on a deck - the one anchor you can actually read",
+        what=("One slide carrying a text shape (zooShape1), a shape with no text at all "
+              "(zooNoText), a 2x2 table (zooTable) and speaker notes - so a comment can be "
+              "placed on each kind of target and the anchors compared side by side."),
+        why=("This deck was built because **nothing in this project had ever looked at what a "
+             "Slides comment contains.** Everything said about them was generalised from the "
+             "Docs and Sheets measurements - the same reasoning that produced a three-anchor-"
+             "state table which turned out to have four members. Measuring it on 2026-09-05 "
+             "found that Slides is not a third example of the rule, it is the EXCEPTION: Docs "
+             "anchors are opaque `kix.*` ids and Sheets `range`s are opaque internal ids, but a "
+             "Slides anchor names real object ids you can look up."),
+        look=["The anchor on each comment, read through the Drive API. They are plain JSON.",
+              "That `targets` names ids which appear verbatim in `presentations.get` - `p`, "
+              "`zooShape1`, `zooTable`, `zooNoText`, `i3`. No export, no parsing detour.",
+              "That the comment on the SPEAKER NOTES still reports `\"page\": \"p\"`, the slide.",
+              "That the comment in a TABLE CELL names the table and carries no row or column.",
+              "That only the comment on the text-less shape has no quoted text."],
+        placed=["**A Slides anchor is readable.** "
+                "`{\"type\":\"shape\",\"subtype\":\"text\",\"page\":\"p\",\"targets\":"
+                "[\"zooShape1\"]}` - resolvable with a JSON parse and one `presentations.get`.",
+                "**`page` names the SLIDE, not the page the target lives on.** The speaker-notes "
+                "comment targets `i3`, an element of `p:notes`, and still reports `page: p`. "
+                "Code that trusts `page` reports a note about the narration as a note about the "
+                "deck, and nothing looks wrong.",
+                "**`subtype: \"text\"` appears exactly when quoted text does** - so the four "
+                "states (file / object / text / quote-only) do hold here.",
+                "**Selecting a shape does not give you an object anchor if the shape has text.** "
+                "The comment on zooShape1 was placed with the object selected and blue handles "
+                "showing, and Slides anchored it to the word under the cursor anyway. The "
+                "text-less ellipse is the only way to reach an anchored comment with no quote.",
+                "**A table cell anchors to the TABLE.** No row, no column. The quoted word is "
+                "the only cell-level signal, and it is ambiguous the moment it appears twice.",
+                "**The Slides editor does not orphan an API-created comment.** The file-level "
+                "comment you are reading was made through the Drive API and the sidebar shows it "
+                "normally - where the Docs editor would render it as \"Original content "
+                "deleted\". That claim was measured on Docs and is not true of Workspace."],
+        by_hand=[],
+        material=["(the deck is the material - see the slide)"]),
 }
