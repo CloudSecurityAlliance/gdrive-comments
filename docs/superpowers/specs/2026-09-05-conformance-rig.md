@@ -117,7 +117,8 @@ report per night listing everything wrong, not a bisect.
 |---|---|---|---|
 | **L0** | install the wheel into a fresh venv; assert version + import path (§3) | network | 30s |
 | **L1** | the offline unit suite from the matching checkout | — | 1min |
-| **L2** | **`tests/integration/`** — real Google, throwaway files | token, Drive | 2–5min |
+| **L2** | **`tests/integration/`** — real Google, throwaway files, **full read/write** | RW token, Drive | 2–5min |
+| **L2-RO** | **prove read-only IS read-only** — see §5a. A *negative* layer | RO token, Drive | 1min |
 | **L3** | `scripts/mcp_smoke.py` — the MCP server starts and answers | — | 30s |
 | **L4** | `experiments/zoo/verify.py` — the specimens still say what the repo claims | token, Drive | 1–2min |
 | **L5** | `csa-google-workspace-mcp demo --auto` — the guided end-to-end | token, Drive | 3–5min |
@@ -139,6 +140,79 @@ argument for the machine being dedicated rather than borrowed.
 an environment-configured share is *refused* rather than performed without a human. An existing
 unattended run keeps working and simply stops sharing. That is the behaviour a rig wants, and it
 means L5 needs no special handling.
+
+## 5a. L2-RO — proving read-only is *in fact* read-only
+
+**The default posture is full read/write** (L2), because that is what most callers run and where
+the bugs are. But read-only is a **claimed security property**, and a claimed property that is
+never adversarially tested is a claim.
+
+### There are three layers of read-only, and they are not equally strong
+
+| # | control | what it proves | survives |
+|---|---|---|---|
+| 1 | **client guard** — `_require_writable()` raises `ReadOnlyError` | *our code declined to try* | nothing; it is our own code |
+| 2 | **token scope** — `CSA_GW_READ_ONLY=1` requests only `.readonly` | **Google refuses the call** | a bug in 1, a bypassed policy, a stolen token |
+| 3 | capability/policy gating | an operator's configured ceiling | — |
+
+**Only #2 is proof.** This is the same asymmetry `restrictions.py` already records: *"Google will
+refuse this" is categorically stronger than "our policy is configured not to."*
+
+### What exists today, and what does not
+
+`tests/oauth/test_oauth_flow.py::test_read_only_oauth_session_reads_but_refuses_writes` covers
+this, and its own docstring is precise about how far: *"blocks writes **at the client guard**."*
+Thirteen offline test files assert `ReadOnlyError` similarly.
+
+**Nothing anywhere has ever confirmed that the read-only token cannot write.** That is layer #2,
+it is the one that matters, and it is untested.
+
+It is not hypothetical. **#327 was exactly this bug**: `has_write_scope` was an allowlist of four
+known write scopes, so a token carrying `drive.file` — a real write scope this project never
+requests — answered `False` and was accepted as read-only. A token that could write, treated as
+one that could not, in the check whose entire job is preventing that. It is now an inverted
+subset check, which is right, and which no live test verifies.
+
+### The test, and it must bypass our own guard on purpose
+
+1. Acquire read-only credentials (`read_only=True`, its own token cache).
+2. **Assert the granted scopes** — `has_write_scope(granted)` is `False`, and every granted scope
+   ends `.readonly`. This is the *configuration* check.
+3. **Read something.** Read-only must still work; a posture that refuses everything is not a
+   passing read-only, it is a broken credential.
+4. **Attempt a real write, going around the client guard deliberately** — straight to the Drive
+   service with those credentials, because `_require_writable()` would otherwise raise first and
+   the call would never reach Google. Going around our own guard is the entire point: the guard
+   is what is *not* being tested here.
+5. **Assert Google refused it** — a 403 on insufficient scopes, not a `ReadOnlyError`. If the
+   exception type is `ReadOnlyError`, the test did not do what it claims and must fail as
+   inconclusive rather than pass.
+6. **Assert nothing was created.** Re-read with the read-write credentials and confirm absence. A
+   403 does not by itself prove no side effect landed, and "the write was refused" and "nothing
+   changed" are different statements.
+
+Step 5's distinction is the one that makes this layer worth having. A test that accepts *either*
+`ReadOnlyError` or a 403 as success silently degrades into layer #1 the moment the guard fires
+first — which is precisely how this property came to be untested in the first place.
+
+### If the write SUCCEEDS
+
+That is a **security finding, not a test failure.** The rig must:
+
+- file at once, labelled as security, and say plainly that a read-only credential performed a
+  write;
+- **not** continue to later layers on that posture;
+- record which scope was granted, since that is the evidence.
+
+It should also clean up what it just wrote — the write succeeding does not make the artefact
+wanted.
+
+### Target
+
+The same throwaway discipline as everywhere else, and stated because this layer is the one
+deliberately *trying* to write: **it attempts its write against a file the rig created for the
+purpose**, never the zoo, never anything cited by id. A read-only conformance check that scribbles
+on the corpus while proving it cannot is the worst possible outcome.
 
 ### L7 must not touch the zoo
 
@@ -183,10 +257,16 @@ session; the API needs a token for the same account.
 - **`CSA_GW_CLIENT_SECRETS`** points at it.
 - **The token cache** — first run opens a browser for consent; after that it is cached and
   unattended runs work.
-- **Two token caches, not one.** Hit on 2026-09-05: `CSA_GW_READ_ONLY=1` uses its **own** cache
-  file, and a read-write token elsewhere does not satisfy it. If the rig exercises both postures
-  it must do the consent dance twice. The error says so plainly, which is why it cost minutes
-  rather than hours — but plan for it.
+- **Two token caches, and BOTH are required.** `CSA_GW_READ_ONLY=1` uses its **own** cache file,
+  and a read-write token elsewhere does not satisfy it (hit on 2026-09-05; the error says so
+  plainly, which is why it cost minutes rather than hours). Since the rig runs L2 read-write
+  *and* L2-RO read-only, **the consent dance happens twice during setup** — once per posture.
+  This is not a gotcha to work around, it is the mechanism that makes L2-RO meaningful: two
+  separate tokens carrying different scopes is exactly the property being tested.
+
+  Setting up read-only deliberately requires a *fresh* consent, not a downgrade of the existing
+  token. If the rig ever finds itself able to satisfy the read-only posture from the read-write
+  cache, that is itself the #327 failure and should be reported, not accommodated.
 
 Never commit any of these. `.gitignore` covers the known shapes (`credentials.json`,
 `token*.json`); the rig's own config should live outside the checkout entirely.
@@ -274,6 +354,20 @@ csa-google-workspace-mcp demo --auto
 CSA_GW_OAUTH=1 CSA_GW_CLIENT_SECRETS=... pytest -o pythonpath= tests/oauth/
 ```
 
+**L2-RO has no command yet.** Nothing in the repository attempts a write with a read-only
+credential and asserts that *Google* refused it — today's coverage stops at the client guard
+(§5a). It is the layer with the least existing code and the most security value, and it is small:
+one test file.
+
+The nearest thing that runs today only demonstrates the gap:
+
+```bash
+# Proves the CLIENT GUARD refuses. Says nothing about whether the TOKEN could write.
+CSA_GW_OAUTH=1 CSA_GW_CLIENT_SECRETS=... \
+    pytest -o pythonpath= tests/oauth/test_oauth_flow.py \
+    -k read_only_oauth_session_reads_but_refuses_writes
+```
+
 Kurt can start running these on the new machine immediately; they are useful before any
 orchestrator exists.
 
@@ -283,10 +377,14 @@ orchestrator exists.
    **assert the import path**, check out the matching tag, run L0–L5, collect results.
 2. **The redaction pass** (§8) — before anything reaches a public issue.
 3. **The issue filer** — fingerprint, dedup against open issues, `gh issue create`/`comment`.
-4. **L7 itself** — the editor-conformance layer. The recipe is written
+4. **L2-RO** (§5a) — the read-only conformance test. Smallest item here and the highest
+   security value: no existing code proves the read-only *token* cannot write, only that our
+   client guard declines to try. Belongs in `tests/integration/` so it runs unattended, not in
+   `tests/oauth/` which needs a human.
+5. **L7 itself** — the editor-conformance layer. The recipe is written
    (`experiments/zoo/AUTOMATING-THE-EDITOR.md`) and proven on ten placements, but there is no
    runner, and it needs the throwaway-file discipline of §5.
-5. **Scheduling** — `launchd` on macOS. Nightly for L0–L5; L7 less often; L6 on demand.
+6. **Scheduling** — `launchd` on macOS. Nightly for L0–L5; L7 less often; L6 on demand.
 
 **Open questions, flagged rather than decided:**
 
@@ -302,5 +400,6 @@ orchestrator exists.
 
 A dedicated Mac, logged in as the account under test, that every night installs **the current
 PyPI release** into a clean venv, proves it is testing that wheel and not a checkout, runs the
-live suites the GitHub runners cannot, and files **one deduplicated, redacted issue** per genuine
-failure.
+live suites the GitHub runners cannot at **full read/write**, then separately proves the
+**read-only posture is refused by Google and not merely by our own guard**, and files **one
+deduplicated, redacted issue** per genuine failure.

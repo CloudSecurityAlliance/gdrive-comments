@@ -483,8 +483,14 @@ release** into a clean venv, **prove it is testing that wheel and not a checkout
 non-obvious part), run the live layers, and file **one deduplicated, redacted issue** per genuine
 failure.
 
-To build: `scripts/conformance.py`, the output redaction pass, the issue filer, the L7 editor
-layer, and `launchd` scheduling. The individual layers already run by hand today — §9 lists the
+**Default posture is full read/write**, plus a separate layer (§5a) that proves the read-only
+posture is refused **by Google** rather than by our own client guard. Nothing today tests that:
+`tests/oauth/` covers read-only and its own docstring says it blocks writes *"at the client
+guard"*, and #327 is the proof that this is not hypothetical — `has_write_scope` once accepted a
+token carrying `drive.file` as read-only.
+
+To build: `scripts/conformance.py`, the output redaction pass, the issue filer, **L2-RO**, the L7
+editor layer, and `launchd` scheduling. The individual layers already run by hand today — §9 lists the
 commands, and L3/L4 were verified on 2026-09-05.
 
 ### Parked
