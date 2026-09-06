@@ -1,8 +1,15 @@
 """Naming of the folder the live suite creates its throwaway files in.
 
-Offline, deliberately: the naming logic is the part that decides *where somebody's Drive gets
-written to*, and it should not need credentials to be checked. The live suite that uses it is
-gated behind `CSA_GW_INTEGRATION=1`; this is not.
+**Offline, and it lives HERE rather than in `tests/` for an import reason worth knowing.**
+`tests/` has no `__init__.py`, so `tests.integration.…` resolves only when the repo root
+happens to be on `sys.path` — true locally, false under CI's invocation, which is where the
+first version of this file died with `ModuleNotFoundError: No module named 'tests'`.
+`tests/integration/` *is* a package, so pytest imports these modules as `integration.<name>`
+and a **relative** import from a sibling always works.
+
+It carries no `CSA_GW_INTEGRATION` gate on purpose: the naming logic is the part that decides
+*where somebody's Drive gets written to*, and it should not need credentials to be checked.
+The live suite beside it stays gated.
 
 **Drive does not enforce unique names.** Creating a folder never overwrites one — it quietly
 makes a second folder with the same name. So the check is not about overwriting. It is about
@@ -14,7 +21,7 @@ from __future__ import annotations
 import datetime
 import re
 
-from tests.integration.test_all_types_live import _folder_named, _free_folder_name
+from .test_all_types_live import _folder_named, _free_folder_name
 
 WHEN = datetime.datetime(2026, 9, 5, 21, 47, tzinfo=datetime.timezone.utc)
 
