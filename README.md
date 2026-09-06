@@ -1395,6 +1395,48 @@ and Slides must be enabled in its Cloud project (a scoped token still 403s until
 enabled). `client_secret.json` and `token*.json` are gitignored — never commit them.
 Releasing is documented in [`RELEASING.md`](./RELEASING.md).
 
+### A dedicated conformance machine
+
+Those two opt-in suites are the ones that catch what CI cannot, and being opt-in is exactly why
+they rot. Every comment write in this library was broken from v0.47.0 to v0.51.0 — five releases,
+green CI throughout — and `tests/integration/` would have caught it on its **first** test. It had
+not been run in five releases, and when it finally was, it turned out to be broken itself.
+
+So there is a rig: a dedicated Mac that installs **the current PyPI release**, proves it is
+testing that wheel and not a checkout, runs the live layers, and files one issue per failure.
+
+```bash
+./Setup-test-machine.sh          # ONCE. checks tooling, installs, and does BOTH Google logins
+./Run-full-test-suite.sh --check # verify without running anything
+./Run-full-test-suite.sh         # the real thing — latest PyPI release, unattended
+```
+
+Three things about it are not obvious, and each is a trap somebody would otherwise hit:
+
+* **It tests the published wheel, not your checkout.** `pyproject.toml` sets
+  `pythonpath = ["src"]`, so a plain `pytest` imports the working tree *even with a wheel
+  installed* — the naive rig reports "tested 0.51.1 from PyPI: PASS" having tested your local
+  edits. Every invocation passes `-o pythonpath=` and the runner **asserts what it imported**
+  before any layer runs.
+* **The live suites are not on PyPI.** The sdist ships the offline tests and neither
+  `tests/integration/` nor `tests/oauth/`, so the rig pairs a PyPI **wheel** with a git
+  **checkout at the matching tag**.
+* **Two Google consents, deliberately.** `CSA_GW_READ_ONLY=1` caches separately and a
+  read-write token does not satisfy it. That separation is the thing the read-only layer tests,
+  so it is the mechanism rather than an inconvenience.
+
+Test files go in `csa-google-workspace-YYYYMMDDHHMM` in My Drive, created fresh per run and
+trashed at the end; `--folder <id|url>` uses a standing folder instead, and a run **never**
+trashes a folder it did not create.
+
+**The claude.ai Google Drive connector is denied for sessions in this repo**
+([`.claude/settings.json`](./.claude/settings.json)) — a second Drive client can answer a
+question meant for this server, so the run goes green having never exercised the library, and it
+defeats the policy ceiling described above, which binds *this* library's calls and not another
+client's.
+
+Design and the full layer list: [`docs/superpowers/specs/2026-09-05-conformance-rig.md`](./docs/superpowers/specs/2026-09-05-conformance-rig.md).
+
 ## License
 
 Licensed under the [Apache License, Version 2.0](./LICENSE).

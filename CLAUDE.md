@@ -172,6 +172,14 @@ These are the things no test will catch for you unless you add one.
 
 ## Commands
 
+**The live suites need a machine, not a CI runner.** `./Setup-test-machine.sh` sets a dedicated
+Mac up once (tooling, install, MCP registration, **both** Google consents, Playwright);
+`./Run-full-test-suite.sh` then runs the layers unattended against **the current PyPI release**.
+Read spec §3 before touching either — `pythonpath = ["src"]` silently shadows the installed
+wheel, so the obvious implementation tests the checkout while reporting the release. The repo
+also **denies the claude.ai Google Drive connector** (`.claude/settings.json`), because a second
+Drive client answers questions meant for this server and defeats the policy ceiling.
+
 ```bash
 pip install -e ".[dev]"        # install (src/ layout, Python >=3.10)
                                 # CI does NOT install this way - it installs the hash-pinned
