@@ -287,8 +287,12 @@ What actually bounds it:
 - **A dedicated folder** for anything the rig creates, so a human can see and empty it.
   Implemented 2026-09-05: `CSA_GW_TEST_FOLDER` (or `--folder <id|url>`) puts every throwaway
   inside a folder you choose, and **a run never trashes a folder it did not create**. With it
-  unset the suite makes a dated folder per run — `csa-google-workspace conformance
-  YYYY-MM-DD HHMMSSZ` — and removes it at the end. Loose files in My Drive root, which is what
+  unset the suite makes a fresh folder per run in My Drive —
+  **`csa-google-workspace-YYYYMMDDHHMM`** — and removes it at the end. **The name is checked
+  first and never reused.** Not because creating one could overwrite anything (Drive does not
+  enforce unique names — it would quietly make a *second* folder with that name), but because
+  reusing a name means adopting a folder somebody else made and filling it with test files.
+  A taken name gets `-2`, `-3`; fifty deep it refuses rather than looping. Loose files in My Drive root, which is what
   it used to do, are unauditable and indistinguishable from a person's own work.
   *(The ordering works because each throwaway trashes itself on exit, so the folder is empty
   by teardown — Drive leaves a trashed folder's children loose in My Drive otherwise.)*
