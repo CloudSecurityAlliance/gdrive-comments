@@ -18,7 +18,7 @@
 #   ./Run-full-test-suite.sh --version tree      # this working checkout
 #   ./Run-full-test-suite.sh --layers 2,2ro      # just these layers
 #   ./Run-full-test-suite.sh --folder <id|url>   # create test files in THIS Drive folder
-#                                                # (default: a dated folder, trashed after)
+#                              # default: csa-google-workspace-YYYYMMDDHHMM, trashed after
 #   ./Run-full-test-suite.sh --ai                # machine-readable timestamped output
 #   ./Run-full-test-suite.sh --claude            # hand the results to Claude Code to triage
 #
@@ -419,7 +419,8 @@ fi
 if [[ -n "$CSA_GW_TEST_FOLDER" ]]; then
     pass "test files -> your folder $CSA_GW_TEST_FOLDER (kept, never trashed by a run)"
 else
-    info "test files -> a dated folder, created per run and trashed at the end"
+    info "test files -> csa-google-workspace-YYYYMMDDHHMM in My Drive, fresh per run"
+    info "  the name is checked first and never reused; trashed at the end"
     info "  --folder <id|url> to use a standing folder you can inspect instead"
 fi
 

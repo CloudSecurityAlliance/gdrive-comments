@@ -39,7 +39,9 @@ def _ws():
 #
 #   CSA_GW_TEST_FOLDER   a folder id or URL — used as-is, and NEVER trashed. This is the
 #                        setting for a rig with a standing, human-visible scratch folder.
-#   unset                a dated folder is created per run and trashed at the end.
+#   unset                `csa-google-workspace-YYYYMMDDHHMM` in My Drive, created fresh per
+#                        run and trashed at the end. The name is checked first and never
+#                        reused — see `_free_folder_name`.
 #
 # A folder cannot be trashed with children still in it and have them go too — Drive leaves
 # them loose in My Drive (`FileCollection.trash` says so). That works out here because each
@@ -57,10 +59,44 @@ def _folder(ws):
         _FOLDER["id"] = parse_file_id(configured)
         _FOLDER["ours"] = False
     else:
-        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H%M%SZ")
-        ref = ws.files.create(f"csa-google-workspace conformance {stamp}", "folder")
+        ref = ws.files.create(_free_folder_name(ws), "folder")
         _FOLDER["id"], _FOLDER["ours"] = ref.id, True
     return _FOLDER["id"]
+
+
+def _free_folder_name(ws, _now=None):
+    """`csa-google-workspace-YYYYMMDDHHMM`, with a suffix if that name is already taken.
+
+    **Drive does not enforce unique names**, so creating a folder never overwrites one — it
+    quietly makes a SECOND folder with the same name. That is the reason to look first, and
+    the reason looking is not about overwriting: the hazard is adopting a folder somebody else
+    made and filling it with test files, or ending up with two identically-named folders and no
+    way to tell which run owned which.
+
+    So a name that is taken is never reused. The timestamp is minute-resolution, which is
+    plenty for a nightly rig and short enough to read, and two runs inside the same minute get
+    `-2`, `-3` and so on.
+
+    The search sees shared folders too. Skipping a name because somebody else's folder has it
+    is the conservative direction and costs nothing but a suffix.
+    """
+    now = _now or datetime.datetime.now(datetime.timezone.utc)
+    base = f"csa-google-workspace-{now.strftime('%Y%m%d%H%M')}"
+    name, n = base, 1
+    while _folder_named(ws, name):
+        n += 1
+        name = f"{base}-{n}"
+        if n > 50:                       # a loop this long means something else is wrong
+            raise RuntimeError(f"50 folders already named like {base!r}; refusing to add another")
+    return name
+
+
+def _folder_named(ws, name):
+    """Is there a visible, untrashed folder with exactly this name?"""
+    escaped = name.replace("\\", "\\\\").replace("'", "\\'")
+    hits = ws.files.search(
+        f"name = '{escaped}' and mimeType = 'application/vnd.google-apps.folder'", limit=1)
+    return bool(hits)
 
 
 def cleanup_folder(ws=None):
