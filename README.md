@@ -1213,6 +1213,7 @@ This library is a building block for MCP servers / agents / automations acting *
 | [`docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md`](./docs/superpowers/specs/2026-08-25-library-structure-for-the-roadmap.md) | **Shape review before growth.** The library has one axis (per-file); the roadmap adds a second (account-scoped). Where each planned item lands, and what must not happen. |
 | [`research/drive-mcp-servers-and-api-surface.md`](./research/drive-mcp-servers-and-api-surface.md) | What Google's and the claude.ai connector's tools **actually** do, read from live schemas, plus the full Drive v3 / Docs v1 method inventory. |
 | [`experiments/`](./experiments/) | Runnable **empirical probes** (with dated `RESULTS.md`): `anchor-probe`, `comment-lifecycle`, `docs-suggestions`, `sheets-cellmap`, `export-formats`. Probe beats docs. |
+| [`docs/superpowers/specs/2026-09-05-conformance-rig.md`](./docs/superpowers/specs/2026-09-05-conformance-rig.md) | **The dedicated test machine.** What CI cannot run and why that matters — every comment write was broken for five releases under green CI. Setup is [`Setup-test-machine.sh`](./Setup-test-machine.sh), running it is [`Run-full-test-suite.sh`](./Run-full-test-suite.sh), and the quickstart is [above](#a-dedicated-conformance-machine). |
 | [`CHANGELOG.md`](./CHANGELOG.md) | What changed in each refresh, and why. Headings say which versions were actually published. |
 | [`PROVENANCE.md`](./PROVENANCE.md) | Who built this and how, how to verify a release's attestation yourself, the yank policy, and what the secret scanners say about the history. |
 | [`docs/DECISIONS.md`](./docs/DECISIONS.md) | An index of decisions — when each was settled, what evidence settled it, and which earlier belief it replaced. |
@@ -1405,11 +1406,58 @@ not been run in five releases, and when it finally was, it turned out to be brok
 So there is a rig: a dedicated Mac that installs **the current PyPI release**, proves it is
 testing that wheel and not a checkout, runs the live layers, and files one issue per failure.
 
+**Start with [CSA DesktopSetup](https://github.com/CloudSecurityAlliance/DesktopSetup).**
+**Required if you are at CSA**; recommended for everyone else, because it installs the whole
+toolchain this rig assumes — Claude Code, `gh`, Python, git, pipx — in one step instead of five.
+The setup script below checks for those tools and, if any are missing, points you here rather
+than listing separate installs.
+
 ```bash
-./Setup-test-machine.sh          # ONCE. checks tooling, installs, and does BOTH Google logins
-./Run-full-test-suite.sh --check # verify without running anything
-./Run-full-test-suite.sh         # the real thing — latest PyPI release, unattended
+# macOS
+bash -c "$(curl -fsSL -H 'Cache-Control: no-cache' \
+  https://raw.githubusercontent.com/CloudSecurityAlliance/DesktopSetup/HEAD/scripts/macos-ai-tools.sh)"
 ```
+
+Windows needs a one-time PowerShell step first and is documented in that repo — but note the rig
+itself is **macOS only** (the editor layer is `⌘`-based), so Windows is for the surrounding
+tooling, not for running the suite.
+
+**Then, standing the rig up from nothing:**
+
+```bash
+# 1. The OAuth client, first — a DESKTOP-APP client. Google's API ToS forbid shipping developer
+#    credentials in an open-source project, so it lives in the private CSA-Plugins repo.
+#    Setup will not proceed without it.
+mkdir -p ~/.csa_google_workspace
+cp /path/to/client_secret.json ~/.csa_google_workspace/client_secret.json
+
+# 2. Clone. Both scripts run FROM the checkout: the live suites, the zoo builders and the
+#    helper scripts are not in the PyPI sdist, only in git.
+git clone https://github.com/CloudSecurityAlliance/csa-google-workspace
+cd csa-google-workspace
+
+# 3. Once. Opens a browser TWICE — read-write, then read-only. That is the design, not a
+#    glitch: the read-only posture caches separately and a read-write token does not satisfy it.
+./Setup-test-machine.sh
+
+# 4. Verify, then run. Measured 2026-09-05: about 2-4 minutes for the unattended layers once
+#    everything is installed. The FIRST run also downloads and installs, so allow longer.
+./Run-full-test-suite.sh --check
+./Run-full-test-suite.sh
+```
+
+**A failure against `latest` may already be fixed.** The rig tests the *published release*, and
+`main` is usually ahead of it — so re-run the same layers with `--version tree` before filing.
+Fails on both, it is live; fails only on `latest`, it is fixed and waiting for a release. That
+distinction is the first thing anyone triaging will want, and it costs one command:
+
+```bash
+./Run-full-test-suite.sh --version tree --layers 2
+```
+
+`Setup-test-machine.sh --check` reports what is missing and changes nothing, which is the safe
+thing to run first on a machine you are unsure about. If tooling is missing it points at **CSA
+DesktopSetup** rather than listing five separate installs.
 
 Three things about it are not obvious, and each is a trap somebody would otherwise hit:
 

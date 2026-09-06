@@ -172,8 +172,10 @@ These are the things no test will catch for you unless you add one.
 
 ## Commands
 
-**The live suites need a machine, not a CI runner.** `./Setup-test-machine.sh` sets a dedicated
-Mac up once (tooling, install, MCP registration, **both** Google consents, Playwright);
+**The live suites need a machine, not a CI runner.** Start from
+[CSA DesktopSetup](https://github.com/CloudSecurityAlliance/DesktopSetup) — **required at CSA**,
+recommended elsewhere, since it installs Claude Code, `gh`, Python, git and pipx in one step.
+Then `./Setup-test-machine.sh` sets a dedicated Mac up once (tooling, install, MCP registration, **both** Google consents, Playwright);
 `./Run-full-test-suite.sh` then runs the layers unattended against **the current PyPI release**.
 Read spec §3 before touching either — `pythonpath = ["src"]` silently shadows the installed
 wheel, so the obvious implementation tests the checkout while reporting the release. The repo
