@@ -35,6 +35,7 @@ TOKEN_RO="$CONFIG_DIR/token.readonly.json"
 RIG_DIR="$HOME/.csa_gw_rig"           # venv + logs live OUTSIDE the checkout, on purpose
 RIG_VENV="$RIG_DIR/venv"
 RUN_LOG="$RIG_DIR/last-run.log"
+ISSUES_URL_HUMAN="https://github.com/CloudSecurityAlliance/csa-google-workspace/issues"
 
 # --- Which machine is this? -------------------------------------------------
 # The rig is specified as a Mac (spec §6) — the editor-automation recipe is ⌘-based and
@@ -520,6 +521,63 @@ info "full log           : $RUN_LOG"
 if [[ $FAILED -gt 0 ]]; then
     if $AI_MODE; then echo "[$(timestamp)] COMPLETE: $FAILED layer(s) failed"; else
         echo ""; echo "✗ $FAILED layer(s) failed."; fi
+
+    # A failure is only useful if it gets filed, and a report is only useful if it says WHICH
+    # VERSION and proves what was actually imported — otherwise the first reply is always
+    # "which version?" and the second is "are you sure that was the release?".
+    REPORT="$RIG_DIR/issue-report.md"
+    {
+        echo "### What failed"
+        echo
+        for r in "${RESULTS[@]}"; do echo "- $r"; done
+        echo
+        echo "### Version under test"
+        echo
+        echo '```'
+        echo "requested : $VERSION_SPEC"
+        echo "tested    : $VERSION"
+        # $HOME -> ~ : `_environment` reports no filesystem paths precisely because this
+        # text is written for a PUBLIC tracker, and an absolute path carries a username.
+        # What matters here is site-packages vs the checkout, which survives the swap.
+        echo "$IMPORT_CHECK" | grep -E '^(path|version)=' | sed "s|$HOME|~|g"
+        echo '```'
+        echo
+        echo "### Environment"
+        echo
+        echo '```'
+        "$RIG_VENV/bin/python" -c \
+            'from csa_google_workspace._environment import describe_environment
+print(describe_environment().as_markdown())' 2>/dev/null
+        echo '```'
+        echo
+        echo "### Reproduce"
+        echo
+        echo '```bash'
+        echo "./Run-full-test-suite.sh --version $VERSION_SPEC --layers $LAYERS"
+        echo '```'
+        echo
+        echo "Full log on the machine that ran it: \`$(echo "$RUN_LOG" | sed "s|$HOME|~|")\`"
+    } > "$REPORT"
+
+    if ! $AI_MODE; then
+        echo ""
+        echo "  ─────────────────────────────────────────────────────────────"
+        echo "  FILE AN ISSUE. A draft is ready — it names the version and"
+        echo "  proves what was imported, which is the first thing anyone asks:"
+        echo "  ─────────────────────────────────────────────────────────────"
+        echo ""
+        echo "    open $REPORT          # read it, then:"
+        echo "    gh issue create --repo CloudSecurityAlliance/csa-google-workspace \\"
+        echo "        --title '<layer>: <what broke>' --body-file $REPORT"
+        echo ""
+        echo "  BEFORE you paste anything from $RUN_LOG into it:"
+        echo "    a live test's output can contain a Drive FILE ID, a document title, or"
+        echo "    comment text. A file id in a public issue is a working link to the"
+        echo "    document. The draft above contains none of that by construction."
+        echo ""
+        echo "  Search first — $ISSUES_URL_HUMAN"
+        echo "  If it is already open, comment that it reproduced on $VERSION instead."
+    fi
 else
     if $AI_MODE; then echo "[$(timestamp)] COMPLETE: all layers passed"; else
         echo ""; echo "✓ All requested layers passed."; fi

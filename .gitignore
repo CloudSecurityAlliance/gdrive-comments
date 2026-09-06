@@ -192,3 +192,12 @@ experiments/**/*_transcript.json
 
 # Playwright MCP scratch output (screenshots, snapshots, console logs)
 .playwright-mcp/
+
+# `.claude/` is excluded by many people's GLOBAL gitignore (it usually holds personal session
+# state). Two files here are project policy and must travel with the repo, so they are
+# re-included explicitly. The directory has to be un-ignored FIRST: git cannot re-include a
+# file whose parent directory is excluded.
+!.claude/
+.claude/*
+!.claude/settings.json
+!.claude/README.md
