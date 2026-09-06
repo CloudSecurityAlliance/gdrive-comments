@@ -302,6 +302,44 @@ if $SETUP || [[ "$INSTALLED" != "$VERSION" || "$INSTALLED_MODE" != "$WANT_MODE" 
 fi
 
 # =====================================================================
+# Version-matched TESTS  (spec §4)
+# =====================================================================
+# The wheel comes from PyPI; the live suites, the zoo builders and scripts/ are NOT in the
+# sdist, so they can only come from git. Running today's tests against an older wheel produces
+# failures that are the TESTS' fault — measured 2026-09-05, when the working tree's tests
+# failed against 0.51.1 for `Slide.object_id`, which was added after that release. A rig that
+# cries wolf gets ignored, so the halves are pinned together.
+#
+# A detached WORKTREE, not a checkout: it leaves your working tree exactly as it was. Somebody
+# running this while mid-edit should not have their branch swapped underneath them.
+if [[ "$VERSION_SPEC" == "tree" ]]; then
+    TESTS_DIR="$SCRIPT_DIR"
+    info "tests: this working tree (--version tree)"
+else
+    step "Checking out the tests that match $VERSION"
+    TESTS_DIR="$RIG_DIR/tests-v$VERSION"
+    git -C "$SCRIPT_DIR" fetch --tags --quiet 2>/dev/null || \
+        warn "could not fetch tags; a local tag may be stale"
+    if ! git -C "$SCRIPT_DIR" rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+        fail "no tag v$VERSION in this clone — cannot match tests to the wheel"
+        info "Every release is tagged. If PyPI has $VERSION and git does not, say so: that"
+        info "is a release that never got its tag, which is worth an issue on its own."
+        exit 1
+    fi
+    if [[ -d "$TESTS_DIR" ]] && \
+       [[ "$(git -C "$TESTS_DIR" rev-parse HEAD 2>/dev/null)" == \
+          "$(git -C "$SCRIPT_DIR" rev-parse "v$VERSION^{commit}")" ]]; then
+        pass "tests: existing worktree at v$VERSION"
+    else
+        rm -rf "$TESTS_DIR"
+        git -C "$SCRIPT_DIR" worktree prune
+        git -C "$SCRIPT_DIR" worktree add --detach --quiet "$TESTS_DIR" "v$VERSION" \
+            && pass "tests: worktree at v$VERSION (your working tree is untouched)" \
+            || { fail "could not create a worktree at v$VERSION"; exit 1; }
+    fi
+fi
+
+# =====================================================================
 # THE ANTI-LIE GUARD  (spec §3) — the most important check in this script
 # =====================================================================
 step "Proving what is actually under test..."
@@ -458,7 +496,7 @@ run_layer() {                                     # id, description, command...
     fi
 }
 
-cd "$SCRIPT_DIR"
+cd "$TESTS_DIR"
 
 # -o pythonpath= on every invocation: without it the checkout shadows the wheel (§3).
 run_layer 1 "offline unit suite" \
@@ -575,6 +613,13 @@ print(describe_environment().as_markdown())' 2>/dev/null
         echo "    comment text. A file id in a public issue is a working link to the"
         echo "    document. The draft above contains none of that by construction."
         echo ""
+        if [[ "$VERSION_SPEC" != "tree" ]]; then
+            echo "  IS IT ALREADY FIXED? This tested the PUBLISHED release, and main is"
+            echo "  usually ahead of it. Re-run the same layers against the checkout:"
+            echo "      ./Run-full-test-suite.sh --version tree --layers $LAYERS"
+            echo "  Fails on both -> live. Fails only on $VERSION -> fixed, awaiting a release."
+            echo ""
+        fi
         echo "  Search first — $ISSUES_URL_HUMAN"
         echo "  If it is already open, comment that it reproduced on $VERSION instead."
     fi

@@ -107,6 +107,17 @@ wheel produces failures that are the *tests'* fault, and a rig that cries wolf g
 For `--version tree`, both halves are the checkout, and the import assertion in §3 is inverted:
 assert it is **not** site-packages.
 
+**Implemented 2026-09-05 as a detached `git worktree`** at `~/.csa_gw_rig/tests-v<version>`, not
+a checkout — somebody running this mid-edit should not have their branch swapped underneath
+them. It is reused when it already points at the right commit, and a missing tag is a hard
+failure with a pointed message: every release here is tagged, so PyPI having a version that git
+does not is itself worth an issue.
+
+**This was not a hypothetical.** Before it existed, a run against `latest` failed L1 and L2 for
+`Slide.object_id` — a method added *after* 0.51.1 — so the working tree's tests were being run
+against an older wheel and reporting the library broken. Both layers pass once the halves are
+pinned together.
+
 ## 5. The layers
 
 Ordered cheapest-first so a broken install fails in seconds rather than after an hour of browser
@@ -239,6 +250,12 @@ platform. Porting to Linux is possible and is a project, not a config change.
 session; the API needs a token for the same account.
 
 ### What to install
+
+**Start with [CSA DesktopSetup](https://github.com/CloudSecurityAlliance/DesktopSetup)** —
+required for CSA staff, recommended for anyone else. It installs Claude Code, `gh`, Python, git
+and pipx together, which is every row of the table below except Playwright and this repo. Both
+scripts detect missing tooling and point there rather than enumerating installs, because a
+five-step prerequisite list is where a setup gets abandoned.
 
 | | |
 |---|---|
