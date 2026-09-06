@@ -72,7 +72,30 @@ pass "macOS $(sw_vers -productVersion 2>/dev/null)"
 info "This machine should be DEDICATED — the editor layer breaks if somebody is using it."
 
 MISSING_TOOLS=()
-for t in python3 git gh pipx; do
+
+# Python by VERSION, not existence (#440): macOS ships 3.9.6 at /usr/bin/python3 and this
+# needs >= 3.10, so a bare `command -v` passes and the failure surfaces much later as an
+# unreadable pip resolver dump. Search for a newer one first — a Mac often has both.
+PYTHON=""
+for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+    command -v "$candidate" &>/dev/null || continue
+    if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        PYTHON="$(command -v "$candidate")"; break
+    fi
+done
+if [[ -n "$PYTHON" ]]; then
+    pass "python $("$PYTHON" -c 'import platform; print(platform.python_version())') ($PYTHON)"
+else
+    if command -v python3 &>/dev/null; then
+        fail "python3 is $(python3 -c 'import platform; print(platform.python_version())' 2>/dev/null); this needs >= 3.10"
+        info "macOS ships 3.9 at /usr/bin/python3 — DesktopSetup installs a newer one."
+    else
+        fail "no python3"
+    fi
+    MISSING_TOOLS+=(python3)
+fi
+
+for t in git gh pipx; do
     command -v "$t" &>/dev/null && pass "$t" || { fail "$t"; MISSING_TOOLS+=("$t"); }
 done
 export PATH="$HOME/.local/bin:$PATH"

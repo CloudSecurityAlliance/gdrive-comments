@@ -128,7 +128,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-mkdir -p "$RIG_DIR"
+# Not under --check: "changes nothing" should mean nothing, including an empty directory.
+$CHECK_ONLY || mkdir -p "$RIG_DIR"
 
 header
 
@@ -170,7 +171,34 @@ check_cmd() {                                    # name, install-hint, required(
     fi
 }
 
-check_cmd python3 "brew install python3" true
+# Python is checked for its VERSION, not merely its existence (#440). macOS ships
+# /usr/bin/python3 3.9.6; `pyproject.toml` requires >=3.10, so a bare `command -v python3`
+# passes with a green tick and the real problem surfaces 300 lines later as a pip resolver
+# dump nobody can read. Reported from exactly that machine.
+#
+# It also SEARCHES: a Mac often has 3.9 as `python3` and a newer one beside it. Finding that
+# is the difference between "run DesktopSetup" and "this works already".
+PYTHON=""
+for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+    command -v "$candidate" &>/dev/null || continue
+    if "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        PYTHON="$(command -v "$candidate")"; break
+    fi
+done
+
+if [[ -n "$PYTHON" ]]; then
+    pass "python $("$PYTHON" -c 'import platform; print(platform.python_version())') ($PYTHON)"
+else
+    if command -v python3 &>/dev/null; then
+        fail "python3 is $(python3 -c 'import platform; print(platform.python_version())' 2>/dev/null), and this needs >= 3.10"
+        info "macOS ships 3.9 at /usr/bin/python3. Install a newer one — DesktopSetup does it,"
+        info "or: brew install python@3.13"
+    else
+        fail "no python3 at all"
+        info "Install: brew install python@3.13 (or run CSA DesktopSetup)"
+    fi
+    PREREQ_OK=false; MISSING=$((MISSING+1))
+fi
 check_cmd git     "xcode-select --install"  true
 check_cmd gh      "brew install gh (then: gh auth login)" true
 check_cmd pipx    "brew install pipx && pipx ensurepath" true
@@ -224,12 +252,12 @@ fi
 step "Resolving the version under test..."
 
 if [[ "$VERSION_SPEC" == "tree" ]]; then
-    VERSION="$(cd "$SCRIPT_DIR" && python3 -c 'import re,pathlib; print(re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/csa_google_workspace/__init__.py").read_text()).group(1))')"
+    VERSION="$(cd "$SCRIPT_DIR" && "$PYTHON" -c 'import re,pathlib; print(re.search(r"__version__ = \"([^\"]+)\"", pathlib.Path("src/csa_google_workspace/__init__.py").read_text()).group(1))')"
     pass "testing THIS CHECKOUT (version $VERSION) — explicitly requested"
 elif [[ "$VERSION_SPEC" == "latest" ]]; then
     # A rig that silently tests the tree when PyPI is unreachable would report success
     # about a version nobody can install. So this is fatal, not a fallback.
-    VERSION="$(python3 - <<'PY' 2>/dev/null || true
+    VERSION="$("$PYTHON" - <<'PY' 2>/dev/null || true
 import json, urllib.request
 with urllib.request.urlopen("https://pypi.org/pypi/csa-google-workspace/json", timeout=20) as r:
     print(json.load(r)["info"]["version"])
@@ -266,12 +294,25 @@ if [[ -x "$RIG_VENV/bin/python" ]]; then
 fi
 [[ "$VERSION_SPEC" == "tree" ]] && WANT_MODE=tree || WANT_MODE=wheel
 
-if $SETUP || [[ "$INSTALLED" != "$VERSION" || "$INSTALLED_MODE" != "$WANT_MODE" ]]; then
+# --check MUST NOT INSTALL (#440). Its own usage says "prerequisites only, run nothing" and
+# the README says it changes nothing — and it was creating the venv and running a full pip
+# install, 200 lines before the `exit 0`. Reported from a machine where that install then
+# failed on Python 3.9 and buried the real problem in a resolver dump.
+# --check wins over --setup, because the promise not to touch anything is the stronger one.
+if $CHECK_ONLY; then
+    if [[ -z "$INSTALLED" ]]; then
+        warn "not installed yet — run without --check (or with --setup) to install $VERSION"
+    elif [[ "$INSTALLED" != "$VERSION" || "$INSTALLED_MODE" != "$WANT_MODE" ]]; then
+        warn "installed: $INSTALLED ($INSTALLED_MODE); wanted: $VERSION ($WANT_MODE) — would reinstall"
+    else
+        pass "already installed: $VERSION ($INSTALLED_MODE)"
+    fi
+elif $SETUP || [[ "$INSTALLED" != "$VERSION" || "$INSTALLED_MODE" != "$WANT_MODE" ]]; then
     step "Installing the artifact under test..."
     [[ -n "$INSTALLED" ]] && info "installed: $INSTALLED ($INSTALLED_MODE) -> wanted: $VERSION ($WANT_MODE)"
 
     rm -rf "$RIG_VENV"
-    python3 -m venv "$RIG_VENV"
+    "$PYTHON" -m venv "$RIG_VENV"
     "$RIG_VENV/bin/pip" install --quiet --upgrade pip
 
     if [[ "$VERSION_SPEC" == "tree" ]]; then
@@ -326,7 +367,11 @@ else
         info "is a release that never got its tag, which is worth an issue on its own."
         exit 1
     fi
-    if [[ -d "$TESTS_DIR" ]] && \
+    if $CHECK_ONLY; then
+        # Creating a worktree is still writing to disk, and --check promises not to.
+        if [[ -d "$TESTS_DIR" ]]; then pass "tests: worktree at v$VERSION already present"
+        else warn "tests: would create a worktree at v$VERSION (--check makes no changes)"; fi
+    elif [[ -d "$TESTS_DIR" ]] && \
        [[ "$(git -C "$TESTS_DIR" rev-parse HEAD 2>/dev/null)" == \
           "$(git -C "$SCRIPT_DIR" rev-parse "v$VERSION^{commit}")" ]]; then
         pass "tests: existing worktree at v$VERSION"
@@ -343,6 +388,11 @@ fi
 # THE ANTI-LIE GUARD  (spec §3) — the most important check in this script
 # =====================================================================
 step "Proving what is actually under test..."
+
+if [[ ! -x "$RIG_VENV/bin/python" ]]; then
+    warn "nothing installed to check — this is the assertion that proves the rig is testing"
+    info "the wheel and not this checkout, so it cannot be skipped on a real run."
+else
 
 # pyproject sets pythonpath = ["src"], so a naive pytest run imports the CHECKOUT even
 # with a wheel installed. Every pytest invocation below passes -o pythonpath= , and this
@@ -367,6 +417,7 @@ PY
 echo "$IMPORT_CHECK" | grep -q '^OK$' || { error "import check FAILED:"; echo "$IMPORT_CHECK"; exit 1; }
 pass "imported $(echo "$IMPORT_CHECK" | grep '^path=' | cut -d= -f2-)"
 pass "version $VERSION confirmed — not shadowed by the checkout"
+fi
 
 # =====================================================================
 # MCP registration  (what the user asked about)
@@ -407,8 +458,20 @@ fi
 
 # Presence is not liveness. A real API call, using the package under test — which also
 # proves the wheel's auth path works, not just that a file exists on disk.
+# Which interpreter can answer "is this token live?". It needs the package AND its Google
+# deps, so: the rig venv if installed, else the repo's own .venv. If neither exists — the
+# normal state under --check on a fresh machine — say we COULD NOT CHECK. Reporting a
+# perfectly good token as "not usable" because there was nothing to probe with is a false
+# alarm, and it sends somebody to re-authorize a credential that was never broken (#440).
+PROBE_PY=""
+for cand in "$RIG_VENV/bin/python" "$SCRIPT_DIR/.venv/bin/python"; do
+    [[ -x "$cand" ]] || continue
+    "$cand" -c 'import csa_google_workspace, googleapiclient' 2>/dev/null && { PROBE_PY="$cand"; break; }
+done
+
 probe_token() {                                   # $1 = "rw" | "ro"
-    "$RIG_VENV/bin/python" - "$1" <<'PY' 2>/dev/null
+    [[ -n "$PROBE_PY" ]] || return 1
+    "$PROBE_PY" - "$1" <<'PY' 2>/dev/null
 import os, sys
 from googleapiclient.discovery import build
 from csa_google_workspace.auth import load_cached_credentials
@@ -423,8 +486,10 @@ PY
 }
 
 if [[ -f "$TOKEN_RW" ]]; then
-    ACCOUNT="$(probe_token rw || true)"
-    if [[ -n "$ACCOUNT" ]]; then
+    if [[ -z "$PROBE_PY" ]]; then
+        warn "read-write token present — CANNOT VERIFY it is live (nothing installed to probe with)"
+        info "Not a failure: install first, then re-check."
+    elif ACCOUNT="$(probe_token rw)" && [[ -n "$ACCOUNT" ]]; then
         pass "read-write token is LIVE (account: $ACCOUNT)"
         CREDS_RW_OK=true
     else
@@ -440,7 +505,9 @@ fi
 # Not being set up is a real gap, not an inconvenience: L2-RO is the only layer that
 # proves read-only is refused by GOOGLE rather than by our own client guard.
 if [[ -f "$TOKEN_RO" ]]; then
-    if [[ -n "$(CSA_GW_READ_ONLY=1 probe_token ro || true)" ]]; then
+    if [[ -z "$PROBE_PY" ]]; then
+        warn "read-only token present — cannot verify it is live yet"
+    elif [[ -n "$(CSA_GW_READ_ONLY=1 probe_token ro || true)" ]]; then
         pass "read-only token is LIVE (separate consent, as designed)"
         CREDS_RO_OK=true
     else
