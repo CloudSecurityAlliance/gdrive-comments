@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__claude_ai_Google_Drive",
+      "mcp__claude_ai_Google_Drive__*"
+    ]
+  }
+}

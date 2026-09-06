@@ -323,6 +323,13 @@ everyone to ignore it.
 
 Label them so they are findable and so a human can tell rig output from human reports.
 
+**Built 2026-09-05:** a failing run writes `~/.csa_gw_rig/issue-report.md` with exactly the
+fields below — results, version requested vs tested, the import-path proof, the environment
+block from `_environment.describe_environment()`, and the reproduce command. Home directories
+are rewritten to `~`, for the same reason `_environment` carries no paths at all. The automatic
+*filer* (fingerprint, dedup, redaction of captured pytest output) is still to build; this is the
+human path, and it is the one that stops a finding evaporating.
+
 ### What goes in
 
 - **version under test**, and the `__file__` assertion from §3 — proof of what ran;

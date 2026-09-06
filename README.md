@@ -1435,6 +1435,22 @@ question meant for this server, so the run goes green having never exercised the
 defeats the policy ceiling described above, which binds *this* library's calls and not another
 client's.
 
+**When something fails, it writes the issue for you.** A run that fails leaves a draft at
+`~/.csa_gw_rig/issue-report.md` naming the version tested, **proving what was actually
+imported** (site-packages or the checkout), the environment, and the command to reproduce —
+because *"which version?"* and *"are you sure that was the release?"* are the first two replies
+otherwise.
+
+```bash
+gh issue create --repo CloudSecurityAlliance/csa-google-workspace \
+    --title '<layer>: <what broke>' --body-file ~/.csa_gw_rig/issue-report.md
+```
+
+Search first, and if it is already open say it reproduced on that version rather than opening a
+second. And **do not paste the raw run log in**: a live test's output can carry a Drive file id,
+a document title or comment text, and a file id in a public issue is a working link to the
+document. The draft contains none of that by construction, and no filesystem paths either.
+
 Design and the full layer list: [`docs/superpowers/specs/2026-09-05-conformance-rig.md`](./docs/superpowers/specs/2026-09-05-conformance-rig.md).
 
 ## License
