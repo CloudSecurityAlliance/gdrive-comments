@@ -1446,6 +1446,19 @@ cd csa-google-workspace
 ./Run-full-test-suite.sh
 ```
 
+**When something goes wrong, produce a report rather than describing it.** `--report` writes a
+shareable file naming every prerequisite, both versions, and what is missing — and `--debug`
+stops the installs swallowing their own output, which is where the useful error usually is:
+
+```bash
+./Run-full-test-suite.sh --check --report     # works even when nothing "failed"
+./Run-full-test-suite.sh --debug              # verbose installs, whole run kept in a log
+```
+
+The report carries no Drive file ids, document text, or usernames — home directories and
+`/Users/<name>` are both collapsed — so it is safe to attach to a public issue. The raw run log
+is **not**: paste the report, link the log only if asked.
+
 **A failure against `latest` may already be fixed.** The rig tests the *published release*, and
 `main` is usually ahead of it — so re-run the same layers with `--version tree` before filing.
 Fails on both, it is live; fails only on `latest`, it is fixed and waiting for a release. That

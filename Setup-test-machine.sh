@@ -13,6 +13,7 @@
 #   ./Setup-test-machine.sh              # do it
 #   ./Setup-test-machine.sh --check      # report what is missing, change nothing
 #   ./Setup-test-machine.sh --ai         # machine-readable timestamped output
+#   ./Setup-test-machine.sh --debug      # trace every command to ~/.csa_gw_rig/setup-debug.log
 #
 
 set -e
@@ -28,6 +29,7 @@ SECRETS_REPO="CloudSecurityAlliance-Internal/CSA-Plugins"
 
 AI_MODE=false
 CHECK_ONLY=false
+DEBUG=false
 
 timestamp() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 info()  { if $AI_MODE; then echo "[$(timestamp)] INFO: $1"; else echo "  $1"; fi }
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --ai)    AI_MODE=true; shift ;;
         --check) CHECK_ONLY=true; shift ;;
+        --debug) DEBUG=true; shift ;;
         --help|-h) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $1 (try --help)"; exit 1 ;;
     esac
@@ -54,6 +57,17 @@ if ! $AI_MODE; then
 fi
 
 TODO=0
+
+# --debug traces to a FILE, not the terminal: the failures worth debugging here are pip and
+# brew output, and interleaving a shell trace with them makes both unreadable.
+DEBUG_LOG=""
+if $DEBUG; then
+    mkdir -p "$HOME/.csa_gw_rig"
+    DEBUG_LOG="$HOME/.csa_gw_rig/setup-debug.log"
+    : > "$DEBUG_LOG"
+    exec 4>>"$DEBUG_LOG"; export BASH_XTRACEFD=4
+    setopt XTRACE 2>/dev/null || set -x
+fi
 
 # =====================================================================
 # 1. The machine
@@ -245,3 +259,7 @@ info "  ./Run-full-test-suite.sh              # latest PyPI release, all unatten
 info ""
 info "To run it nightly, see the launchd note in"
 info "  docs/superpowers/specs/2026-09-05-conformance-rig.md"
+info ""
+info "If something is wrong, generate a report to attach to an issue:"
+info "  ./Run-full-test-suite.sh --check --report"
+[[ -n "$DEBUG_LOG" ]] && info "command trace: $DEBUG_LOG"
