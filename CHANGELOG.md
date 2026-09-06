@@ -10,6 +10,72 @@
 > keeps this file honest; `scripts/check_release_history.py` reconciles it against git tags and
 > PyPI itself.
 
+## 2026-09-06 — v0.52.0 (the live suite can run, and there is a machine to run it on) — not released *(yet — flipped once PyPI confirms)*
+
+**One new thing for callers: `Slide.object_id`.** Everything else is the testing apparatus —
+which matters because the last release fixed a bug that shipped five times underneath a green CI.
+
+### `Slide.object_id` — the page, as against the shapes on it
+
+Every Slides `create*` request (`createShape`, `createTable`, `createImage`) takes a
+`pageObjectId`, and nothing public exposed one. So `Slides.batch_update` could not target a
+slide at all and a caller had to reach into `_raw`. Additive; nothing changes for existing code.
+
+It is also the id a Slides comment anchor names — `{"type":"page","pages":["p"]}` for a
+whole-slide comment, and the `page` field of a shape anchor — which is what makes an anchor
+resolvable to a slide (measured 2026-09-05, `experiments/slides-anchors/`).
+
+### The live integration suite could not run at all (#433)
+
+Every test in `tests/integration/` errored at setup with `AttributeError: _services`. It reached
+`ws._backend._services` at seven call sites, and `Workspace` wraps its backend unconditionally in
+`PolicyBackend`, which refuses every `_`-prefixed name. That refusal is the fail-closed behaviour
+#82 built deliberately; the **test** was wrong.
+
+It matters more than an ordinary broken test. This is the suite whose `_assert_comment_lifecycle`
+does `create_comment → reply → resolve → reopen → delete` — the exact four writes that returned
+400 for five releases until v0.51.1. **The only suite that could catch that bug could not run**,
+nobody noticed because it is opt-in, and the bug shipped five times.
+
+It now drives the same surface a caller drives — `files.create`/`trash`, `Doc.insert_text`,
+`Sheet.update`/`add_tab`, `Slides.batch_update`. Better than restoring `_services`: it tests what
+people actually use, and it can no longer step around the policy layer it runs under, which a
+suite that exists to catch live-only defects should never have been able to do.
+
+Two things surfaced because nothing in that file had executed in a long time. The `#391` guard
+asserted appended text is not at the **start** of a document and never seeded the document —
+vacuous on an empty file, and it *fails* there for an unrelated reason. And throwaway files were
+created loose in My Drive root; they now go in `csa-google-workspace-YYYYMMDDHHMM`, created fresh
+per run and trashed at the end, or a folder you name with `CSA_GW_TEST_FOLDER`. **A run never
+trashes a folder it did not create**, and a name already taken is never reused — Drive does not
+enforce unique names, so the hazard is adopting somebody else's folder, not overwriting one.
+
+### A machine to run it on
+
+`Setup-test-machine.sh` (once, opens a browser twice) and `Run-full-test-suite.sh` (unattended)
+stand up a dedicated Mac that installs **the current PyPI release** and runs the layers CI
+cannot. Design: [`docs/superpowers/specs/2026-09-05-conformance-rig.md`](docs/superpowers/specs/2026-09-05-conformance-rig.md).
+
+Three parts of it are non-obvious, and each is a trap:
+
+- **`pythonpath = ["src"]` shadows the installed wheel.** A plain `pytest` imports the working
+  tree even with a wheel installed, so the naive rig reports *"tested X from PyPI: PASS"* having
+  tested local edits. Every invocation passes `-o pythonpath=` and the runner **asserts what it
+  imported** before any layer runs. It caught its own author twice.
+- **The live suites are not on PyPI.** The sdist ships the offline tests and neither
+  `tests/integration/` nor `tests/oauth/`, so the rig pairs a PyPI wheel with a **detached
+  `git worktree` at the matching tag**. Without that, the tree's tests run against an older wheel
+  and the rig reports the library broken when the tests are merely newer.
+- **Two Google consents, deliberately.** `CSA_GW_READ_ONLY=1` caches separately and a read-write
+  token does not satisfy it. That separation is the property the read-only layer will test.
+
+### The claude.ai Google Drive connector is denied in this repo
+
+`.claude/settings.json`. A second Drive client in the same session can answer a question meant for
+this server — the run goes green having never exercised the library — and it defeats the policy
+ceiling, which binds *this* library's calls and not another client's. `README.md` already conceded
+the second half; this acts on it.
+
 ## 2026-09-05 — v0.51.1 (every comment write was broken; they work again)
 
 **If you are on v0.47.0–v0.51.0, upgrade.** `create_comment`, `edit_comment`, `reply`, `resolve`
